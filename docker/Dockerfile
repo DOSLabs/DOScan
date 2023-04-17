@@ -13,7 +13,7 @@ ENV GLIBC_REPO=https://github.com/sgerrand/alpine-pkg-glibc \
 RUN set -ex && \
     apk --update add libstdc++ curl ca-certificates && \
     for pkg in glibc-${GLIBC_VERSION} glibc-bin-${GLIBC_VERSION}; \
-        do curl -sSL ${GLIBC_REPO}/releases/download/${GLIBC_VERSION}/${pkg}.apk -o /tmp/${pkg}.apk; done && \
+    do curl -sSL ${GLIBC_REPO}/releases/download/${GLIBC_VERSION}/${pkg}.apk -o /tmp/${pkg}.apk; done && \
     apk add --allow-untrusted /tmp/*.apk && \
     rm -v /tmp/*.apk && \
     /usr/glibc-compat/sbin/ldconfig /lib /usr/glibc-compat/lib
@@ -59,8 +59,8 @@ RUN cd apps/block_scout_web/assets/ && \
 RUN mix phx.digest
 
 RUN mkdir -p /opt/release \
-  && mix release blockscout \
-  && mv _build/${MIX_ENV}/rel/blockscout /opt/release
+    && mix release blockscout \
+    && mv _build/${MIX_ENV}/rel/blockscout /opt/release
 
 ##############################################################
 FROM bitwalker/alpine-elixir-phoenix:1.14
@@ -74,6 +74,7 @@ RUN apk --no-cache --update add jq
 
 WORKDIR /app
 
+COPY --from=builder /app/apps/block_scout_web/assets/static/images ./images 
 COPY --from=builder /opt/release/blockscout .
 COPY --from=builder /app/apps/explorer/node_modules ./node_modules
 COPY --from=builder /app/config/config_helper.exs ./config/config_helper.exs
