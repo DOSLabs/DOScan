@@ -12,5 +12,5 @@ services:
         POSTGRES_HOST_AUTH_METHOD: 'trust'
     ports:
       - 7432:5432
-    volumes: 
-      - ./postgres-data:/var/lib/postgresql/data
+    volumes:
+      - ./blockscout-db-data:/var/lib/postgresql/data/
