@@ -38,13 +38,13 @@ services:
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     env_file:
-      -  ./envs/common-blockscout.env
+      - ./envs/common-blockscout.env
     environment:
-        ETHEREUM_JSONRPC_HTTP_URL: http://host.docker.internal:8545/
-        ETHEREUM_JSONRPC_TRACE_URL: http://host.docker.internal:8545/
-        ETHEREUM_JSONRPC_WS_URL: ws://host.docker.internal:8545/
-        DATABASE_URL: postgresql://postgres:@host.docker.internal:7432/blockscout?ssl=false
-        CHAIN_ID: '1337'
+      ETHEREUM_JSONRPC_HTTP_URL: http://10.148.0.33:9650/ext/bc/2HNhhY4S1oHX9vFEuy3oFi19BM2GeLxVWpDioE56sR469DD3F7/rpc
+      ETHEREUM_JSONRPC_TRACE_URL: http://10.148.0.33:9650/ext/bc/2HNhhY4S1oHX9vFEuy3oFi19BM2GeLxVWpDioE56sR469DD3F7/rpc
+      ETHEREUM_JSONRPC_WS_URL: ws://10.148.0.33:9650/ext/bc/2HNhhY4S1oHX9vFEuy3oFi19BM2GeLxVWpDioE56sR469DD3F7/rpc
+      DATABASE_URL: postgresql://postgres:@host.docker.internal:7432/blockscout?ssl=false
+      CHAIN_ID: '3939'
     ports:
       - 4000:4000
     volumes:
