@@ -10,4 +10,4 @@ services:
     env_file:
       - ../envs/common-frontend.env
     ports:
-      - 3003:3003
+      - 3000:3000
