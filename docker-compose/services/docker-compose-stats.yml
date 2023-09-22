@@ -27,6 +27,6 @@ services:
       - ../envs/common-stats.env
     environment:
       - STATS__DB_URL=postgres://postgres:@stats-db:5432/stats
-      - STATS__BLOCKSCOUT_DB_URL=postgresql://postgres:blockscout@10.148.0.35:5432/template0?ssl=false
+      - STATS__BLOCKSCOUT_DB_URL=postgresql://postgres:blockscout@10.148.0.35:5432/blockscout?ssl=false
       - STATS__CREATE_DATABASE=true
       - STATS__RUN_MIGRATIONS=true
