@@ -32,12 +32,12 @@ services:
         RELEASE_VERSION: 5.2.3
     links:
       - db:database
-    environment:
-      ETHEREUM_JSONRPC_HTTP_URL: http://10.148.0.33:9650/ext/bc/2HNhhY4S1oHX9vFEuy3oFi19BM2GeLxVWpDioE56sR469DD3F7/rpc
-      ETHEREUM_JSONRPC_TRACE_URL: http://10.148.0.33:9650/ext/bc/2HNhhY4S1oHX9vFEuy3oFi19BM2GeLxVWpDioE56sR469DD3F7/rpc
-      ETHEREUM_JSONRPC_WS_URL: ws://10.148.0.33:9650/ext/bc/2HNhhY4S1oHX9vFEuy3oFi19BM2GeLxVWpDioE56sR469DD3F7/rpc
-      DATABASE_URL: postgresql://postgres:@host.docker.internal:7432/blockscout?ssl=false
-      CHAIN_ID: '3939'
+    # environment:
+    #   ETHEREUM_JSONRPC_HTTP_URL: http://10.148.0.33:9650/ext/bc/2HNhhY4S1oHX9vFEuy3oFi19BM2GeLxVWpDioE56sR469DD3F7/rpc
+    #   ETHEREUM_JSONRPC_TRACE_URL: http://10.148.0.33:9650/ext/bc/2HNhhY4S1oHX9vFEuy3oFi19BM2GeLxVWpDioE56sR469DD3F7/rpc
+    #   ETHEREUM_JSONRPC_WS_URL: ws://10.148.0.33:9650/ext/bc/2HNhhY4S1oHX9vFEuy3oFi19BM2GeLxVWpDioE56sR469DD3F7/rpc
+    #   DATABASE_URL: postgresql://postgres:@host.docker.internal:7432/blockscout?ssl=false
+    #   CHAIN_ID: '3939'
 
   visualizer:
     extends:
