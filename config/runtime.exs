@@ -162,6 +162,7 @@ config :ethereum_jsonrpc, EthereumJSONRPC.HTTP,
     |> Map.to_list()
 
 config :ethereum_jsonrpc, EthereumJSONRPC.Geth,
+  block_traceable?: ConfigHelper.parse_bool_env_var("ETHEREUM_JSONRPC_GETH_TRACE_BY_BLOCK"),
   debug_trace_transaction_timeout: System.get_env("ETHEREUM_JSONRPC_DEBUG_TRACE_TRANSACTION_TIMEOUT", "5s"),
   tracer:
     if(ConfigHelper.chain_type() == "polygon_edge",
@@ -377,6 +378,11 @@ config :explorer, Explorer.ThirdPartyIntegrations.SolidityScan,
   chain_id: System.get_env("SOLIDITYSCAN_CHAIN_ID"),
   api_key: System.get_env("SOLIDITYSCAN_API_TOKEN")
 
+config :explorer, Explorer.ThirdPartyIntegrations.NovesFi,
+  service_url: System.get_env("NOVES_FI_BASE_API_URL") || "https://blockscout.noves.fi",
+  chain_name: System.get_env("NOVES_FI_CHAIN_NAME"),
+  api_key: System.get_env("NOVES_FI_API_TOKEN")
+
 enabled? = ConfigHelper.parse_bool_env_var("MICROSERVICE_SC_VERIFIER_ENABLED")
 # or "eth_bytecode_db"
 type = System.get_env("MICROSERVICE_SC_VERIFIER_TYPE", "sc_verifier")
@@ -455,6 +461,10 @@ config :explorer, Explorer.Chain.Cache.AddressesTabsCounters,
 config :explorer, Explorer.MicroserviceInterfaces.BENS,
   service_url: System.get_env("MICROSERVICE_BENS_URL"),
   enabled: ConfigHelper.parse_bool_env_var("MICROSERVICE_BENS_ENABLED")
+
+config :explorer, Explorer.Migrator.TransactionsDenormalization,
+  batch_size: ConfigHelper.parse_integer_env_var("DENORMALIZATION_MIGRATION_BATCH_SIZE", 500),
+  concurrency: ConfigHelper.parse_integer_env_var("DENORMALIZATION_MIGRATION_CONCURRENCY", 10)
 
 ###############
 ### Indexer ###
