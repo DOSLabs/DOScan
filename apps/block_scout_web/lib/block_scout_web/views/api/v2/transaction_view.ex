@@ -375,7 +375,7 @@ defmodule BlockScoutWeb.API.V2.TransactionView do
       "result" => status,
       "status" => transaction.status,
       "block" => transaction.block_number,
-      "timestamp" => block_timestamp(transaction.block),
+      "timestamp" => block_timestamp(transaction),
       "from" =>
         Helper.address_with_info(
           single_tx? && conn,
@@ -561,7 +561,18 @@ defmodule BlockScoutWeb.API.V2.TransactionView do
   end
 
   defp sanitize_log_first_topic(first_topic) do
-    if is_nil(first_topic), do: "", else: String.downcase(first_topic)
+    if is_nil(first_topic) do
+      ""
+    else
+      sanitized =
+        if is_binary(first_topic) do
+          first_topic
+        else
+          Hash.to_string(first_topic)
+        end
+
+      String.downcase(sanitized)
+    end
   end
 
   def token_transfers(_, _conn, false), do: nil
@@ -833,6 +844,7 @@ defmodule BlockScoutWeb.API.V2.TransactionView do
     end
   end
 
+  defp block_timestamp(%Transaction{block_timestamp: block_ts}) when not is_nil(block_ts), do: block_ts
   defp block_timestamp(%Transaction{block: %Block{} = block}), do: block.timestamp
   defp block_timestamp(%Block{} = block), do: block.timestamp
   defp block_timestamp(_), do: nil

@@ -28,6 +28,7 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
   alias BlockScoutWeb.MicroserviceInterfaces.TransactionInterpretation, as: TransactionInterpretationService
   alias BlockScoutWeb.Models.TransactionStateHelper
   alias Explorer.Chain
+  alias Explorer.Chain.{Hash, Transaction}
   alias Explorer.Chain.Zkevm.Reader
   alias Indexer.Fetcher.FirstTraceOnDemand
 
@@ -62,7 +63,6 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
       [created_contract_address: :names] => :optional,
       [from_address: :names] => :optional,
       [to_address: :names] => :optional,
-      [transaction: :block] => :optional,
       [created_contract_address: :smart_contract] => :optional,
       [from_address: :smart_contract] => :optional,
       [to_address: :smart_contract] => :optional
@@ -389,7 +389,15 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
     end
   end
 
-  defp validate_transaction(transaction_hash_string, params, options \\ @api_true) do
+  @doc """
+  Checks if this valid transaction hash string, and this transaction doesn't belong to prohibited address
+  """
+  @spec validate_transaction(String.t(), any(), Keyword.t()) ::
+          {:format, :error}
+          | {:not_found, {:error, :not_found}}
+          | {:restricted_access, true}
+          | {:ok, Transaction.t(), Hash.t()}
+  def validate_transaction(transaction_hash_string, params, options \\ @api_true) do
     with {:format, {:ok, transaction_hash}} <- {:format, Chain.string_to_transaction_hash(transaction_hash_string)},
          {:not_found, {:ok, transaction}} <-
            {:not_found, Chain.hash_to_transaction(transaction_hash, options)},
