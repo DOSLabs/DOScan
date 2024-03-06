@@ -26,49 +26,36 @@ defmodule Explorer.Chain.Log do
    * `fourth_topic` - `topics[3]`
    * `transaction` - transaction for which `log` is
    * `transaction_hash` - foreign key for `transaction`.
-   * `index` - index of the log entry in all logs for the `transaction`
+   * `index` - index of the log entry within the block
   """
-  @type t :: %__MODULE__{
-          address: %Ecto.Association.NotLoaded{} | Address.t(),
-          address_hash: Hash.Address.t(),
-          block_hash: Hash.Full.t(),
-          block_number: non_neg_integer() | nil,
-          data: Data.t(),
-          first_topic: Hash.Full.t(),
-          second_topic: Hash.Full.t(),
-          third_topic: Hash.Full.t(),
-          fourth_topic: Hash.Full.t(),
-          transaction: %Ecto.Association.NotLoaded{} | Transaction.t(),
-          transaction_hash: Hash.Full.t(),
-          index: non_neg_integer()
-        }
-
   @primary_key false
-  schema "logs" do
-    field(:data, Data)
+  typed_schema "logs" do
+    field(:data, Data, null: false)
     field(:first_topic, Hash.Full)
     field(:second_topic, Hash.Full)
     field(:third_topic, Hash.Full)
     field(:fourth_topic, Hash.Full)
-    field(:index, :integer, primary_key: true)
+    field(:index, :integer, primary_key: true, null: false)
     field(:block_number, :integer)
 
     timestamps()
 
-    belongs_to(:address, Address, foreign_key: :address_hash, references: :hash, type: Hash.Address)
+    belongs_to(:address, Address, foreign_key: :address_hash, references: :hash, type: Hash.Address, null: false)
 
     belongs_to(:transaction, Transaction,
       foreign_key: :transaction_hash,
       primary_key: true,
       references: :hash,
-      type: Hash.Full
+      type: Hash.Full,
+      null: false
     )
 
     belongs_to(:block, Block,
       foreign_key: :block_hash,
       primary_key: true,
       references: :hash,
-      type: Hash.Full
+      type: Hash.Full,
+      null: false
     )
   end
 
@@ -187,12 +174,13 @@ defmodule Explorer.Chain.Log do
       {{:error, :could_not_decode}, events_acc}
     else
       <<method_id::binary-size(4), _rest::binary>> = log.first_topic.bytes
+      key = {method_id, log.second_topic, log.third_topic, log.fourth_topic}
 
-      if Map.has_key?(events_acc, method_id) do
-        {events_acc[method_id], events_acc}
+      if Map.has_key?(events_acc, key) do
+        {events_acc[key], events_acc}
       else
         result = find_method_candidates_from_db(method_id, log, transaction, options, skip_sig_provider?)
-        {result, Map.put(events_acc, method_id, result)}
+        {result, Map.put(events_acc, key, result)}
       end
     end
   end

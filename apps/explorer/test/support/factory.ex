@@ -21,7 +21,9 @@ defmodule Explorer.Factory do
   }
 
   alias Explorer.Admin.Administrator
+  alias Explorer.Chain.Beacon.{Blob, BlobTransaction}
   alias Explorer.Chain.Block.{EmissionReward, Range, Reward}
+  alias Explorer.Chain.Stability.Validator, as: ValidatorStability
 
   alias Explorer.Chain.{
     Address,
@@ -38,6 +40,7 @@ defmodule Explorer.Factory do
     Log,
     PendingBlockOperation,
     SmartContract,
+    SmartContractAdditionalSource,
     Token,
     TokenTransfer,
     Token.Instance,
@@ -746,7 +749,7 @@ defmodule Explorer.Factory do
     contract_code = Map.fetch!(contract_code_info(), :bytecode)
 
     token_address = insert(:contract_address, contract_code: contract_code)
-    insert(:token, contract_address: token_address)
+    token = insert(:token, contract_address: token_address)
 
     %TokenTransfer{
       block: build(:block),
@@ -755,8 +758,10 @@ defmodule Explorer.Factory do
       from_address: from_address,
       to_address: to_address,
       token_contract_address: token_address,
+      token_type: token.type,
       transaction: log.transaction,
-      log_index: log.index
+      log_index: log.index,
+      block_consensus: true
     }
   end
 
@@ -872,6 +877,10 @@ defmodule Explorer.Factory do
       is_vyper_contract: Enum.random([true, false]),
       verified_via_eth_bytecode_db: Enum.random([true, false])
     }
+  end
+
+  def smart_contract_additional_source_factory do
+    %SmartContractAdditionalSource{}
   end
 
   def unique_smart_contract_factory do
@@ -1086,5 +1095,35 @@ defmodule Explorer.Factory do
     sequence("withdrawal_validator_index", & &1)
   end
 
+  def blob_factory do
+    kzg_commitment = data(:kzg_commitment)
+
+    %Blob{
+      hash: Blob.hash(kzg_commitment.bytes),
+      blob_data: data(:blob_data),
+      kzg_commitment: kzg_commitment,
+      kzg_proof: data(:kzg_proof)
+    }
+  end
+
+  def blob_transaction_factory do
+    %BlobTransaction{
+      hash: insert(:transaction) |> with_block() |> Map.get(:hash),
+      max_fee_per_blob_gas: Decimal.new(1_000_000_000),
+      blob_gas_price: Decimal.new(1_000_000_000),
+      blob_gas_used: Decimal.new(131_072),
+      blob_versioned_hashes: []
+    }
+  end
+
   def random_bool, do: Enum.random([true, false])
+
+  def validator_stability_factory do
+    address = insert(:address)
+
+    %ValidatorStability{
+      address_hash: address.hash,
+      state: Enum.random(0..2)
+    }
+  end
 end
