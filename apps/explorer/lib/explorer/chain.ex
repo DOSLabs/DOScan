@@ -48,6 +48,7 @@ defmodule Explorer.Chain do
     Address.CurrentTokenBalance,
     Address.TokenBalance,
     Block,
+    BlockNumberHelper,
     CurrencyHelper,
     Data,
     DecompiledSmartContract,
@@ -66,8 +67,6 @@ defmodule Explorer.Chain do
     Withdrawal
   }
 
-  alias Explorer.Chain.Block.{EmissionReward, Reward}
-
   alias Explorer.Chain.Cache.{
     BlockNumber,
     Blocks,
@@ -81,6 +80,7 @@ defmodule Explorer.Chain do
   }
 
   alias Explorer.Chain.Cache.Block, as: BlockCache
+  alias Explorer.Chain.Cache.Helper, as: CacheHelper
   alias Explorer.Chain.Cache.PendingBlockOperation, as: PendingBlockOperationCache
   alias Explorer.Chain.Fetcher.{CheckBytecodeMatchingOnDemand, LookUpSmartContractSourcesOnDemand}
   alias Explorer.Chain.Import.Runner
@@ -353,7 +353,7 @@ defmodule Explorer.Chain do
     to_block = to_block(options)
 
     base =
-      if DenormalizationHelper.denormalization_finished?() do
+      if DenormalizationHelper.transactions_denormalization_finished?() do
         from(log in Log,
           order_by: [desc: log.block_number, desc: log.index],
           where: log.address_hash == ^address_hash,
@@ -476,56 +476,6 @@ defmodule Explorer.Chain do
   end
 
   @doc """
-  Reward for mining a block.
-
-  The block reward is the sum of the following:
-
-  * Sum of the transaction fees (gas_used * gas_price) for the block
-  * A static reward for miner (this value may change during the life of the chain)
-  * The reward for uncle blocks (1/32 * static_reward * number_of_uncles)
-
-  *NOTE*
-
-  Uncles are not currently accounted for.
-  """
-  @spec block_reward(Block.block_number()) :: Wei.t()
-  def block_reward(block_number) do
-    block_hash =
-      Block
-      |> where([block], block.number == ^block_number and block.consensus == true)
-      |> select([block], block.hash)
-      |> Repo.one!()
-
-    case Repo.one!(
-           from(reward in Reward,
-             where: reward.block_hash == ^block_hash,
-             select: %Wei{
-               value: coalesce(sum(reward.reward), 0)
-             }
-           )
-         ) do
-      %Wei{
-        value: %Decimal{coef: 0}
-      } ->
-        Repo.one!(
-          from(block in Block,
-            left_join: transaction in assoc(block, :transactions),
-            inner_join: emission_reward in EmissionReward,
-            on: fragment("? <@ ?", block.number, emission_reward.block_range),
-            where: block.number == ^block_number and block.consensus == true,
-            group_by: [emission_reward.reward, block.hash],
-            select: %Wei{
-              value: coalesce(sum(transaction.gas_used * transaction.gas_price), 0) + emission_reward.reward
-            }
-          )
-        )
-
-      other_value ->
-        other_value
-    end
-  end
-
-  @doc """
   The `t:Explorer.Chain.Wei.t/0` paid to the miners of the `t:Explorer.Chain.Block.t/0`s with `hash`
   `Explorer.Chain.Hash.Full.t/0` by the signers of the transactions in those blocks to cover the gas fee
   (`gas_used * gas_price`).
@@ -533,7 +483,7 @@ defmodule Explorer.Chain do
   @spec gas_payment_by_block_hash([Hash.Full.t()]) :: %{Hash.Full.t() => Wei.t()}
   def gas_payment_by_block_hash(block_hashes) when is_list(block_hashes) do
     query =
-      if DenormalizationHelper.denormalization_finished?() do
+      if DenormalizationHelper.transactions_denormalization_finished?() do
         from(
           transaction in Transaction,
           where: transaction.block_hash in ^block_hashes and transaction.block_consensus == true,
@@ -595,12 +545,14 @@ defmodule Explorer.Chain do
           ]
   def block_to_transactions(block_hash, options \\ [], old_ui? \\ true) when is_list(options) do
     necessity_by_association = Keyword.get(options, :necessity_by_association, %{})
+    type_filter = Keyword.get(options, :type)
 
     options
     |> Keyword.get(:paging_options, @default_paging_options)
     |> fetch_transactions_in_ascending_order_by_index()
     |> join(:inner, [transaction], block in assoc(transaction, :block))
     |> where([_, block], block.hash == ^block_hash)
+    |> apply_filter_by_tx_type_to_transactions(type_filter)
     |> join_associations(necessity_by_association)
     |> Transaction.put_has_token_transfers_to_tx(old_ui?)
     |> (&if(old_ui?, do: preload(&1, [{:token_transfers, [:token, :from_address, :to_address]}]), else: &1)).()
@@ -879,58 +831,6 @@ defmodule Explorer.Chain do
   end
 
   @doc """
-  The fee a `transaction` paid for the `t:Explorer.Transaction.t/0` `gas`
-
-  If the transaction is pending, then the fee will be a range of `unit`
-
-      iex> Explorer.Chain.fee(
-      ...>   %Explorer.Chain.Transaction{
-      ...>     gas: Decimal.new(3),
-      ...>     gas_price: %Explorer.Chain.Wei{value: Decimal.new(2)},
-      ...>     gas_used: nil
-      ...>   },
-      ...>   :wei
-      ...> )
-      {:maximum, Decimal.new(6)}
-
-  If the transaction has been confirmed in block, then the fee will be the actual fee paid in `unit` for the `gas_used`
-  in the `transaction`.
-
-      iex> Explorer.Chain.fee(
-      ...>   %Explorer.Chain.Transaction{
-      ...>     gas: Decimal.new(3),
-      ...>     gas_price: %Explorer.Chain.Wei{value: Decimal.new(2)},
-      ...>     gas_used: Decimal.new(2)
-      ...>   },
-      ...>   :wei
-      ...> )
-      {:actual, Decimal.new(4)}
-
-  """
-  @spec fee(Transaction.t(), :ether | :gwei | :wei) :: {:maximum, Decimal.t()} | {:actual, Decimal.t() | nil}
-  def fee(%Transaction{gas: _gas, gas_price: nil, gas_used: nil}, _unit), do: {:maximum, nil}
-
-  def fee(%Transaction{gas: gas, gas_price: gas_price, gas_used: nil}, unit) do
-    fee =
-      gas_price
-      |> Wei.to(unit)
-      |> Decimal.mult(gas)
-
-    {:maximum, fee}
-  end
-
-  def fee(%Transaction{gas_price: nil, gas_used: _gas_used}, _unit), do: {:actual, nil}
-
-  def fee(%Transaction{gas_price: gas_price, gas_used: gas_used}, unit) do
-    fee =
-      gas_price
-      |> Wei.to(unit)
-      |> Decimal.mult(gas_used)
-
-    {:actual, fee}
-  end
-
-  @doc """
   Checks to see if the chain is down indexing based on the transaction from the
   oldest block and the pending operation
   """
@@ -1193,11 +1093,13 @@ defmodule Explorer.Chain do
   @doc """
   Converts list of `t:Explorer.Chain.Address.t/0` `hash` to the `t:Explorer.Chain.Address.t/0` with that `hash`.
 
-  Returns `[%Explorer.Chain.Address{}]}` if found
+  Returns `[%Explorer.Chain.Address{}]` if found
 
   """
-  @spec hashes_to_addresses([Hash.Address.t()]) :: [Address.t()]
-  def hashes_to_addresses(hashes) when is_list(hashes) do
+  @spec hashes_to_addresses([Hash.Address.t()], [necessity_by_association_option | api?]) :: [Address.t()]
+  def hashes_to_addresses(hashes, options \\ []) when is_list(hashes) do
+    necessity_by_association = Keyword.get(options, :necessity_by_association, %{})
+
     query =
       from(
         address in Address,
@@ -1206,7 +1108,9 @@ defmodule Explorer.Chain do
         order_by: fragment("array_position(?, ?)", type(^hashes, {:array, Hash.Address}), address.hash)
       )
 
-    Repo.all(query)
+    query
+    |> join_associations(necessity_by_association)
+    |> select_repo(options).all()
   end
 
   @doc """
@@ -1232,7 +1136,7 @@ defmodule Explorer.Chain do
       options
       |> Keyword.get(:necessity_by_association, %{})
       |> Map.merge(%{
-        smart_contract_additional_sources: :optional
+        [smart_contract: :smart_contract_additional_sources] => :optional
       })
 
     query =
@@ -1511,7 +1415,7 @@ defmodule Explorer.Chain do
   If there are no blocks, the percentage is 0.
 
       iex> Explorer.Chain.indexed_ratio_blocks()
-      Decimal.new(0)
+      Decimal.new(1)
 
   """
   @spec indexed_ratio_blocks() :: Decimal.t()
@@ -1523,10 +1427,10 @@ defmodule Explorer.Chain do
 
       case {min_saved_block_number, max_saved_block_number} do
         {0, 0} ->
-          Decimal.new(0)
+          Decimal.new(1)
 
         _ ->
-          divisor = max_saved_block_number - min_blockchain_block_number + 1
+          divisor = max_saved_block_number - min_blockchain_block_number - BlockNumberHelper.null_rounds_count() + 1
 
           ratio = get_ratio(BlockCache.estimated_count(), divisor)
 
@@ -1558,7 +1462,9 @@ defmodule Explorer.Chain do
           Decimal.new(0)
 
         _ ->
-          full_blocks_range = max_saved_block_number - min_blockchain_trace_block_number + 1
+          full_blocks_range =
+            max_saved_block_number - min_blockchain_trace_block_number - BlockNumberHelper.null_rounds_count() + 1
+
           processed_int_txs_for_blocks_count = max(0, full_blocks_range - pbo_count)
 
           ratio = get_ratio(processed_int_txs_for_blocks_count, full_blocks_range)
@@ -1755,6 +1661,18 @@ defmodule Explorer.Chain do
     |> Enum.into(%{})
   end
 
+  def get_table_rows_total_count(module, options) do
+    table_name = module.__schema__(:source)
+
+    count = CacheHelper.estimated_count_from(table_name, options)
+
+    if is_nil(count) do
+      select_repo(options).aggregate(module, :count, timeout: :infinity)
+    else
+      count
+    end
+  end
+
   @doc """
   Calls `reducer` on a stream of `t:Explorer.Chain.Block.t/0` without `t:Explorer.Chain.Block.Reward.t/0`.
   """
@@ -1926,7 +1844,8 @@ defmodule Explorer.Chain do
       from(
         po in PendingBlockOperation,
         where: not is_nil(po.block_number),
-        select: po.block_number
+        select: po.block_number,
+        order_by: [desc: po.block_number]
       )
 
     query
@@ -2174,6 +2093,16 @@ defmodule Explorer.Chain do
     end
   end
 
+  @spec increment_last_fetched_counter(binary(), non_neg_integer()) :: {non_neg_integer(), nil}
+  def increment_last_fetched_counter(type, value) do
+    query =
+      from(counter in LastFetchedCounter,
+        where: counter.counter_type == ^type
+      )
+
+    Repo.update_all(query, [inc: [value: value]], timeout: :infinity)
+  end
+
   @spec upsert_last_fetched_counter(map()) :: {:ok, LastFetchedCounter.t()} | {:error, Ecto.Changeset.t()}
   def upsert_last_fetched_counter(params) do
     changeset = LastFetchedCounter.changeset(%LastFetchedCounter{}, params)
@@ -2301,26 +2230,50 @@ defmodule Explorer.Chain do
     range_max = max(range_start, range_end)
 
     ordered_missing_query =
-      from(b in Block,
-        right_join:
-          missing_range in fragment(
-            """
-            (
-              SELECT distinct b1.number
-              FROM generate_series((?)::integer, (?)::integer) AS b1(number)
-              WHERE NOT EXISTS
-                (SELECT 1 FROM blocks b2 WHERE b2.number=b1.number AND b2.consensus)
-              ORDER BY b1.number DESC
-            )
-            """,
-            ^range_min,
-            ^range_max
-          ),
-        on: b.number == missing_range.number,
-        select: missing_range.number,
-        order_by: missing_range.number,
-        distinct: missing_range.number
-      )
+      if Application.get_env(:explorer, :chain_type) == "filecoin" do
+        from(b in Block,
+          right_join:
+            missing_range in fragment(
+              """
+              (
+                SELECT distinct b1.number
+                FROM generate_series((?)::integer, (?)::integer) AS b1(number)
+                WHERE NOT EXISTS
+                  (SELECT 1 FROM blocks b2 WHERE b2.number=b1.number AND b2.consensus)
+                AND NOT EXISTS (SELECT 1 FROM null_round_heights nrh where nrh.height=b1.number)
+                ORDER BY b1.number DESC
+              )
+              """,
+              ^range_min,
+              ^range_max
+            ),
+          on: b.number == missing_range.number,
+          select: missing_range.number,
+          order_by: missing_range.number,
+          distinct: missing_range.number
+        )
+      else
+        from(b in Block,
+          right_join:
+            missing_range in fragment(
+              """
+              (
+                SELECT distinct b1.number
+                FROM generate_series((?)::integer, (?)::integer) AS b1(number)
+                WHERE NOT EXISTS
+                  (SELECT 1 FROM blocks b2 WHERE b2.number=b1.number AND b2.consensus)
+                ORDER BY b1.number DESC
+              )
+              """,
+              ^range_min,
+              ^range_max
+            ),
+          on: b.number == missing_range.number,
+          select: missing_range.number,
+          order_by: missing_range.number,
+          distinct: missing_range.number
+        )
+      end
 
     missing_blocks = Repo.all(ordered_missing_query, timeout: :infinity)
 
@@ -2458,13 +2411,13 @@ defmodule Explorer.Chain do
              DateTime.compare(timestamp, given_timestamp) == :eq do
           number
         else
-          number - 1
+          BlockNumberHelper.previous_block_number(number)
         end
 
       :after ->
         if DateTime.compare(timestamp, given_timestamp) == :lt ||
              DateTime.compare(timestamp, given_timestamp) == :eq do
-          number + 1
+          BlockNumberHelper.next_block_number(number)
         else
           number
         end
@@ -3276,8 +3229,8 @@ defmodule Explorer.Chain do
 
   def limit_showing_transactions, do: @limit_showing_transactions
 
-  defp join_association(query, [{association, nested_preload}], necessity)
-       when is_atom(association) and is_atom(nested_preload) do
+  def join_association(query, [{association, nested_preload}], necessity)
+      when is_atom(association) and is_atom(nested_preload) do
     case necessity do
       :optional ->
         preload(query, [{^association, ^nested_preload}])
@@ -3293,7 +3246,7 @@ defmodule Explorer.Chain do
     end
   end
 
-  defp join_association(query, association, necessity) do
+  def join_association(query, association, necessity) do
     case necessity do
       :optional ->
         preload(query, ^association)
@@ -3808,8 +3761,12 @@ defmodule Explorer.Chain do
   """
   @spec update_token(Token.t(), map()) :: {:ok, Token.t()} | {:error, Ecto.Changeset.t()}
   def update_token(%Token{contract_address_hash: address_hash} = token, params \\ %{}) do
-    token_changeset = Token.changeset(token, Map.put(params, :updated_at, DateTime.utc_now()))
-    address_name_changeset = Address.Name.changeset(%Address.Name{}, Map.put(params, :address_hash, address_hash))
+    filtered_params = for({key, value} <- params, value !== "" && !is_nil(value), do: {key, value}) |> Enum.into(%{})
+
+    token_changeset = Token.changeset(token, Map.put(filtered_params, :updated_at, DateTime.utc_now()))
+
+    address_name_changeset =
+      Address.Name.changeset(%Address.Name{}, Map.put(filtered_params, :address_hash, address_hash))
 
     stale_error_field = :contract_address_hash
     stale_error_message = "is up to date"
@@ -3875,7 +3832,11 @@ defmodule Explorer.Chain do
     |> select_repo(options).all()
   end
 
-  @spec erc721_or_erc1155_token_instance_from_token_id_and_token_address(non_neg_integer(), Hash.Address.t(), [api?]) ::
+  @spec erc721_or_erc1155_token_instance_from_token_id_and_token_address(
+          Decimal.t() | non_neg_integer(),
+          Hash.Address.t(),
+          [api?]
+        ) ::
           {:ok, Instance.t()} | {:error, :not_found}
   def erc721_or_erc1155_token_instance_from_token_id_and_token_address(token_id, token_contract_address, options \\ []) do
     query = Instance.token_instance_query(token_id, token_contract_address)
@@ -4170,6 +4131,10 @@ defmodule Explorer.Chain do
     |> Enum.map(&put_owner_to_token_instance(&1, token, options))
   end
 
+  @doc """
+    Put owner address to unique token instance. If not unique, return original instance.
+  """
+  @spec put_owner_to_token_instance(Instance.t(), Token.t(), [api?]) :: Instance.t()
   def put_owner_to_token_instance(token_instance, token, options \\ [])
 
   def put_owner_to_token_instance(%Instance{is_unique: nil} = token_instance, token, options) do
@@ -4369,70 +4334,16 @@ defmodule Explorer.Chain do
     Repo.one(query)
   end
 
-  @spec is_erc_20_token?(Token.t()) :: bool
-  def is_erc_20_token?(token) do
-    is_erc_20_token_type?(token.type)
+  @spec erc_20_token?(Token.t()) :: bool
+  def erc_20_token?(token) do
+    erc_20_token_type?(token.type)
   end
 
-  defp is_erc_20_token_type?(type) do
+  defp erc_20_token_type?(type) do
     case type do
       "ERC-20" -> true
       _ -> false
     end
-  end
-
-  @doc """
-  Checks if an `t:Explorer.Chain.Address.t/0` with the given `hash` exists.
-
-  Returns `:ok` if found
-
-      iex> {:ok, %Explorer.Chain.Address{hash: hash}} = Explorer.Chain.create_address(
-      ...>   %{hash: "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed"}
-      ...> )
-      iex> Explorer.Chain.check_address_exists(hash)
-      :ok
-
-  Returns `:not_found` if not found
-
-      iex> {:ok, hash} = Explorer.Chain.string_to_address_hash("0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed")
-      iex> Explorer.Chain.check_address_exists(hash)
-      :not_found
-
-  """
-  @spec check_address_exists(Hash.Address.t()) :: :ok | :not_found
-  def check_address_exists(address_hash) do
-    address_hash
-    |> address_exists?()
-    |> boolean_to_check_result()
-  end
-
-  @doc """
-  Checks if an `t:Explorer.Chain.Address.t/0` with the given `hash` exists.
-
-  Returns `true` if found
-
-      iex> {:ok, %Explorer.Chain.Address{hash: hash}} = Explorer.Chain.create_address(
-      ...>   %{hash: "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed"}
-      ...> )
-      iex> Explorer.Chain.address_exists?(hash)
-      true
-
-  Returns `false` if not found
-
-      iex> {:ok, hash} = Explorer.Chain.string_to_address_hash("0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed")
-      iex> Explorer.Chain.address_exists?(hash)
-      false
-
-  """
-  @spec address_exists?(Hash.Address.t()) :: boolean()
-  def address_exists?(address_hash) do
-    query =
-      from(
-        address in Address,
-        where: address.hash == ^address_hash
-      )
-
-    Repo.exists?(query)
   end
 
   @doc """
@@ -4880,9 +4791,9 @@ defmodule Explorer.Chain do
     |> Repo.one()
   end
 
-  def is_address_hash_is_smart_contract?(nil), do: false
+  def address_hash_is_smart_contract?(nil), do: false
 
-  def is_address_hash_is_smart_contract?(address_hash) do
+  def address_hash_is_smart_contract?(address_hash) do
     with %Address{contract_code: bytecode} <- Repo.get_by(Address, hash: address_hash),
          false <- is_nil(bytecode) do
       true
@@ -4990,6 +4901,11 @@ defmodule Explorer.Chain do
             as: :created_token
           )
         )
+
+      :blob_transaction ->
+        dynamic
+        |> filter_blob_transaction_dynamic()
+        |> apply_filter_by_tx_type_to_transactions_inner(remain, query)
     end
   end
 
@@ -5021,6 +4937,11 @@ defmodule Explorer.Chain do
 
   def filter_token_creation_dynamic(dynamic) do
     dynamic([tx, created_token: created_token], ^dynamic or not is_nil(created_token))
+  end
+
+  def filter_blob_transaction_dynamic(dynamic) do
+    # EIP-2718 blob transaction type
+    dynamic([tx], ^dynamic or tx.type == 3)
   end
 
   def count_verified_contracts do

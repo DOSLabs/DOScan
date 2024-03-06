@@ -16,6 +16,10 @@ config :explorer, Explorer.Repo.Account,
   prepare: :unnamed,
   timeout: :timer.seconds(60)
 
+config :explorer, Explorer.Repo.Optimism,
+  prepare: :unnamed,
+  timeout: :timer.seconds(60)
+
 config :explorer, Explorer.Repo.PolygonEdge,
   prepare: :unnamed,
   timeout: :timer.seconds(60)
@@ -28,7 +32,27 @@ config :explorer, Explorer.Repo.RSK,
   prepare: :unnamed,
   timeout: :timer.seconds(60)
 
+config :explorer, Explorer.Repo.Shibarium,
+  prepare: :unnamed,
+  timeout: :timer.seconds(60)
+
 config :explorer, Explorer.Repo.Suave,
+  prepare: :unnamed,
+  timeout: :timer.seconds(60)
+
+config :explorer, Explorer.Repo.Beacon,
+  prepare: :unnamed,
+  timeout: :timer.seconds(60)
+
+config :explorer, Explorer.Repo.BridgedTokens,
+  prepare: :unnamed,
+  timeout: :timer.seconds(60)
+
+config :explorer, Explorer.Repo.Filecoin,
+  prepare: :unnamed,
+  timeout: :timer.seconds(60)
+
+config :explorer, Explorer.Repo.Stability,
   prepare: :unnamed,
   timeout: :timer.seconds(60)
 

@@ -7,12 +7,24 @@ defmodule ConfigHelper do
   def repos do
     base_repos = [Explorer.Repo, Explorer.Repo.Account]
 
-    case System.get_env("CHAIN_TYPE") do
-      "polygon_edge" -> base_repos ++ [Explorer.Repo.PolygonEdge]
-      "polygon_zkevm" -> base_repos ++ [Explorer.Repo.PolygonZkevm]
-      "rsk" -> base_repos ++ [Explorer.Repo.RSK]
-      "suave" -> base_repos ++ [Explorer.Repo.Suave]
-      _ -> base_repos
+    repos =
+      case System.get_env("CHAIN_TYPE") do
+        "ethereum" -> base_repos ++ [Explorer.Repo.Beacon]
+        "optimism" -> base_repos ++ [Explorer.Repo.Optimism]
+        "polygon_edge" -> base_repos ++ [Explorer.Repo.PolygonEdge]
+        "polygon_zkevm" -> base_repos ++ [Explorer.Repo.PolygonZkevm]
+        "rsk" -> base_repos ++ [Explorer.Repo.RSK]
+        "shibarium" -> base_repos ++ [Explorer.Repo.Shibarium]
+        "suave" -> base_repos ++ [Explorer.Repo.Suave]
+        "filecoin" -> base_repos ++ [Explorer.Repo.Filecoin]
+        "stability" -> base_repos ++ [Explorer.Repo.Stability]
+        _ -> base_repos
+      end
+
+    if System.get_env("BRIDGED_TOKENS_ENABLED") do
+      repos ++ [Explorer.Repo.BridgedTokens]
+    else
+      repos
     end
   end
 
@@ -181,7 +193,7 @@ defmodule ConfigHelper do
   end
 
   @spec chain_type() :: String.t()
-  def chain_type, do: System.get_env("CHAIN_TYPE") || "ethereum"
+  def chain_type, do: System.get_env("CHAIN_TYPE") || "default"
 
   @spec eth_call_url(String.t() | nil) :: String.t() | nil
   def eth_call_url(default \\ nil) do

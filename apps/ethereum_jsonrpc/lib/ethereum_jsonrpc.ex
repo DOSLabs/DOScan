@@ -329,6 +329,16 @@ defmodule EthereumJSONRPC do
    * `{:error, reason}` - other JSONRPC error.
 
   """
+  @spec fetch_block_number_by_tag_op_version(tag(), json_rpc_named_arguments) ::
+          {:ok, non_neg_integer()} | {:error, reason :: :invalid_tag | :not_found | term()}
+  def fetch_block_number_by_tag_op_version(tag, json_rpc_named_arguments)
+      when tag in ~w(earliest latest pending safe) do
+    %{id: 0, tag: tag}
+    |> Block.ByTag.request()
+    |> json_rpc(json_rpc_named_arguments)
+    |> Block.ByTag.number_from_result()
+  end
+
   @spec fetch_block_number_by_tag(tag(), json_rpc_named_arguments) ::
           {:ok, non_neg_integer()} | {:error, reason :: :invalid_tag | :not_found | term()}
   def fetch_block_number_by_tag(tag, json_rpc_named_arguments) when tag in ~w(earliest latest pending safe) do
@@ -479,9 +489,13 @@ defmodule EthereumJSONRPC do
   @doc """
   Converts `t:non_neg_integer/0` to `t:quantity/0`
   """
-  @spec integer_to_quantity(non_neg_integer) :: quantity
+  @spec integer_to_quantity(non_neg_integer | binary) :: quantity
   def integer_to_quantity(integer) when is_integer(integer) and integer >= 0 do
     "0x" <> Integer.to_string(integer, 16)
+  end
+
+  def integer_to_quantity(integer) when is_binary(integer) do
+    integer
   end
 
   @doc """
