@@ -41,7 +41,7 @@ defmodule EthereumJSONRPC.Geth do
     end
   end
 
-  defp correct_timeouts(json_rpc_named_arguments) do
+  def correct_timeouts(json_rpc_named_arguments) do
     debug_trace_timeout = Application.get_env(:ethereum_jsonrpc, __MODULE__)[:debug_trace_timeout]
 
     case CommonHelper.parse_duration(debug_trace_timeout) do
@@ -93,8 +93,14 @@ defmodule EthereumJSONRPC.Geth do
     blocks_responses
     |> EthereumJSONRPC.sanitize_responses(id_to_params)
     |> Enum.reduce([], fn
-      %{result: _result}, acc -> acc
-      %{error: error}, acc -> [error | acc]
+      %{result: result}, acc ->
+        Enum.reduce(result, acc, fn
+          %{"result" => _calls_result}, inner_acc -> inner_acc
+          %{"error" => error}, inner_acc -> [error | inner_acc]
+        end)
+
+      %{error: error}, acc ->
+        [error | acc]
     end)
     |> case do
       [] -> :ok
@@ -102,7 +108,7 @@ defmodule EthereumJSONRPC.Geth do
     end
   end
 
-  defp to_transactions_params(blocks_responses, id_to_params) do
+  def to_transactions_params(blocks_responses, id_to_params) do
     blocks_responses
     |> Enum.reduce({[], 0}, fn %{id: id, result: tx_result}, {blocks_acc, counter} ->
       {transactions_params, _, new_counter} =
@@ -136,7 +142,7 @@ defmodule EthereumJSONRPC.Geth do
     PendingTransaction.fetch_pending_transactions_geth(json_rpc_named_arguments)
   end
 
-  defp debug_trace_transaction_requests(id_to_params) when is_map(id_to_params) do
+  def debug_trace_transaction_requests(id_to_params) when is_map(id_to_params) do
     Enum.map(id_to_params, fn {id, %{hash_data: hash_data}} ->
       debug_trace_transaction_request(%{id: id, hash_data: hash_data})
     end)
@@ -361,7 +367,7 @@ defmodule EthereumJSONRPC.Geth do
 
   defp parse_call_tracer_calls({%{"type" => upcase_type, "from" => from} = call, index}, acc, trace_address, inner?) do
     case String.downcase(upcase_type) do
-      type when type in ~w(call callcode delegatecall staticcall create create2 selfdestruct revert stop) ->
+      type when type in ~w(call callcode delegatecall staticcall create create2 selfdestruct revert stop invalid) ->
         new_trace_address = [index | trace_address]
 
         formatted_call =
