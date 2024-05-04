@@ -337,6 +337,7 @@
         "malihu",
         "mallowance",
         "maxlength",
+        "mbot",
         "mcap",
         "mconst",
         "mdef",
@@ -632,7 +633,10 @@
         "zksync",
         "filecoin",
         "Filecoin",
-        "permissionless"
+        "permissionless",
+        "feelin",
+        "KnxbUejwY",
+        "Btvk"
     ],
     "enableFiletypes": [
         "dotenv",

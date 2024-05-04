@@ -14,6 +14,8 @@
 
 ### 🐛 Bug Fixes
 
+- Set refetch_needed: false on block import ([#9953](https://github.com/blockscout/blockscout/issues/9953))
+- `GAS_PRICE_ORACLE_NUM_OF_BLOCKS` calculation ([#9943](https://github.com/blockscout/blockscout/issues/9943))
 - Handle "null" filter in api/v1/logs-csv ([#9933](https://github.com/blockscout/blockscout/issues/9933))
 - Fix metadata preload ([#9925](https://github.com/blockscout/blockscout/issues/9925))
 - `coin_price_change_percentage` calculation ([#9774](https://github.com/blockscout/blockscout/issues/9774))
