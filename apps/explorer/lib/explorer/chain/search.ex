@@ -16,6 +16,7 @@ defmodule Explorer.Chain.Search do
   import Explorer.Chain, only: [select_repo: 1]
   import Explorer.MicroserviceInterfaces.BENS, only: [ens_domain_name_lookup: 1]
   alias Explorer.{Chain, PagingOptions}
+  alias Explorer.Helper, as: ExplorerHelper
   alias Explorer.Tags.{AddressTag, AddressToTag}
 
   alias Explorer.Chain.{
@@ -374,11 +375,12 @@ defmodule Explorer.Chain.Search do
       {:ok, address_hash} ->
         address_search_fields =
           search_fields()
-          |> Map.put(:address_hash, dynamic([address, _], address.hash))
+          |> Map.put(:address_hash, dynamic([address, _, _], address.hash))
           |> Map.put(:type, "address")
-          |> Map.put(:name, dynamic([_, address_name], address_name.name))
-          |> Map.put(:inserted_at, dynamic([_, address_name], address_name.inserted_at))
-          |> Map.put(:verified, dynamic([address, _], address.verified))
+          |> Map.put(:name, dynamic([_, address_name, _], address_name.name))
+          |> Map.put(:inserted_at, dynamic([_, address_name, _], address_name.inserted_at))
+          |> Map.put(:verified, dynamic([address, _, _], address.verified))
+          |> Map.put(:certified, dynamic([_, _, smart_contract], smart_contract.certified))
 
         from(address in Address,
           left_join:
@@ -390,6 +392,8 @@ defmodule Explorer.Chain.Search do
               )
             ),
           on: address.hash == address_name.address_hash,
+          left_join: smart_contract in SmartContract,
+          on: address.hash == smart_contract.address_hash,
           where: address.hash == ^address_hash,
           select: ^address_search_fields
         )
@@ -488,8 +492,8 @@ defmodule Explorer.Chain.Search do
         )
 
       _ ->
-        case Integer.parse(term) do
-          {block_number, ""} ->
+        case ExplorerHelper.safe_parse_non_negative_integer(term) do
+          {:ok, block_number} ->
             from(block in Block,
               where: block.number == ^block_number,
               select: ^block_search_fields

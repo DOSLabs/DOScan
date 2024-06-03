@@ -1,5 +1,10 @@
 defmodule Explorer.Chain.Transaction.Schema do
-  @moduledoc false
+  @moduledoc """
+    Models transactions.
+
+    Changes in the schema should be reflected in the bulk import module:
+    - Explorer.Chain.Import.Runner.Transactions
+  """
 
   alias Explorer.Chain.{
     Address,
@@ -14,6 +19,9 @@ defmodule Explorer.Chain.Transaction.Schema do
     Wei
   }
 
+  alias Explorer.Chain.Arbitrum.BatchBlock, as: ArbitrumBatchBlock
+  alias Explorer.Chain.Arbitrum.BatchTransaction, as: ArbitrumBatchTransaction
+  alias Explorer.Chain.Arbitrum.Message, as: ArbitrumMessage
   alias Explorer.Chain.PolygonZkevm.BatchTransaction, as: ZkevmBatchTransaction
   alias Explorer.Chain.Transaction.{Fork, Status}
   alias Explorer.Chain.ZkSync.BatchTransaction, as: ZkSyncBatchTransaction
@@ -114,6 +122,44 @@ defmodule Explorer.Chain.Transaction.Schema do
                             2
                           )
 
+                        :arbitrum ->
+                          elem(
+                            quote do
+                              field(:gas_used_for_l1, :decimal)
+
+                              has_one(:arbitrum_batch_transaction, ArbitrumBatchTransaction,
+                                foreign_key: :tx_hash,
+                                references: :hash
+                              )
+
+                              has_one(:arbitrum_batch, through: [:arbitrum_batch_transaction, :batch])
+
+                              has_one(:arbitrum_commitment_transaction,
+                                through: [:arbitrum_batch, :commitment_transaction]
+                              )
+
+                              has_one(:arbitrum_batch_block, ArbitrumBatchBlock,
+                                foreign_key: :block_number,
+                                references: :block_number
+                              )
+
+                              has_one(:arbitrum_confirmation_transaction,
+                                through: [:arbitrum_batch_block, :confirmation_transaction]
+                              )
+
+                              has_one(:arbitrum_message_to_l2, ArbitrumMessage,
+                                foreign_key: :completion_transaction_hash,
+                                references: :hash
+                              )
+
+                              has_one(:arbitrum_message_from_l2, ArbitrumMessage,
+                                foreign_key: :originating_transaction_hash,
+                                references: :hash
+                              )
+                            end,
+                            2
+                          )
+
                         _ ->
                           []
                       end)
@@ -141,6 +187,7 @@ defmodule Explorer.Chain.Transaction.Schema do
         field(:status, Status)
         field(:v, :decimal)
         field(:value, Wei)
+        # TODO change to Data.t(), convert current hex-string values, prune all non-hex ones
         field(:revert_reason, :string)
         field(:max_priority_fee_per_gas, Wei)
         field(:max_fee_per_gas, Wei)
@@ -233,16 +280,27 @@ defmodule Explorer.Chain.Transaction do
 
   alias Explorer.SmartContract.SigProviderInterface
 
-  @optional_attrs ~w(max_priority_fee_per_gas max_fee_per_gas block_hash block_number block_consensus block_timestamp created_contract_address_hash cumulative_gas_used earliest_processing_start
-                     error gas_price gas_used index created_contract_code_indexed_at status
+  @optional_attrs ~w(max_priority_fee_per_gas max_fee_per_gas block_hash block_number
+                     block_consensus block_timestamp created_contract_address_hash
+                     cumulative_gas_used earliest_processing_start error gas_price
+                     gas_used index created_contract_code_indexed_at status
                      to_address_hash revert_reason type has_error_in_internal_txs r s v)a
 
-  @optimism_optional_attrs ~w(l1_fee l1_fee_scalar l1_gas_price l1_gas_used l1_tx_origin l1_block_number)a
-  @suave_optional_attrs ~w(execution_node_hash wrapped_type wrapped_nonce wrapped_to_address_hash wrapped_gas wrapped_gas_price wrapped_max_priority_fee_per_gas wrapped_max_fee_per_gas wrapped_value wrapped_input wrapped_v wrapped_r wrapped_s wrapped_hash)a
+  @chain_type_optional_attrs (case Application.compile_env(:explorer, :chain_type) do
+                                :optimism ->
+                                  ~w(l1_fee l1_fee_scalar l1_gas_price l1_gas_used l1_tx_origin l1_block_number)a
+
+                                :suave ->
+                                  ~w(execution_node_hash wrapped_type wrapped_nonce wrapped_to_address_hash wrapped_gas wrapped_gas_price wrapped_max_priority_fee_per_gas wrapped_max_fee_per_gas wrapped_value wrapped_input wrapped_v wrapped_r wrapped_s wrapped_hash)a
+
+                                :arbitrum ->
+                                  ~w(gas_used_for_l1)a
+
+                                _ ->
+                                  ~w()a
+                              end)
 
   @required_attrs ~w(from_address_hash gas hash input nonce value)a
-
-  @empty_attrs ~w()a
 
   @typedoc """
   X coordinate module n in
@@ -561,7 +619,7 @@ defmodule Explorer.Chain.Transaction do
     attrs_to_cast =
       @required_attrs ++
         @optional_attrs ++
-        custom_optional_attrs()
+        @chain_type_optional_attrs
 
     transaction
     |> cast(attrs, attrs_to_cast)
@@ -574,14 +632,6 @@ defmodule Explorer.Chain.Transaction do
     |> check_status()
     |> foreign_key_constraint(:block_hash)
     |> unique_constraint(:hash)
-  end
-
-  defp custom_optional_attrs do
-    case Application.get_env(:explorer, :chain_type) do
-      :suave -> @suave_optional_attrs
-      :optimism -> @optimism_optional_attrs
-      _ -> @empty_attrs
-    end
   end
 
   @spec block_timestamp(t()) :: DateTime.t()
@@ -604,34 +654,64 @@ defmodule Explorer.Chain.Transaction do
   end
 
   def decoded_revert_reason(transaction, revert_reason, options \\ []) do
-    hex =
-      case revert_reason do
-        "0x" <> hex_part ->
-          hex_part
+    case revert_reason do
+      nil ->
+        nil
 
-        hex ->
-          hex
-      end
+      "0x" <> hex_part ->
+        process_hex_revert_reason(hex_part, transaction, options)
 
-    process_hex_revert_reason(hex, transaction, options)
+      hex ->
+        process_hex_revert_reason(hex, transaction, options)
+    end
   end
 
+  @default_error_abi [
+    %{
+      "inputs" => [
+        %{
+          "name" => "reason",
+          "type" => "string"
+        }
+      ],
+      "name" => "Error",
+      "type" => "error"
+    },
+    %{
+      "inputs" => [
+        %{
+          "name" => "errorCode",
+          "type" => "uint256"
+        }
+      ],
+      "name" => "Panic",
+      "type" => "error"
+    }
+  ]
+
   defp process_hex_revert_reason(hex_revert_reason, %__MODULE__{to_address: smart_contract, hash: hash}, options) do
-    case Integer.parse(hex_revert_reason, 16) do
-      {number, ""} ->
-        binary_revert_reason = :binary.encode_unsigned(number)
+    case Base.decode16(hex_revert_reason, case: :mixed) do
+      {:ok, binary_revert_reason} ->
+        case find_and_decode(@default_error_abi, binary_revert_reason, hash) do
+          {:ok, {selector, values}} ->
+            {:ok, mapping} = selector_mapping(selector, values, hash)
+            identifier = Base.encode16(selector.method_id, case: :lower)
+            text = function_call(selector.function, mapping)
+            {:ok, identifier, text, mapping}
 
-        {result, _, _} =
-          decoded_input_data(
-            %Transaction{
-              to_address: smart_contract,
-              hash: hash,
-              input: %Data{bytes: binary_revert_reason}
-            },
-            options
-          )
+          _ ->
+            {result, _, _} =
+              decoded_input_data(
+                %Transaction{
+                  to_address: smart_contract,
+                  hash: hash,
+                  input: %Data{bytes: binary_revert_reason}
+                },
+                options
+              )
 
-        result
+            result
+        end
 
       _ ->
         hex_revert_reason
@@ -1748,5 +1828,23 @@ defmodule Explorer.Chain.Transaction do
         |> Wei.to(:wei)
         |> Decimal.min(max_fee_per_gas |> Wei.sub(base_fee_per_gas) |> Wei.to(:wei))
         |> Wei.from(:wei)
+  end
+
+  @doc """
+  Dynamically adds to/from for `transactions` query based on whether the target address EOA or smart-contract
+  todo: pay attention to [EIP-5003](https://eips.ethereum.org/EIPS/eip-5003): if it will be included, this logic should be rolled back.
+  """
+  @spec where_transactions_to_from(Hash.Address.t()) :: any()
+  def where_transactions_to_from(address_hash) do
+    with {:ok, address} <- Chain.hash_to_address(address_hash),
+         true <- Chain.contract?(address) do
+      dynamic([transaction], transaction.to_address_hash == ^address_hash)
+    else
+      _ ->
+        dynamic(
+          [transaction],
+          transaction.from_address_hash == ^address_hash or transaction.to_address_hash == ^address_hash
+        )
+    end
   end
 end
