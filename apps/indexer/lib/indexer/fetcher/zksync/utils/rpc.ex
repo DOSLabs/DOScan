@@ -4,7 +4,8 @@ defmodule Indexer.Fetcher.ZkSync.Utils.Rpc do
   """
 
   import EthereumJSONRPC, only: [json_rpc: 2, quantity_to_integer: 1]
-  import Indexer.Fetcher.ZkSync.Utils.Logging, only: [log_error: 1]
+
+  alias Indexer.Helper, as: IndexerHelper
 
   @zero_hash "0000000000000000000000000000000000000000000000000000000000000000"
   @zero_hash_binary <<0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0>>
@@ -50,28 +51,10 @@ defmodule Indexer.Fetcher.ZkSync.Utils.Rpc do
     end)
   end
 
-  defp from_ts_to_datetime(time_ts) do
-    {_, unix_epoch_starts} = DateTime.from_unix(0)
-
-    case is_nil(time_ts) or time_ts == 0 do
-      true ->
-        unix_epoch_starts
-
-      false ->
-        case DateTime.from_unix(time_ts) do
-          {:ok, datetime} ->
-            datetime
-
-          {:error, _} ->
-            unix_epoch_starts
-        end
-    end
-  end
-
   defp from_iso8601_to_datetime(time_string) do
     case is_nil(time_string) do
       true ->
-        from_ts_to_datetime(0)
+        IndexerHelper.timestamp_to_datetime(0)
 
       false ->
         case DateTime.from_iso8601(time_string) do
@@ -79,7 +62,7 @@ defmodule Indexer.Fetcher.ZkSync.Utils.Rpc do
             datetime
 
           {:error, _} ->
-            from_ts_to_datetime(0)
+            IndexerHelper.timestamp_to_datetime(0)
         end
     end
   end
@@ -138,7 +121,7 @@ defmodule Indexer.Fetcher.ZkSync.Utils.Rpc do
         key_atom,
         case transform_type do
           :iso8601_to_datetime -> from_iso8601_to_datetime(value_in_json_response)
-          :ts_to_datetime -> from_ts_to_datetime(value_in_json_response)
+          :ts_to_datetime -> IndexerHelper.timestamp_to_datetime(value_in_json_response)
           :str_to_txhash -> json_tx_id_to_hash(value_in_json_response)
           :str_to_byteshash -> string_hash_to_bytes_hash(value_in_json_response)
           _ -> value_in_json_response
@@ -200,7 +183,8 @@ defmodule Indexer.Fetcher.ZkSync.Utils.Rpc do
 
     error_message = &"Cannot call zks_getL1BatchDetails. Error: #{inspect(&1)}"
 
-    {:ok, resp} = repeated_call(&json_rpc/2, [req, json_rpc_named_arguments], error_message, @rpc_resend_attempts)
+    {:ok, resp} =
+      IndexerHelper.repeated_call(&json_rpc/2, [req, json_rpc_named_arguments], error_message, @rpc_resend_attempts)
 
     transform_batch_details_to_map(resp)
   end
@@ -219,11 +203,7 @@ defmodule Indexer.Fetcher.ZkSync.Utils.Rpc do
   @spec fetch_tx_by_hash(binary(), EthereumJSONRPC.json_rpc_named_arguments()) :: map()
   def fetch_tx_by_hash(raw_hash, json_rpc_named_arguments)
       when is_binary(raw_hash) and is_list(json_rpc_named_arguments) do
-    hash =
-      case raw_hash do
-        "0x" <> _ -> raw_hash
-        _ -> "0x" <> Base.encode16(raw_hash)
-      end
+    hash = prepare_tx_hash(raw_hash)
 
     req =
       EthereumJSONRPC.request(%{
@@ -234,7 +214,8 @@ defmodule Indexer.Fetcher.ZkSync.Utils.Rpc do
 
     error_message = &"Cannot call eth_getTransactionByHash for hash #{hash}. Error: #{inspect(&1)}"
 
-    {:ok, resp} = repeated_call(&json_rpc/2, [req, json_rpc_named_arguments], error_message, @rpc_resend_attempts)
+    {:ok, resp} =
+      IndexerHelper.repeated_call(&json_rpc/2, [req, json_rpc_named_arguments], error_message, @rpc_resend_attempts)
 
     resp
   end
@@ -253,11 +234,7 @@ defmodule Indexer.Fetcher.ZkSync.Utils.Rpc do
   @spec fetch_tx_receipt_by_hash(binary(), EthereumJSONRPC.json_rpc_named_arguments()) :: map()
   def fetch_tx_receipt_by_hash(raw_hash, json_rpc_named_arguments)
       when is_binary(raw_hash) and is_list(json_rpc_named_arguments) do
-    hash =
-      case raw_hash do
-        "0x" <> _ -> raw_hash
-        _ -> "0x" <> Base.encode16(raw_hash)
-      end
+    hash = prepare_tx_hash(raw_hash)
 
     req =
       EthereumJSONRPC.request(%{
@@ -268,7 +245,8 @@ defmodule Indexer.Fetcher.ZkSync.Utils.Rpc do
 
     error_message = &"Cannot call eth_getTransactionReceipt for hash #{hash}. Error: #{inspect(&1)}"
 
-    {:ok, resp} = repeated_call(&json_rpc/2, [req, json_rpc_named_arguments], error_message, @rpc_resend_attempts)
+    {:ok, resp} =
+      IndexerHelper.repeated_call(&json_rpc/2, [req, json_rpc_named_arguments], error_message, @rpc_resend_attempts)
 
     resp
   end
@@ -289,7 +267,8 @@ defmodule Indexer.Fetcher.ZkSync.Utils.Rpc do
 
     error_message = &"Cannot call zks_L1BatchNumber. Error: #{inspect(&1)}"
 
-    {:ok, resp} = repeated_call(&json_rpc/2, [req, json_rpc_named_arguments], error_message, @rpc_resend_attempts)
+    {:ok, resp} =
+      IndexerHelper.repeated_call(&json_rpc/2, [req, json_rpc_named_arguments], error_message, @rpc_resend_attempts)
 
     quantity_to_integer(resp)
   end
@@ -318,7 +297,12 @@ defmodule Indexer.Fetcher.ZkSync.Utils.Rpc do
     error_message = &"Cannot call eth_getBlockByNumber. Error: #{inspect(&1)}"
 
     {:ok, responses} =
-      repeated_call(&json_rpc/2, [requests_list, json_rpc_named_arguments], error_message, @rpc_resend_attempts)
+      IndexerHelper.repeated_call(
+        &json_rpc/2,
+        [requests_list, json_rpc_named_arguments],
+        error_message,
+        @rpc_resend_attempts
+      )
 
     responses
   end
@@ -347,7 +331,12 @@ defmodule Indexer.Fetcher.ZkSync.Utils.Rpc do
     error_message = &"Cannot call zks_getL1BatchDetails. Error: #{inspect(&1)}"
 
     {:ok, responses} =
-      repeated_call(&json_rpc/2, [requests_list, json_rpc_named_arguments], error_message, @rpc_resend_attempts)
+      IndexerHelper.repeated_call(
+        &json_rpc/2,
+        [requests_list, json_rpc_named_arguments],
+        error_message,
+        @rpc_resend_attempts
+      )
 
     responses
   end
@@ -377,27 +366,22 @@ defmodule Indexer.Fetcher.ZkSync.Utils.Rpc do
     error_message = &"Cannot call zks_getL1BatchBlockRange. Error: #{inspect(&1)}"
 
     {:ok, responses} =
-      repeated_call(&json_rpc/2, [requests_list, json_rpc_named_arguments], error_message, @rpc_resend_attempts)
+      IndexerHelper.repeated_call(
+        &json_rpc/2,
+        [requests_list, json_rpc_named_arguments],
+        error_message,
+        @rpc_resend_attempts
+      )
 
     responses
   end
 
-  defp repeated_call(func, args, error_message, retries_left) do
-    case apply(func, args) do
-      {:ok, _} = res ->
-        res
-
-      {:error, message} = err ->
-        retries_left = retries_left - 1
-
-        if retries_left <= 0 do
-          log_error(error_message.(message))
-          err
-        else
-          log_error("#{error_message.(message)} Retrying...")
-          :timer.sleep(3000)
-          repeated_call(func, args, error_message, retries_left)
-        end
+  # Converts a transaction hash represented as binary to a hexadecimal string
+  @spec prepare_tx_hash(binary()) :: binary()
+  defp prepare_tx_hash(raw_hash) do
+    case raw_hash do
+      "0x" <> <<_::binary-size(64)>> -> raw_hash
+      _ -> "0x" <> Base.encode16(raw_hash, case: :lower)
     end
   end
 end

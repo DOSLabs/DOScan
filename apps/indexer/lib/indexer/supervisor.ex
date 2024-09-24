@@ -18,6 +18,7 @@ defmodule Indexer.Supervisor do
 
   alias Indexer.Block.Catchup, as: BlockCatchup
   alias Indexer.Block.Realtime, as: BlockRealtime
+  alias Indexer.Fetcher.Blackfort.Validator, as: ValidatorBlackfort
   alias Indexer.Fetcher.CoinBalance.Catchup, as: CoinBalanceCatchup
   alias Indexer.Fetcher.CoinBalance.Realtime, as: CoinBalanceRealtime
   alias Indexer.Fetcher.Stability.Validator, as: ValidatorStability
@@ -189,6 +190,15 @@ defmodule Indexer.Supervisor do
         configure(ArbitrumRollupMessagesCatchup.Supervisor, [
           [json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]
         ]),
+        configure(Indexer.Fetcher.Celo.ValidatorGroupVotes.Supervisor, [
+          [json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]
+        ]),
+        configure(Indexer.Fetcher.Celo.EpochBlockOperations.Supervisor, [
+          [json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]
+        ]),
+        configure(Indexer.Fetcher.Filecoin.AddressInfo.Supervisor, [
+          [memory_monitor: memory_monitor]
+        ]),
         {Indexer.Fetcher.Beacon.Blob.Supervisor, [[memory_monitor: memory_monitor]]},
 
         # Out-of-band fetchers
@@ -276,12 +286,16 @@ defmodule Indexer.Supervisor do
       :stability ->
         [{ValidatorStability, []} | fetchers]
 
+      :blackfort ->
+        [{ValidatorBlackfort, []} | fetchers]
+
       _ ->
         fetchers
     end
   end
 
   defp configure(process, opts) do
+    # todo: shouldn't we pay attention to process.disabled?() predicate?
     if Application.get_env(:indexer, process)[:enabled] do
       [{process, opts}]
     else

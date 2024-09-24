@@ -8,15 +8,34 @@ defmodule Indexer.Application do
   alias Indexer.Fetcher.OnDemand.CoinBalance, as: CoinBalanceOnDemand
   alias Indexer.Fetcher.OnDemand.ContractCode, as: ContractCodeOnDemand
   alias Indexer.Fetcher.OnDemand.FirstTrace, as: FirstTraceOnDemand
+  alias Indexer.Fetcher.OnDemand.TokenInstanceMetadataRefetch, as: TokenInstanceMetadataRefetchOnDemand
   alias Indexer.Fetcher.OnDemand.TokenTotalSupply, as: TokenTotalSupplyOnDemand
 
   alias Indexer.Memory
-  alias Indexer.Prometheus.PendingBlockOperationsCollector
   alias Prometheus.Registry
+
+  @default_prometheus_collectors [
+    Indexer.Prometheus.Collector.PendingBlockOperations
+  ]
+
+  case Application.compile_env(:explorer, :chain_type) do
+    :filecoin ->
+      @chain_type_prometheus_collectors [
+        Indexer.Prometheus.Collector.FilecoinPendingAddressOperations
+      ]
+
+    _ ->
+      @chain_type_prometheus_collectors []
+  end
+
+  @prometheus_collectors @default_prometheus_collectors ++
+                           @chain_type_prometheus_collectors
 
   @impl Application
   def start(_type, _args) do
-    Registry.register_collector(PendingBlockOperationsCollector)
+    for collector <- @prometheus_collectors do
+      Registry.register_collector(collector)
+    end
 
     memory_monitor_options =
       case Application.get_env(:indexer, :memory_limit) do
@@ -43,13 +62,16 @@ defmodule Indexer.Application do
         ) +
         token_instance_fetcher_pool_size(Indexer.Fetcher.TokenInstance.LegacySanitize, nil) +
         token_instance_fetcher_pool_size(Indexer.Fetcher.TokenInstance.SanitizeERC1155, nil) +
-        token_instance_fetcher_pool_size(Indexer.Fetcher.TokenInstance.SanitizeERC721, nil)
+        token_instance_fetcher_pool_size(Indexer.Fetcher.TokenInstance.SanitizeERC721, nil) + 1
+
+    # + 1 (above in pool_size calculation) for the Indexer.Fetcher.OnDemand.TokenInstanceMetadataRefetch
 
     base_children = [
       :hackney_pool.child_spec(:token_instance_fetcher, max_connections: pool_size),
       {Memory.Monitor, [memory_monitor_options, [name: memory_monitor_name]]},
       {CoinBalanceOnDemand.Supervisor, [json_rpc_named_arguments]},
       {ContractCodeOnDemand.Supervisor, [json_rpc_named_arguments]},
+      {TokenInstanceMetadataRefetchOnDemand.Supervisor, [json_rpc_named_arguments]},
       {TokenTotalSupplyOnDemand.Supervisor, []},
       {FirstTraceOnDemand.Supervisor, [json_rpc_named_arguments]}
     ]

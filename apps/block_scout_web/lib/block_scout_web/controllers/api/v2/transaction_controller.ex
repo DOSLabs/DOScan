@@ -28,13 +28,21 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
   import Explorer.MicroserviceInterfaces.Metadata,
     only: [maybe_preload_metadata: 1, maybe_preload_metadata_to_transaction: 1]
 
+  import Ecto.Query,
+    only: [
+      preload: 2
+    ]
+
+  require Logger
+
   alias BlockScoutWeb.AccessHelper
   alias BlockScoutWeb.MicroserviceInterfaces.TransactionInterpretation, as: TransactionInterpretationService
   alias BlockScoutWeb.Models.TransactionStateHelper
-  alias Explorer.Chain
+  alias Explorer.{Chain, PagingOptions, Repo}
   alias Explorer.Chain.Arbitrum.Reader, as: ArbitrumReader
   alias Explorer.Chain.Beacon.Reader, as: BeaconReader
   alias Explorer.Chain.{Hash, InternalTransaction, Transaction}
+  alias Explorer.Chain.Optimism.TxnBatch, as: OptimismTxnBatch
   alias Explorer.Chain.PolygonZkevm.Reader, as: PolygonZkevmReader
   alias Explorer.Chain.ZkSync.Reader, as: ZkSyncReader
   alias Explorer.Counters.{FreshPendingTransactionsCounter, Transactions24hStats}
@@ -48,6 +56,11 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
         :beacon_blob_transaction => :optional
       }
 
+    :celo ->
+      @chain_type_transaction_necessity_by_association %{
+        :gas_token => :optional
+      }
+
     _ ->
       @chain_type_transaction_necessity_by_association %{}
   end
@@ -55,38 +68,36 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
   # TODO might be redundant to preload blob fields in some of the endpoints
   @transaction_necessity_by_association %{
                                           :block => :optional,
-                                          [created_contract_address: :names] => :optional,
-                                          [created_contract_address: :token] => :optional,
-                                          [created_contract_address: :smart_contract] => :optional,
-                                          [from_address: :names] => :optional,
-                                          [to_address: :names] => :optional,
-                                          [to_address: :smart_contract] => :optional
+                                          [
+                                            created_contract_address: [
+                                              :names,
+                                              :token,
+                                              :smart_contract,
+                                              :proxy_implementations
+                                            ]
+                                          ] => :optional,
+                                          [from_address: [:names, :smart_contract, :proxy_implementations]] =>
+                                            :optional,
+                                          [to_address: [:names, :smart_contract, :proxy_implementations]] => :optional
                                         }
                                         |> Map.merge(@chain_type_transaction_necessity_by_association)
 
   @token_transfers_necessity_by_association %{
-    [from_address: :smart_contract] => :optional,
-    [to_address: :smart_contract] => :optional,
-    [from_address: :names] => :optional,
-    [to_address: :names] => :optional
+    [from_address: [:names, :smart_contract, :proxy_implementations]] => :optional,
+    [to_address: [:names, :smart_contract, :proxy_implementations]] => :optional
   }
 
   @token_transfers_in_tx_necessity_by_association %{
-    [from_address: :smart_contract] => :optional,
-    [to_address: :smart_contract] => :optional,
-    [from_address: :names] => :optional,
-    [to_address: :names] => :optional,
+    [from_address: [:names, :smart_contract, :proxy_implementations]] => :optional,
+    [to_address: [:names, :smart_contract, :proxy_implementations]] => :optional,
     token: :required
   }
 
   @internal_transaction_necessity_by_association [
     necessity_by_association: %{
-      [created_contract_address: :names] => :optional,
-      [from_address: :names] => :optional,
-      [to_address: :names] => :optional,
-      [created_contract_address: :smart_contract] => :optional,
-      [from_address: :smart_contract] => :optional,
-      [to_address: :smart_contract] => :optional
+      [created_contract_address: [:names, :smart_contract, :proxy_implementations]] => :optional,
+      [from_address: [:names, :smart_contract, :proxy_implementations]] => :optional,
+      [to_address: [:names, :smart_contract, :proxy_implementations]] => :optional
     }
   ]
 
@@ -216,6 +227,46 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
     handle_batch_transactions(conn, params, &ArbitrumReader.batch_transactions/2)
   end
 
+  @doc """
+    Function to handle GET requests to `/api/v2/transactions/optimism-batch/:batch_number` endpoint.
+    It renders the list of L2 transactions bound to the specified batch.
+  """
+  @spec optimism_batch(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  def optimism_batch(conn, %{"batch_number" => batch_number_string} = params) do
+    {batch_number, ""} = Integer.parse(batch_number_string)
+
+    l2_block_number_from = OptimismTxnBatch.edge_l2_block_number(batch_number, :min)
+    l2_block_number_to = OptimismTxnBatch.edge_l2_block_number(batch_number, :max)
+
+    transactions_plus_one =
+      if is_nil(l2_block_number_from) or is_nil(l2_block_number_to) do
+        []
+      else
+        paging_options = paging_options(params)[:paging_options]
+
+        query =
+          case paging_options do
+            %PagingOptions{key: {0, 0}, is_index_in_asc_order: false} -> []
+            _ -> Transaction.fetch_transactions(paging_options, l2_block_number_from - 1, l2_block_number_to)
+          end
+
+        query
+        |> Chain.join_associations(@transaction_necessity_by_association)
+        |> preload([{:token_transfers, [:token, :from_address, :to_address]}])
+        |> Repo.replica().all()
+      end
+
+    {transactions, next_page} = split_list_by_page(transactions_plus_one)
+    next_page_params = next_page |> next_page_params(transactions, delete_parameters_from_next_page_params(params))
+
+    conn
+    |> put_status(200)
+    |> render(:transactions, %{
+      transactions: transactions |> maybe_preload_ens() |> maybe_preload_metadata(),
+      next_page_params: next_page_params
+    })
+  end
+
   # Processes and renders transactions for a specified batch into an HTTP response.
   #
   # This function retrieves a list of transactions for a given batch using a specified function,
@@ -289,27 +340,24 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
   """
   @spec raw_trace(Plug.Conn.t(), map()) :: Plug.Conn.t() | {atom(), any()}
   def raw_trace(conn, %{"transaction_hash_param" => transaction_hash_string} = params) do
-    with {:ok, transaction, transaction_hash} <- validate_transaction(transaction_hash_string, params) do
+    with {:ok, transaction, _transaction_hash} <- validate_transaction(transaction_hash_string, params) do
       if is_nil(transaction.block_number) do
         conn
         |> put_status(200)
         |> render(:raw_trace, %{internal_transactions: []})
       else
-        internal_transactions =
-          InternalTransaction.all_transaction_to_internal_transactions(transaction_hash, @api_true)
+        FirstTraceOnDemand.maybe_trigger_fetch(transaction, @api_true)
 
-        first_trace_exists =
-          Enum.find_index(internal_transactions, fn trace ->
-            trace.index == 0
-          end)
+        case Chain.fetch_transaction_raw_traces(transaction) do
+          {:ok, raw_traces} ->
+            conn
+            |> put_status(200)
+            |> render(:raw_trace, %{raw_traces: raw_traces})
 
-        if !first_trace_exists do
-          FirstTraceOnDemand.trigger_fetch(transaction)
+          {:error, error} ->
+            Logger.error("Raw trace fetching failed: #{inspect(error)}")
+            {500, "Error while raw trace fetching"}
         end
-
-        conn
-        |> put_status(200)
-        |> render(:raw_trace, %{internal_transactions: internal_transactions})
       end
     end
   end
@@ -387,9 +435,7 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
       full_options =
         [
           necessity_by_association: %{
-            [address: :names] => :optional,
-            [address: :smart_contract] => :optional,
-            address: :optional
+            [address: [:names, :smart_contract, :proxy_implementations]] => :optional
           }
         ]
         |> Keyword.merge(paging_options(params))
@@ -418,12 +464,7 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
   """
   @spec state_changes(Plug.Conn.t(), map()) :: Plug.Conn.t() | {atom(), any()}
   def state_changes(conn, %{"transaction_hash_param" => transaction_hash_string} = params) do
-    with {:ok, transaction, _transaction_hash} <-
-           validate_transaction(transaction_hash_string, params,
-             necessity_by_association:
-               Map.merge(@transaction_necessity_by_association, %{[block: [miner: :names]] => :optional}),
-             api?: true
-           ) do
+    with {:ok, transaction, _transaction_hash} <- validate_transaction(transaction_hash_string, params, api?: true) do
       state_changes_plus_next_page =
         transaction |> TransactionStateHelper.state_changes(params |> paging_options() |> Keyword.merge(api?: true))
 
@@ -470,7 +511,14 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
 
   def summary(conn, %{"transaction_hash_param" => transaction_hash_string, "just_request_body" => "true"} = params) do
     with {:tx_interpreter_enabled, true} <- {:tx_interpreter_enabled, TransactionInterpretationService.enabled?()},
-         {:ok, transaction, _transaction_hash} <- validate_transaction(transaction_hash_string, params) do
+         {:ok, transaction, _transaction_hash} <-
+           validate_transaction(transaction_hash_string, params,
+             necessity_by_association: %{
+               [from_address: [:names, :smart_contract, :proxy_implementations]] => :optional,
+               [to_address: [:names, :smart_contract, :proxy_implementations]] => :optional
+             },
+             api?: true
+           ) do
       conn
       |> json(TransactionInterpretationService.get_request_body(transaction))
     end
@@ -487,7 +535,14 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
           | Plug.Conn.t()
   def summary(conn, %{"transaction_hash_param" => transaction_hash_string} = params) do
     with {:tx_interpreter_enabled, true} <- {:tx_interpreter_enabled, TransactionInterpretationService.enabled?()},
-         {:ok, transaction, _transaction_hash} <- validate_transaction(transaction_hash_string, params) do
+         {:ok, transaction, _transaction_hash} <-
+           validate_transaction(transaction_hash_string, params,
+             necessity_by_association: %{
+               [from_address: [:names, :smart_contract, :proxy_implementations]] => :optional,
+               [to_address: [:names, :smart_contract, :proxy_implementations]] => :optional
+             },
+             api?: true
+           ) do
       {response, code} =
         case TransactionInterpretationService.interpret(transaction) do
           {:ok, response} -> {response, 200}

@@ -12,8 +12,13 @@ defmodule Indexer.Fetcher.Arbitrum.Utils.Rpc do
   @zero_hash "0000000000000000000000000000000000000000000000000000000000000000"
   @rpc_resend_attempts 20
 
+  @default_binary_search_threshold 1000
+
+  # outbox()
   @selector_outbox "ce11e6ab"
+  # sequencerInbox()
   @selector_sequencer_inbox "ee35f327"
+  # bridge()
   @selector_bridge "e78cea92"
   @rollup_contract_abi [
     %{
@@ -50,6 +55,42 @@ defmodule Indexer.Fetcher.Arbitrum.Utils.Rpc do
           "internalType" => "address",
           "name" => "",
           "type" => "address"
+        }
+      ],
+      "stateMutability" => "view",
+      "type" => "function"
+    }
+  ]
+
+  # getKeysetCreationBlock(bytes32 ksHash)
+  @selector_get_keyset_creation_block "258f0495"
+  @selector_sequencer_inbox_contract_abi [
+    %{
+      "inputs" => [%{"internalType" => "bytes32", "name" => "ksHash", "type" => "bytes32"}],
+      "name" => "getKeysetCreationBlock",
+      "outputs" => [%{"internalType" => "uint256", "name" => "", "type" => "uint256"}],
+      "stateMutability" => "view",
+      "type" => "function"
+    }
+  ]
+
+  # findBatchContainingBlock(uint64 blockNum)
+  @selector_find_batch_containing_block "81f1adaf"
+  @node_interface_contract_abi [
+    %{
+      "inputs" => [
+        %{
+          "internalType" => "uint64",
+          "name" => "blockNum",
+          "type" => "uint64"
+        }
+      ],
+      "name" => "findBatchContainingBlock",
+      "outputs" => [
+        %{
+          "internalType" => "uint64",
+          "name" => "batch",
+          "type" => "uint64"
         }
       ],
       "stateMutability" => "view",
@@ -114,6 +155,35 @@ defmodule Indexer.Fetcher.Arbitrum.Utils.Rpc do
     )
   end
 
+  @doc """
+    Retrieves the block number associated with a specific keyset from the Sequencer Inbox contract.
+
+    This function performs an `eth_call` to the Sequencer Inbox contract to get the block number
+    when a keyset was created.
+
+    ## Parameters
+    - `sequencer_inbox_address`: The address of the Sequencer Inbox contract.
+    - `keyset_hash`: The hash of the keyset for which the block number is to be retrieved.
+    - `json_rpc_named_arguments`: Configuration parameters for the JSON RPC connection.
+
+    ## Returns
+    - The block number.
+  """
+  @spec get_block_number_for_keyset(
+          EthereumJSONRPC.address(),
+          EthereumJSONRPC.hash(),
+          EthereumJSONRPC.json_rpc_named_arguments()
+        ) :: non_neg_integer()
+  def get_block_number_for_keyset(sequencer_inbox_address, keyset_hash, json_rpc_named_arguments) do
+    read_contract_and_handle_result_as_integer(
+      sequencer_inbox_address,
+      @selector_get_keyset_creation_block,
+      [keyset_hash],
+      @selector_sequencer_inbox_contract_abi,
+      json_rpc_named_arguments
+    )
+  end
+
   # Calls getter functions on a rollup contract and collects their return values.
   #
   # This function is designed to interact with a rollup contract and invoke specified getter methods.
@@ -138,6 +208,7 @@ defmodule Indexer.Fetcher.Arbitrum.Utils.Rpc do
       }
     end)
     |> IndexerHelper.read_contracts_with_retries(@rollup_contract_abi, json_rpc_named_arguments, @rpc_resend_attempts)
+    # Extracts the list of responses from the tuple returned by read_contracts_with_retries.
     |> Kernel.elem(0)
     |> Enum.zip(method_ids)
     |> Enum.reduce(%{}, fn {{:ok, [response]}, method_id}, retval ->
@@ -349,6 +420,337 @@ defmodule Indexer.Fetcher.Arbitrum.Utils.Rpc do
     else
       configured_number
     end
+  end
+
+  @doc """
+    Retrieves the safe and latest L1 block numbers.
+
+    This function fetches the latest block number from the chain and tries to determine
+    the safe block number. If the RPC node does not support the safe block feature or
+    if the safe block is too far behind the latest block, the safe block is determined
+    based on the finalization threshold. In both cases, it steps back from the latest
+    block to mark some blocks as unfinalized.
+
+    ## Parameters
+    - `json_rpc_named_arguments`: The named arguments for the JSON RPC call.
+    - `hard_limit`: The maximum number of blocks to step back when determining the safe block.
+
+    ## Returns
+    - A tuple containing the safe block number and the latest block number.
+  """
+  @spec get_safe_and_latest_l1_blocks(EthereumJSONRPC.json_rpc_named_arguments(), non_neg_integer()) ::
+          {EthereumJSONRPC.block_number(), EthereumJSONRPC.block_number()}
+  def get_safe_and_latest_l1_blocks(json_rpc_named_arguments, hard_limit) do
+    finalization_threshold = Application.get_all_env(:indexer)[Indexer.Fetcher.Arbitrum][:l1_finalization_threshold]
+
+    {safe_chain_block, is_latest?} = IndexerHelper.get_safe_block(json_rpc_named_arguments)
+
+    latest_chain_block =
+      case is_latest? do
+        true ->
+          safe_chain_block
+
+        false ->
+          {:ok, latest_block} =
+            IndexerHelper.get_block_number_by_tag("latest", json_rpc_named_arguments, get_resend_attempts())
+
+          latest_block
+      end
+
+    safe_block =
+      if safe_chain_block < latest_chain_block + 1 - finalization_threshold or is_latest? do
+        # The first condition handles the case when the safe block is too far behind
+        # the latest block (L3 case).
+        # The second condition handles the case when the L1 RPC node does not support
+        # the safe block feature (non standard Arbitrum deployments).
+        # In both cases, it is necessary to step back a bit from the latest block to
+        # suspect these blocks as unfinalized.
+        latest_chain_block + 1 - min(finalization_threshold, hard_limit)
+      else
+        safe_chain_block
+      end
+
+    {safe_block, latest_chain_block}
+  end
+
+  @doc """
+    Identifies the block range for a batch by using the block number located on one end of the range.
+
+    The function verifies suspicious block numbers by using the
+    `findBatchContainingBlock` method of the Node Interface contract in a binary
+    search.
+
+    The sign of the step determines the direction of the search:
+    - A positive step indicates the search is for the lowest block in the range.
+    - A negative step indicates the search is for the highest block in the range.
+
+    ## Parameters
+    - `initial_block`: The starting block number for the search.
+    - `initial_step`: The initial step size for the binary search.
+    - `required_batch_number`: The target batch for which the blocks range is
+      discovered.
+    - `rollup_config`: A map containing the `NodeInterface` contract address and
+      configuration parameters for the JSON RPC connection.
+
+    ## Returns
+    - A tuple `{start_block, end_block}` representing the range of blocks included
+      in the specified batch.
+  """
+  @spec get_block_range_for_batch(
+          EthereumJSONRPC.block_number(),
+          integer(),
+          non_neg_integer(),
+          %{
+            node_interface_address: EthereumJSONRPC.address(),
+            json_rpc_named_arguments: EthereumJSONRPC.json_rpc_named_arguments()
+          }
+        ) :: {non_neg_integer(), non_neg_integer()}
+  def get_block_range_for_batch(
+        initial_block,
+        initial_step,
+        required_batch_number,
+        rollup_config
+      ) do
+    opposite_block =
+      do_binary_search_of_opposite_block(
+        max(1, initial_block - initial_step),
+        initial_step,
+        required_batch_number,
+        rollup_config,
+        required_batch_number,
+        initial_block,
+        %{}
+      )
+
+    # the default direction for the block range exploration is chosen to be from the highest to lowest
+    # and the initial step is positive in this case
+    if initial_step > 0 do
+      {opposite_block, initial_block}
+    else
+      {initial_block, opposite_block}
+    end
+  end
+
+  # Performs a binary search to find the opposite block for a rollup blocks
+  # range included in a batch with the specified number. The function calls
+  # `findBatchContainingBlock` of the Node Interface contract to determine the
+  # batch number of the inspected block and, based on the call result and the
+  # previously inspected block, decides whether the opposite block is found or
+  # another iteration is required. In order to avoid redundant RPC calls, the
+  # function uses a cache to store the batch numbers.
+  #
+  # Assumptions:
+  # - The initial step is low enough to not jump more than one batch in a single
+  #   iteration.
+  # - The function can discover the opposite block in any direction depending on
+  #   the sign of the step. If the step is positive, the lookup happens for the
+  #   lowest block in the range. If the step is negative, the lookup is for the
+  #   highest block in the range.
+  #
+  # Parameters:
+  # - `inspected_block`: The block number currently being inspected.
+  # - `step`: The step size used for the binary search.
+  # - `required_batch_number`: The target batch for which blocks range is
+  #   discovered.
+  # - `rollup_config`: A map containing the `NodeInterface` contract address and
+  #    configuration parameters for the JSON RPC connection.
+  # - `prev_batch_number`: The number of the batch where the block was inspected
+  #   on the previous iteration.
+  # - `prev_inspected_block`: The block number that was previously inspected.
+  # - `cache`: A map that stores the batch numbers for rollup blocks to avoid
+  #   redundant RPC calls.
+  # - `iteration_threshold`: The maximum number of iterations allowed for the
+  #   binary search to avoid infinite loops.
+  #
+  # Returns:
+  # - The block number of the opposite block in the rollup or raises an error if
+  #   the iteration threshold is exceeded.
+  @spec do_binary_search_of_opposite_block(
+          non_neg_integer(),
+          integer(),
+          non_neg_integer(),
+          %{
+            node_interface_address: EthereumJSONRPC.address(),
+            json_rpc_named_arguments: EthereumJSONRPC.json_rpc_named_arguments()
+          },
+          non_neg_integer(),
+          non_neg_integer(),
+          %{non_neg_integer() => non_neg_integer()}
+        ) :: non_neg_integer()
+  @spec do_binary_search_of_opposite_block(
+          non_neg_integer(),
+          integer(),
+          non_neg_integer(),
+          %{
+            node_interface_address: EthereumJSONRPC.address(),
+            json_rpc_named_arguments: EthereumJSONRPC.json_rpc_named_arguments()
+          },
+          non_neg_integer(),
+          non_neg_integer(),
+          %{non_neg_integer() => non_neg_integer()},
+          non_neg_integer()
+        ) :: non_neg_integer()
+  defp do_binary_search_of_opposite_block(
+         inspected_block,
+         step,
+         required_batch_number,
+         %{node_interface_address: _, json_rpc_named_arguments: _} = rollup_config,
+         prev_batch_number,
+         prev_inspected_block,
+         cache,
+         iteration_threshold \\ @default_binary_search_threshold
+       ) do
+    if iteration_threshold == 0 do
+      raise "Binary search iteration threshold exceeded"
+    end
+
+    {new_batch_number, new_cache} =
+      get_batch_number_for_rollup_block(
+        rollup_config.node_interface_address,
+        inspected_block,
+        rollup_config.json_rpc_named_arguments,
+        cache
+      )
+
+    is_batch_repeated? = new_batch_number == prev_batch_number
+
+    is_min_step_required_batch? =
+      abs(prev_inspected_block - inspected_block) == 1 and new_batch_number == required_batch_number
+
+    new_step =
+      cond do
+        # The batch number is the same as the previous one, so there is no need to reduce step and
+        # the next iteration should continue in the same direction.
+        is_batch_repeated? ->
+          step
+
+        # For the next two cases the batch number differs from one found in the previous iteration,
+        # so it is necessary to cut the step in half and change the direction of the search if the
+        # the next iteration assumed to move away from the required batch number.
+        step > 0 ->
+          adjust_step(step, new_batch_number <= required_batch_number)
+
+        step < 0 ->
+          adjust_step(step, new_batch_number >= required_batch_number)
+      end
+
+    if is_min_step_required_batch? and not is_batch_repeated? do
+      # The current step is the smallest possible, the inspected block in the required batch but
+      # the batch number is different from one found in the previous iteration. This means that
+      # the previous block was in the neighboring batch and the current block is in the boundary
+      # of the required batch.
+
+      inspected_block
+    else
+      # Whether the required batch number is not reached yet, or there is uncertainty if the
+      # inspected block is in the boundary of the required batch: the current batch is the same
+      # as one found in the previous iteration or the step is not the smallest possible.
+
+      # it is OK to use the earliest block 0 as since the corresponding batch (0)
+      # will be returned by get_batch_number_for_rollup_block.
+      next_block_to_inspect = max(0, inspected_block - new_step)
+
+      do_binary_search_of_opposite_block(
+        next_block_to_inspect,
+        new_step,
+        required_batch_number,
+        rollup_config,
+        new_batch_number,
+        inspected_block,
+        new_cache,
+        iteration_threshold - 1
+      )
+    end
+  end
+
+  # Adjusts the step size for the binary search based on the current step size and
+  # the need to change the direction of the search.
+  @spec adjust_step(integer(), boolean()) :: integer()
+  defp adjust_step(step, change_direction?) do
+    case {abs(step), change_direction?} do
+      {1, true} -> -step
+      {1, false} -> step
+      {_, true} -> -div(step, 2)
+      {_, false} -> div(step, 2)
+    end
+  end
+
+  # Retrieves the batch number for a given rollup block by interacting with the
+  # Node Interface contract.
+  #
+  # This function calls the `findBatchContainingBlock` method of the Node Interface
+  # contract to find the batch containing the specified block number. In order to
+  # avoid redundant RPC calls, the function uses a cache to store the batch numbers.
+  #
+  # Parameters:
+  # - `node_interface_address`: The address of the node interface contract.
+  # - `block_number`: The rollup block number.
+  # - `json_rpc_named_arguments`: Configuration parameters for the JSON RPC
+  #   connection.
+  # - `cache`: A map that stores the batch numbers for rollup blocks to avoid
+  #   redundant RPC calls.
+  #
+  # Returns:
+  # `{batch_number, new_cache}`, where
+  # - `batch_number` - The number of a batch containing the specified rollup block.
+  # - `new_cache` - The updated cache with the new batch number.
+  @spec get_batch_number_for_rollup_block(
+          EthereumJSONRPC.address(),
+          EthereumJSONRPC.block_number(),
+          EthereumJSONRPC.json_rpc_named_arguments(),
+          %{non_neg_integer() => non_neg_integer()}
+        ) :: {non_neg_integer(), %{non_neg_integer() => non_neg_integer()}}
+  defp get_batch_number_for_rollup_block(node_interface_address, block_number, json_rpc_named_arguments, cache)
+
+  defp get_batch_number_for_rollup_block(_, block_number, _, cache) when is_map_key(cache, block_number) do
+    {Map.get(cache, block_number), cache}
+  end
+
+  defp get_batch_number_for_rollup_block(node_interface_address, block_number, json_rpc_named_arguments, cache) do
+    batch_number =
+      read_contract_and_handle_result_as_integer(
+        node_interface_address,
+        @selector_find_batch_containing_block,
+        [block_number],
+        @node_interface_contract_abi,
+        json_rpc_named_arguments
+      )
+
+    {batch_number, Map.put(cache, block_number, batch_number)}
+  end
+
+  # Calls one contract method and processes the result as an integer.
+  @spec read_contract_and_handle_result_as_integer(
+          EthereumJSONRPC.address(),
+          binary(),
+          [term()],
+          [map()],
+          EthereumJSONRPC.json_rpc_named_arguments()
+        ) :: non_neg_integer()
+  defp read_contract_and_handle_result_as_integer(
+         contract_address,
+         method_selector,
+         args,
+         abi,
+         json_rpc_named_arguments
+       ) do
+    [
+      %{
+        contract_address: contract_address,
+        method_id: method_selector,
+        args: args
+      }
+    ]
+    |> IndexerHelper.read_contracts_with_retries(abi, json_rpc_named_arguments, @rpc_resend_attempts)
+    # Extracts the list of responses from the tuple returned by read_contracts_with_retries.
+    |> Kernel.elem(0)
+    # Retrieves the first response from the list of responses. The responses are in a list
+    # because read_contracts_with_retries accepts a list of method calls.
+    |> List.first()
+    # Extracts the result from the {status, result} tuple which is composed in EthereumJSONRPC.Encoder.decode_result.
+    |> Kernel.elem(1)
+    # Extracts the first decoded value from the result, which is a list, even if it contains only one value.
+    |> List.first()
   end
 
   @doc """

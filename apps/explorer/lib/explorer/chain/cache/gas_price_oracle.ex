@@ -269,7 +269,7 @@ defmodule Explorer.Chain.Cache.GasPriceOracle do
 
   defp fiat_fee(fee, exchange_rate) do
     fee &&
-      exchange_rate.usd_value &&
+      exchange_rate.usd_value && simple_transaction_gas() &&
       fee
       |> Wei.to(:ether)
       |> Decimal.mult(exchange_rate.usd_value)
@@ -321,7 +321,7 @@ defmodule Explorer.Chain.Cache.GasPriceOracle do
     # If this gets called it means an async task was requested, but none exists
     # so a new one needs to be launched
     {:ok, task} =
-      Task.start(fn ->
+      Task.start_link(fn ->
         try do
           {result, acc} = get_average_gas_price(num_of_blocks(), safelow(), average(), fast())
 

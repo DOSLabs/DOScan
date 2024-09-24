@@ -5,7 +5,7 @@ defmodule BlockScoutWeb.API.V2.Helper do
 
   alias Ecto.Association.NotLoaded
   alias Explorer.Chain.Address
-  alias Explorer.Chain.SmartContract.Proxy.Models.Implementation
+  alias Explorer.Chain.SmartContract.Proxy
   alias Explorer.Chain.Transaction.History.TransactionStats
 
   import BlockScoutWeb.Account.AuthController, only: [current_user: 1]
@@ -52,35 +52,45 @@ defmodule BlockScoutWeb.API.V2.Helper do
   @doc """
   Gets address with the additional info for api v2
   """
-  @spec address_with_info(any(), any()) :: nil | %{optional(<<_::32, _::_*8>>) => any()}
+  @spec address_with_info(any(), any()) :: nil | %{optional(String.t()) => any()}
+  def address_with_info(
+        %Address{proxy_implementations: %NotLoaded{}, contract_code: contract_code} = _address,
+        _address_hash
+      )
+      when not is_nil(contract_code) do
+    raise "proxy_implementations is not loaded for address"
+  end
+
   def address_with_info(%Address{} = address, _address_hash) do
     smart_contract? = Address.smart_contract?(address)
-    implementation_names = if smart_contract?, do: Implementation.names(address), else: []
 
-    formatted_implementation_names =
-      implementation_names
-      |> Enum.map(fn name ->
-        %{"name" => name}
-      end)
+    {proxy_implementations, implementation_address_hashes, implementation_names, proxy_type} =
+      case address.proxy_implementations do
+        %NotLoaded{} ->
+          {nil, [], [], nil}
 
-    implementation_name =
-      if Enum.empty?(implementation_names) do
-        nil
-      else
-        implementation_names |> Enum.at(0)
+        nil ->
+          {nil, [], [], nil}
+
+        proxy_implementations ->
+          address_hashes = proxy_implementations.address_hashes
+          names = proxy_implementations.names
+          proxy_type = proxy_implementations.proxy_type
+
+          {proxy_implementations, address_hashes, names, proxy_type}
       end
 
     %{
       "hash" => Address.checksum(address),
       "is_contract" => smart_contract?,
       "name" => address_name(address),
-      # todo: added for backward compatibility, remove when frontend unbound from these props
-      "implementation_name" => implementation_name,
-      "implementations" => formatted_implementation_names,
-      "is_verified" => verified?(address),
+      "proxy_type" => proxy_type,
+      "implementations" => Proxy.proxy_object_info(implementation_address_hashes, implementation_names),
+      "is_verified" => verified?(address) || verified_minimal_proxy?(proxy_implementations),
       "ens_domain_name" => address.ens_domain_name,
       "metadata" => address.metadata
     }
+    |> address_chain_type_fields(address)
   end
 
   def address_with_info(%NotLoaded{}, address_hash) do
@@ -103,13 +113,36 @@ defmodule BlockScoutWeb.API.V2.Helper do
       "hash" => Address.checksum(address_hash),
       "is_contract" => false,
       "name" => nil,
-      # todo: added for backward compatibility, remove when frontend unbound from these props
-      "implementation_name" => nil,
+      "proxy_type" => nil,
       "implementations" => [],
       "is_verified" => nil,
       "ens_domain_name" => nil,
       "metadata" => nil
     }
+  end
+
+  case Application.compile_env(:explorer, :chain_type) do
+    :filecoin ->
+      defp address_chain_type_fields(result, address) do
+        # credo:disable-for-next-line Credo.Check.Design.AliasUsage
+        BlockScoutWeb.API.V2.FilecoinView.extend_address_json_response(result, address)
+      end
+
+    _ ->
+      defp address_chain_type_fields(result, _address) do
+        result
+      end
+  end
+
+  defp minimal_proxy_pattern?(proxy_implementations) do
+    proxy_implementations.proxy_type == :eip1167
+  end
+
+  defp verified_minimal_proxy?(nil), do: false
+
+  defp verified_minimal_proxy?(proxy_implementations) do
+    (minimal_proxy_pattern?(proxy_implementations) &&
+       Enum.any?(proxy_implementations.names, fn name -> !is_nil(name) end)) || false
   end
 
   def address_name(%Address{names: [_ | _] = address_names}) do

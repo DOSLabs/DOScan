@@ -3,7 +3,7 @@ defmodule BlockScoutWeb.TransactionTokenTransferControllerTest do
 
   import Mox
 
-  import BlockScoutWeb.WebRouter.Helpers, only: [transaction_token_transfer_path: 3]
+  import BlockScoutWeb.Routers.WebRouter.Helpers, only: [transaction_token_transfer_path: 3]
 
   alias Explorer.ExchangeRates.Token
   alias Explorer.TestHelper
@@ -53,9 +53,17 @@ defmodule BlockScoutWeb.TransactionTokenTransferControllerTest do
     test "includes token transfers for the transaction", %{conn: conn} do
       transaction = insert(:transaction) |> with_block()
 
-      insert(:token_transfer, transaction: transaction, block: transaction.block, block_number: transaction.block_number)
+      insert(:token_transfer,
+        transaction: transaction,
+        block: transaction.block,
+        block_number: transaction.block_number
+      )
 
-      insert(:token_transfer, transaction: transaction, block: transaction.block, block_number: transaction.block_number)
+      insert(:token_transfer,
+        transaction: transaction,
+        block: transaction.block,
+        block_number: transaction.block_number
+      )
 
       path = transaction_token_transfer_path(BlockScoutWeb.Endpoint, :index, transaction.hash)
 
@@ -151,8 +159,6 @@ defmodule BlockScoutWeb.TransactionTokenTransferControllerTest do
     end
 
     test "preloads to_address smart contract verified", %{conn: conn} do
-      TestHelper.get_eip1967_implementation_zero_addresses()
-
       transaction = insert(:transaction_to_verified_contract)
 
       conn = get(conn, transaction_token_transfer_path(BlockScoutWeb.Endpoint, :index, transaction.hash))

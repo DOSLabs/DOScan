@@ -386,6 +386,16 @@ defmodule EthereumJSONRPC do
     Keyword.fetch!(json_rpc_named_arguments, :variant).fetch_pending_transactions(json_rpc_named_arguments)
   end
 
+  @doc """
+  Retrieves raw traces from Ethereum JSON RPC variant API.
+  """
+  def fetch_transaction_raw_traces(transaction_params, json_rpc_named_arguments) do
+    Keyword.fetch!(json_rpc_named_arguments, :variant).fetch_transaction_raw_traces(
+      transaction_params,
+      json_rpc_named_arguments
+    )
+  end
+
   @spec fetch_transaction_receipts(
           [
             %{required(:gas) => non_neg_integer(), required(:hash) => hash, optional(atom) => any}
@@ -487,6 +497,24 @@ defmodule EthereumJSONRPC do
   def quantity_to_integer(_), do: nil
 
   @doc """
+  Sanitizes ID in JSON RPC request following JSON RPC [spec](https://www.jsonrpc.org/specification#request_object:~:text=An%20identifier%20established%20by%20the%20Client%20that%20MUST%20contain%20a%20String%2C%20Number%2C%20or%20NULL%20value%20if%20included.%20If%20it%20is%20not%20included%20it%20is%20assumed%20to%20be%20a%20notification.%20The%20value%20SHOULD%20normally%20not%20be%20Null%20%5B1%5D%20and%20Numbers%20SHOULD%20NOT%20contain%20fractional%20parts%20%5B2%5D).
+  """
+  @spec sanitize_id(quantity) :: non_neg_integer() | String.t() | nil
+
+  def sanitize_id(integer) when is_integer(integer), do: integer
+
+  def sanitize_id(string) when is_binary(string) do
+    # match ID string and ID string without non-ASCII characters
+    if string == for(<<c <- string>>, c < 128, into: "", do: <<c>>) do
+      string
+    else
+      nil
+    end
+  end
+
+  def sanitize_id(_), do: nil
+
+  @doc """
   Converts `t:non_neg_integer/0` to `t:quantity/0`
   """
   @spec integer_to_quantity(non_neg_integer | binary) :: quantity
@@ -579,4 +607,44 @@ defmodule EthereumJSONRPC do
 
   defp chunk_requests(requests, nil), do: requests
   defp chunk_requests(requests, chunk_size), do: Enum.chunk_every(requests, chunk_size)
+
+  def put_if_present(result, transaction, keys) do
+    Enum.reduce(keys, result, fn key, acc ->
+      key_list = key |> Tuple.to_list()
+      from_key = Enum.at(key_list, 0)
+      to_key = Enum.at(key_list, 1)
+      opts = if Enum.count(key_list) > 2, do: Enum.at(key_list, 2), else: %{}
+
+      value = transaction[from_key]
+
+      validate_key(acc, to_key, value, opts)
+    end)
+  end
+
+  defp validate_key(acc, _to_key, nil, _opts), do: acc
+
+  defp validate_key(acc, to_key, value, %{:validation => validation}) do
+    case validation do
+      :address_hash ->
+        if address_correct?(value), do: Map.put(acc, to_key, value), else: acc
+
+      _ ->
+        Map.put(acc, to_key, value)
+    end
+  end
+
+  defp validate_key(acc, to_key, value, _validation) do
+    Map.put(acc, to_key, value)
+  end
+
+  # todo: The similar function exists in Indexer application:
+  # Here is the room for future refactoring to keep a single function.
+  @spec address_correct?(binary()) :: boolean()
+  defp address_correct?(address) when is_binary(address) do
+    String.match?(address, ~r/^0x[[:xdigit:]]{40}$/i)
+  end
+
+  defp address_correct?(_address) do
+    false
+  end
 end

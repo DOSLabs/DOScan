@@ -30,7 +30,9 @@ defmodule Explorer.Chain.Mud do
 
   @schema_prefix "mud"
 
-  @store_tables_table_id Base.decode16!("746273746f72650000000000000000005461626c657300000000000000000000", case: :lower)
+  @store_tables_table_id Base.decode16!("746273746f72650000000000000000005461626c657300000000000000000000",
+                           case: :lower
+                         )
 
   # https://github.com/latticexyz/mud/blob/cc4f4246e52982354e398113c46442910f9b04bb/packages/store/src/codegen/tables/Tables.sol#L34-L42
   @store_tables_table_schema %Schema{
@@ -67,8 +69,9 @@ defmodule Explorer.Chain.Mud do
     paging_options = Keyword.get(options, :paging_options, Chain.default_paging_options())
 
     Mud
-    |> select([r], r.address)
     |> distinct(true)
+    |> select([r], r.address)
+    |> where([r], r.table_id == ^@store_tables_table_id)
     |> page_worlds(paging_options)
     |> limit(^paging_options.page_size)
     |> Repo.Mud.all()
@@ -152,6 +155,8 @@ defmodule Explorer.Chain.Mud do
 
   defp filter_tables_by_namespace(query, nil), do: query
 
+  defp filter_tables_by_namespace(query, :error), do: query |> where([tb], false)
+
   defp filter_tables_by_namespace(query, namespace) do
     query |> where([tb], fragment("substring(? FROM 3 FOR 14)", tb.key0) == ^namespace)
   end
@@ -217,6 +222,8 @@ defmodule Explorer.Chain.Mud do
   end
 
   defp filter_records(query, _key_name, nil), do: query
+
+  defp filter_records(query, _key_name, :error), do: query |> where([r], false)
 
   defp filter_records(query, :key0, key), do: query |> where([r], r.key0 == ^key)
 
@@ -323,7 +330,8 @@ defmodule Explorer.Chain.Mud do
       |> Enum.zip(static_types)
       |> Enum.reduce({%{}, (static_data && static_data.bytes) || <<>>}, fn {field, type}, {acc, data} ->
         type_size = static_type_size(type)
-        <<enc::binary-size(type_size), rest::binary>> = data
+        {enc, rest} = split_binary(data, type_size)
+
         decoded = decode_type(type, enc)
         {Map.put(acc, field, decoded), rest}
       end)
@@ -342,7 +350,7 @@ defmodule Explorer.Chain.Mud do
       [dynamic_fields, dynamic_types, dynamic_type_lengths]
       |> Enum.zip()
       |> Enum.reduce({res, (dynamic_data && dynamic_data.bytes) || <<>>}, fn {field, type, length}, {acc, data} ->
-        <<enc::binary-size(length), rest::binary>> = data
+        {enc, rest} = split_binary(data, length)
         decoded = decode_type(type, enc)
 
         {Map.put(acc, field, decoded), rest}
@@ -357,6 +365,12 @@ defmodule Explorer.Chain.Mud do
       97 -> 20
       _ -> 0
     end
+  end
+
+  defp split_binary(binary, size) do
+    if byte_size(binary) >= size,
+      do: :erlang.split_binary(binary, size),
+      else: {<<0::size(size * 8)>>, <<>>}
   end
 
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity

@@ -23,7 +23,7 @@ defmodule BlockScoutWeb.Mixfile do
         dialyzer: :test
       ],
       start_permanent: Mix.env() == :prod,
-      version: "6.6.0",
+      version: "6.8.1",
       xref: [
         exclude: [
           Explorer.Chain.PolygonZkevm.Reader,
@@ -89,7 +89,7 @@ defmodule BlockScoutWeb.Mixfile do
       {:cors_plug, "~> 3.0"},
       {:credo, "~> 1.5", only: :test, runtime: false},
       # For Absinthe to load data in batches
-      {:dataloader, "~> 1.0.0"},
+      {:dataloader, "~> 2.0.0"},
       {:dialyxir, "~> 1.1", only: [:dev, :test], runtime: false},
       # Need until https://github.com/absinthe-graphql/absinthe_relay/pull/125 is released, then can be removed
       # The current `absinthe_relay` is compatible though as shown from that PR
@@ -97,6 +97,7 @@ defmodule BlockScoutWeb.Mixfile do
       {:ex_cldr, "~> 2.38"},
       {:ex_cldr_numbers, "~> 2.33"},
       {:ex_cldr_units, "~> 3.17"},
+      {:ex_keccak, "~> 0.7.5"},
       {:cldr_utils, "~> 2.3"},
       {:ex_machina, "~> 2.1", only: [:test]},
       {:explorer, in_umbrella: true},
@@ -105,7 +106,7 @@ defmodule BlockScoutWeb.Mixfile do
       # HTML CSS selectors for Phoenix controller tests
       {:floki, "~> 0.31"},
       {:flow, "~> 1.2"},
-      {:gettext, "~> 0.24.0"},
+      {:gettext, "~> 0.26.1"},
       {:hammer, "~> 6.0"},
       {:httpoison, "~> 2.0"},
       {:indexer, in_umbrella: true, runtime: false},
@@ -135,8 +136,11 @@ defmodule BlockScoutWeb.Mixfile do
       {:prometheus_phoenix, "~> 1.2"},
       # Expose metrics from URL Prometheus server can scrape
       {:prometheus_plugs, "~> 1.1"},
-      # OS process metrics for Prometheus
-      {:prometheus_process_collector, "~> 1.3"},
+      # OS process metrics for Prometheus, custom ref to include https://github.com/deadtrickster/prometheus_process_collector/pull/30
+      {:prometheus_process_collector,
+       git: "https://github.com/Phybbit/prometheus_process_collector.git",
+       ref: "3dc94dcff422d7b9cbd7ddf6bf2a896446705f3f",
+       override: true},
       {:remote_ip, "~> 1.0"},
       {:qrcode, "~> 0.1.0"},
       {:sobelow, ">= 0.7.0", only: [:dev, :test], runtime: false},
@@ -149,7 +153,6 @@ defmodule BlockScoutWeb.Mixfile do
       {:timex, "~> 3.7.1"},
       {:wallaby, "~> 0.30", only: :test, runtime: false},
       # `:cowboy` `~> 2.0` and Phoenix 1.4 compatibility
-      {:websocket_client, git: "https://github.com/blockscout/websocket_client.git", branch: "master", override: true},
       {:ex_json_schema, "~> 0.10.1"},
       {:ueberauth, "~> 0.7"},
       {:ueberauth_auth0, "~> 2.0"},

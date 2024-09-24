@@ -151,8 +151,7 @@ defmodule BlockScoutWeb.Account.Api.V2.UserControllerTest do
              "name" => name,
              "address" => %{
                "hash" => Address.checksum(addr),
-               # todo: added for backward compatibility, remove when frontend unbound from these props
-               "implementation_name" => nil,
+               "proxy_type" => nil,
                "implementations" => [],
                "is_contract" => false,
                "is_verified" => false,
@@ -166,7 +165,7 @@ defmodule BlockScoutWeb.Account.Api.V2.UserControllerTest do
            }}
         end)
 
-      assert Enum.all?(created, fn {addr, map_tag, _} ->
+      assert Enum.all?(created, fn {addr, map_tag, map} ->
                response =
                  conn
                  |> get("/api/account/v2/tags/address/#{addr}")
@@ -182,7 +181,11 @@ defmodule BlockScoutWeb.Account.Api.V2.UserControllerTest do
         |> json_response(200)
         |> Map.get("items")
 
-      assert Enum.all?(created, fn {_, _, map} -> map in response end)
+      assert Enum.all?(created, fn {_, _, map} ->
+               Enum.any?(response, fn item ->
+                 addresses_json_match?(map, item)
+               end)
+             end)
     end
 
     test "delete address tag", %{conn: conn} do
@@ -207,8 +210,7 @@ defmodule BlockScoutWeb.Account.Api.V2.UserControllerTest do
              "name" => name,
              "address" => %{
                "hash" => Address.checksum(addr),
-               # todo: added for backward compatibility, remove when frontend unbound from these props
-               "implementation_name" => nil,
+               "proxy_type" => nil,
                "implementations" => [],
                "is_contract" => false,
                "is_verified" => false,
@@ -222,7 +224,7 @@ defmodule BlockScoutWeb.Account.Api.V2.UserControllerTest do
            }}
         end)
 
-      assert Enum.all?(created, fn {addr, map_tag, _} ->
+      assert Enum.all?(created, fn {addr, map_tag, map} ->
                response =
                  conn
                  |> get("/api/account/v2/tags/address/#{addr}")
@@ -237,7 +239,11 @@ defmodule BlockScoutWeb.Account.Api.V2.UserControllerTest do
         |> json_response(200)
         |> Map.get("items")
 
-      assert Enum.all?(created, fn {_, _, map} -> map in response end)
+      assert Enum.all?(created, fn {_, _, map} ->
+               Enum.any?(response, fn item ->
+                 addresses_json_match?(map, item)
+               end)
+             end)
 
       {_, _, %{"id" => id}} = Enum.at(created, 0)
 
@@ -1263,5 +1269,15 @@ defmodule BlockScoutWeb.Account.Api.V2.UserControllerTest do
     assert Enum.count(second_page_resp["items"]) == 1
     assert second_page_resp["next_page_params"] == nil
     compare_item(Enum.at(list, 0), Enum.at(second_page_resp["items"], 0))
+  end
+
+  defp addresses_json_match?(expected, actual) do
+    Enum.all?(expected, fn {key, value} ->
+      case value do
+        # Recursively compare nested maps
+        %{} -> addresses_json_match?(value, actual[key])
+        _ -> actual[key] == value
+      end
+    end)
   end
 end

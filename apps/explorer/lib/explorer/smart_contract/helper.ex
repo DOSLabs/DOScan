@@ -4,8 +4,13 @@ defmodule Explorer.SmartContract.Helper do
   """
 
   alias Explorer.{Chain, Helper}
-  alias Explorer.Chain.{Hash, SmartContract}
+  alias Explorer.Chain.{Address, Hash, SmartContract}
+  alias Explorer.Chain.SmartContract.Proxy
+  alias Explorer.Chain.SmartContract.Proxy.Models.Implementation
+  alias Explorer.SmartContract.Writer
   alias Phoenix.HTML
+
+  @api_true [api?: true]
 
   def queriable_method?(method) do
     method["constant"] || method["stateMutability"] == "view" || method["stateMutability"] == "pure"
@@ -25,7 +30,7 @@ defmodule Explorer.SmartContract.Helper do
   def read_with_wallet_method?(function),
     do:
       !error?(function) && !event?(function) && !constructor?(function) &&
-        !empty_outputs?(function)
+        !empty_outputs?(function) && !Writer.write_function?(function)
 
   def empty_outputs?(function), do: is_nil(function["outputs"]) || function["outputs"] == []
 
@@ -43,10 +48,7 @@ defmodule Explorer.SmartContract.Helper do
   def add_contract_code_md5(%{address_hash: address_hash_string} = attrs) when is_binary(address_hash_string) do
     with {:ok, address_hash} <- Chain.string_to_address_hash(address_hash_string),
          {:ok, address} <- Chain.hash_to_address(address_hash) do
-      contract_code_md5 = contract_code_md5(address.contract_code.bytes)
-
-      attrs
-      |> Map.put_new(:contract_code_md5, contract_code_md5)
+      attrs_extend_with_contract_code_md5(attrs, address)
     else
       _ -> attrs
     end
@@ -55,14 +57,7 @@ defmodule Explorer.SmartContract.Helper do
   def add_contract_code_md5(%{address_hash: address_hash} = attrs) do
     case Chain.hash_to_address(address_hash) do
       {:ok, address} ->
-        if address.contract_code do
-          contract_code_md5 = contract_code_md5(address.contract_code.bytes)
-
-          attrs
-          |> Map.put_new(:contract_code_md5, contract_code_md5)
-        else
-          attrs
-        end
+        attrs_extend_with_contract_code_md5(attrs, address)
 
       _ ->
         attrs
@@ -75,6 +70,17 @@ defmodule Explorer.SmartContract.Helper do
     :md5
     |> :crypto.hash(bytes)
     |> Base.encode16(case: :lower)
+  end
+
+  defp attrs_extend_with_contract_code_md5(attrs, address) do
+    if address.contract_code do
+      contract_code_md5 = contract_code_md5(address.contract_code.bytes)
+
+      attrs
+      |> Map.put_new(:contract_code_md5, contract_code_md5)
+    else
+      attrs
+    end
   end
 
   def sanitize_input(nil), do: nil
@@ -109,9 +115,14 @@ defmodule Explorer.SmartContract.Helper do
   def prepare_bytecode_for_microservice(body, creation_input, deployed_bytecode)
 
   def prepare_bytecode_for_microservice(body, empty, deployed_bytecode) when is_nil(empty) do
-    body
-    |> Map.put("bytecodeType", "DEPLOYED_BYTECODE")
-    |> Map.put("bytecode", deployed_bytecode)
+    if Application.get_env(:explorer, :chain_type) == :zksync do
+      body
+      |> Map.put("code", deployed_bytecode)
+    else
+      body
+      |> Map.put("bytecodeType", "DEPLOYED_BYTECODE")
+      |> Map.put("bytecode", deployed_bytecode)
+    end
   end
 
   def prepare_bytecode_for_microservice(body, creation_bytecode, _deployed_bytecode) do
@@ -167,15 +178,19 @@ defmodule Explorer.SmartContract.Helper do
       "chainId" => Application.get_env(:block_scout_web, :chain_id)
     }
 
-    case SmartContract.creation_tx_with_bytecode(address_hash) do
-      %{init: init, tx: tx} ->
-        {init, deployed_bytecode, tx |> tx_to_metadata(init) |> Map.merge(metadata)}
+    if Application.get_env(:explorer, :chain_type) == :zksync do
+      {nil, deployed_bytecode, metadata}
+    else
+      case SmartContract.creation_tx_with_bytecode(address_hash) do
+        %{init: init, tx: tx} ->
+          {init, deployed_bytecode, tx |> tx_to_metadata(init) |> Map.merge(metadata)}
 
-      %{init: init, internal_tx: internal_tx} ->
-        {init, deployed_bytecode, internal_tx |> internal_tx_to_metadata(init) |> Map.merge(metadata)}
+        %{init: init, internal_tx: internal_tx} ->
+          {init, deployed_bytecode, internal_tx |> internal_tx_to_metadata(init) |> Map.merge(metadata)}
 
-      _ ->
-        {nil, deployed_bytecode, metadata}
+        _ ->
+          {nil, deployed_bytecode, metadata}
+      end
     end
   end
 
@@ -208,4 +223,46 @@ defmodule Explorer.SmartContract.Helper do
 
   def prepare_license_type(binary) when is_binary(binary), do: Helper.parse_integer(binary) || binary
   def prepare_license_type(_), do: nil
+
+  @doc """
+  Pre-fetches implementation for unverified smart contract or verified proxy smart-contract
+  """
+  @spec pre_fetch_implementations(Address.t()) :: {any(), atom() | nil}
+  def pre_fetch_implementations(address) do
+    {implementation_address_hashes, implementation_names, proxy_type} =
+      with {:verified_smart_contract, %SmartContract{}} <- {:verified_smart_contract, address.smart_contract},
+           {:proxy?, true} <- {:proxy?, address_is_proxy?(address, @api_true)} do
+        Implementation.get_implementation(address.smart_contract, @api_true)
+      else
+        {:verified_smart_contract, _} ->
+          if Address.smart_contract?(address) do
+            smart_contract = %SmartContract{
+              address_hash: address.hash
+            }
+
+            Implementation.get_implementation(smart_contract, @api_true)
+          else
+            {[], [], nil}
+          end
+
+        {:proxy?, false} ->
+          {[], [], nil}
+      end
+
+    implementations = Proxy.proxy_object_info(implementation_address_hashes, implementation_names)
+
+    {implementations, proxy_type}
+  end
+
+  @doc """
+  Checks if given address is proxy smart contract
+  """
+  @spec address_is_proxy?(Address.t(), list()) :: boolean()
+  def address_is_proxy?(address, options \\ [])
+
+  def address_is_proxy?(%Address{smart_contract: %SmartContract{} = smart_contract}, options) do
+    Proxy.proxy_contract?(smart_contract, options)
+  end
+
+  def address_is_proxy?(%Address{smart_contract: _}, _), do: false
 end

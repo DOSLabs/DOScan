@@ -11,15 +11,21 @@ defmodule Indexer.Block.Fetcher do
 
   alias EthereumJSONRPC.{Blocks, FetchedBeneficiaries}
   alias Explorer.Chain
-  alias Explorer.Chain.{Address, Block, Hash, Import, Transaction, Wei}
   alias Explorer.Chain.Block.Reward
   alias Explorer.Chain.Cache.Blocks, as: BlocksCache
   alias Explorer.Chain.Cache.{Accounts, BlockNumber, Transactions, Uncles}
+  alias Explorer.Chain.Filecoin.PendingAddressOperation, as: FilecoinPendingAddressOperation
+  alias Explorer.Chain.{Address, Block, Hash, Import, Transaction, Wei}
   alias Indexer.Block.Fetcher.Receipts
+  alias Indexer.Fetcher.Celo.EpochBlockOperations, as: CeloEpochBlockOperations
+  alias Indexer.Fetcher.Celo.EpochLogs, as: CeloEpochLogs
   alias Indexer.Fetcher.CoinBalance.Catchup, as: CoinBalanceCatchup
   alias Indexer.Fetcher.CoinBalance.Realtime, as: CoinBalanceRealtime
+  alias Indexer.Fetcher.Filecoin.AddressInfo, as: FilecoinAddressInfo
   alias Indexer.Fetcher.PolygonZkevm.BridgeL1Tokens, as: PolygonZkevmBridgeL1Tokens
   alias Indexer.Fetcher.TokenInstance.Realtime, as: TokenInstanceRealtime
+
+  alias Indexer.{Prometheus, TokenBalances, Tracer}
 
   alias Indexer.Fetcher.{
     Beacon.Blob,
@@ -31,8 +37,6 @@ defmodule Indexer.Block.Fetcher do
     TokenBalance,
     UncleBlock
   }
-
-  alias Indexer.{Prometheus, TokenBalances, Tracer}
 
   alias Indexer.Transform.{
     AddressCoinBalances,
@@ -53,6 +57,9 @@ defmodule Indexer.Block.Fetcher do
 
   alias Indexer.Transform.Blocks, as: TransformBlocks
   alias Indexer.Transform.PolygonZkevm.Bridge, as: PolygonZkevmBridge
+
+  alias Indexer.Transform.Celo.TransactionGasTokens, as: CeloTransactionGasTokens
+  alias Indexer.Transform.Celo.TransactionTokenTransfers, as: CeloTransactionTokenTransfers
 
   @type address_hash_to_fetched_balance_block_number :: %{String.t() => Block.block_number()}
 
@@ -148,9 +155,16 @@ defmodule Indexer.Block.Fetcher do
            }}} <- {:blocks, fetched_blocks},
          blocks = TransformBlocks.transform_blocks(blocks_params),
          {:receipts, {:ok, receipt_params}} <- {:receipts, Receipts.fetch(state, transactions_params_without_receipts)},
-         %{logs: logs, receipts: receipts} = receipt_params,
+         %{logs: receipt_logs, receipts: receipts} = receipt_params,
          transactions_with_receipts = Receipts.put(transactions_params_without_receipts, receipts),
+         celo_epoch_logs = CeloEpochLogs.fetch(blocks, json_rpc_named_arguments),
+         logs = receipt_logs ++ celo_epoch_logs,
          %{token_transfers: token_transfers, tokens: tokens} = TokenTransfers.parse(logs),
+         %{token_transfers: celo_native_token_transfers, tokens: celo_tokens} =
+           CeloTransactionTokenTransfers.parse_transactions(transactions_with_receipts),
+         celo_gas_tokens = CeloTransactionGasTokens.parse(transactions_with_receipts),
+         token_transfers = token_transfers ++ celo_native_token_transfers,
+         tokens = Enum.uniq(tokens ++ celo_tokens),
          %{transaction_actions: transaction_actions} = TransactionActions.parse(logs),
          %{mint_transfers: mint_transfers} = MintTransfers.parse(logs),
          optimism_withdrawals =
@@ -229,6 +243,7 @@ defmodule Indexer.Block.Fetcher do
            polygon_edge_deposit_executes: polygon_edge_deposit_executes,
            polygon_zkevm_bridge_operations: polygon_zkevm_bridge_operations,
            shibarium_bridge_operations: shibarium_bridge_operations,
+           celo_gas_tokens: celo_gas_tokens,
            arbitrum_messages: arbitrum_xlevel_messages
          },
          {:ok, inserted} <-
@@ -264,6 +279,7 @@ defmodule Indexer.Block.Fetcher do
          polygon_edge_deposit_executes: polygon_edge_deposit_executes,
          polygon_zkevm_bridge_operations: polygon_zkevm_bridge_operations,
          shibarium_bridge_operations: shibarium_bridge_operations,
+         celo_gas_tokens: celo_gas_tokens,
          arbitrum_messages: arbitrum_xlevel_messages
        }) do
     case Application.get_env(:explorer, :chain_type) do
@@ -289,6 +305,18 @@ defmodule Indexer.Block.Fetcher do
       :shibarium ->
         basic_import_options
         |> Map.put_new(:shibarium_bridge_operations, %{params: shibarium_bridge_operations})
+
+      :celo ->
+        tokens =
+          basic_import_options
+          |> Map.get(:tokens, %{})
+          |> Map.get(:params, [])
+
+        basic_import_options
+        |> Map.put(
+          :tokens,
+          %{params: (tokens ++ celo_gas_tokens) |> Enum.uniq()}
+        )
 
       :arbitrum ->
         basic_import_options
@@ -364,25 +392,25 @@ defmodule Indexer.Block.Fetcher do
 
   def async_import_token_instances(_), do: :ok
 
-  def async_import_blobs(%{blocks: blocks}) do
+  def async_import_blobs(%{blocks: blocks}, realtime?) do
     timestamps =
       blocks
       |> Enum.filter(fn block -> block |> Map.get(:blob_gas_used, 0) > 0 end)
       |> Enum.map(&Map.get(&1, :timestamp))
 
     if not Enum.empty?(timestamps) do
-      Blob.async_fetch(timestamps)
+      Blob.async_fetch(timestamps, realtime?)
     end
   end
 
-  def async_import_blobs(_), do: :ok
+  def async_import_blobs(_, _), do: :ok
 
-  def async_import_block_rewards([]), do: :ok
+  def async_import_block_rewards([], _realtime?), do: :ok
 
-  def async_import_block_rewards(errors) when is_list(errors) do
+  def async_import_block_rewards(errors, realtime?) when is_list(errors) do
     errors
     |> block_reward_errors_to_block_numbers()
-    |> BlockReward.async_fetch()
+    |> BlockReward.async_fetch(realtime?)
   end
 
   def async_import_coin_balances(%{addresses: addresses}, %{
@@ -404,7 +432,7 @@ defmodule Indexer.Block.Fetcher do
 
   def async_import_realtime_coin_balances(_), do: :ok
 
-  def async_import_created_contract_codes(%{transactions: transactions}) do
+  def async_import_created_contract_codes(%{transactions: transactions}, realtime?) do
     transactions
     |> Enum.flat_map(fn
       %Transaction{
@@ -418,40 +446,40 @@ defmodule Indexer.Block.Fetcher do
       %Transaction{created_contract_address_hash: nil} ->
         []
     end)
-    |> ContractCode.async_fetch(10_000)
+    |> ContractCode.async_fetch(realtime?, 10_000)
   end
 
-  def async_import_created_contract_codes(_), do: :ok
+  def async_import_created_contract_codes(_, _), do: :ok
 
-  def async_import_internal_transactions(%{blocks: blocks}) do
+  def async_import_internal_transactions(%{blocks: blocks}, realtime?) do
     blocks
     |> Enum.map(fn %Block{number: block_number} -> block_number end)
-    |> InternalTransaction.async_fetch(10_000)
+    |> InternalTransaction.async_fetch(realtime?, 10_000)
   end
 
-  def async_import_internal_transactions(_), do: :ok
+  def async_import_internal_transactions(_, _), do: :ok
 
-  def async_import_tokens(%{tokens: tokens}) do
+  def async_import_tokens(%{tokens: tokens}, realtime?) do
     tokens
     |> Enum.map(& &1.contract_address_hash)
-    |> Token.async_fetch()
+    |> Token.async_fetch(realtime?)
   end
 
-  def async_import_tokens(_), do: :ok
+  def async_import_tokens(_, _), do: :ok
 
-  def async_import_token_balances(%{address_token_balances: token_balances}) do
-    TokenBalance.async_fetch(token_balances)
+  def async_import_token_balances(%{address_token_balances: token_balances}, realtime?) do
+    TokenBalance.async_fetch(token_balances, realtime?)
   end
 
-  def async_import_token_balances(_), do: :ok
+  def async_import_token_balances(_, _), do: :ok
 
-  def async_import_uncles(%{block_second_degree_relations: block_second_degree_relations}) do
-    UncleBlock.async_fetch_blocks(block_second_degree_relations)
+  def async_import_uncles(%{block_second_degree_relations: block_second_degree_relations}, realtime?) do
+    UncleBlock.async_fetch_blocks(block_second_degree_relations, realtime?)
   end
 
-  def async_import_uncles(_), do: :ok
+  def async_import_uncles(_, _), do: :ok
 
-  def async_import_replaced_transactions(%{transactions: transactions}) do
+  def async_import_replaced_transactions(%{transactions: transactions}, realtime?) do
     transactions
     |> Enum.flat_map(fn
       %Transaction{block_hash: %Hash{} = block_hash, nonce: nonce, from_address_hash: %Hash{} = from_address_hash} ->
@@ -460,10 +488,10 @@ defmodule Indexer.Block.Fetcher do
       %Transaction{block_hash: nil} ->
         []
     end)
-    |> ReplacedTransaction.async_fetch(10_000)
+    |> ReplacedTransaction.async_fetch(realtime?, 10_000)
   end
 
-  def async_import_replaced_transactions(_), do: :ok
+  def async_import_replaced_transactions(_, _), do: :ok
 
   @doc """
   Fills a buffer of L1 token addresses to handle it asynchronously in
@@ -476,6 +504,22 @@ defmodule Indexer.Block.Fetcher do
   end
 
   def async_import_polygon_zkevm_bridge_l1_tokens(_), do: :ok
+
+  def async_import_celo_epoch_block_operations(%{blocks: operations}, realtime?) do
+    operations
+    |> Enum.map(&%{block_number: &1.number, block_hash: &1.hash})
+    |> CeloEpochBlockOperations.async_fetch(realtime?)
+  end
+
+  def async_import_celo_epoch_block_operations(_, _), do: :ok
+
+  def async_import_filecoin_addresses_info(%{addresses: addresses}, realtime?) do
+    addresses
+    |> Enum.map(&%FilecoinPendingAddressOperation{address_hash: &1.hash})
+    |> FilecoinAddressInfo.async_fetch(realtime?)
+  end
+
+  def async_import_filecoin_addresses_info(_, _), do: :ok
 
   defp block_reward_errors_to_block_numbers(block_reward_errors) when is_list(block_reward_errors) do
     Enum.map(block_reward_errors, &block_reward_error_to_block_number/1)
@@ -685,7 +729,7 @@ defmodule Indexer.Block.Fetcher do
      Map.delete(address_params, :fetched_coin_balance_block_number)}
   end
 
-  defp token_transfers_merge_token(token_transfers, tokens) do
+  def token_transfers_merge_token(token_transfers, tokens) do
     Enum.map(token_transfers, fn token_transfer ->
       token =
         Enum.find(tokens, fn token ->
