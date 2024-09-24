@@ -12,7 +12,7 @@ defmodule Explorer.Chain.Cache.Block do
     name: :block_count,
     key: :count,
     key: :async_task,
-    global_ttl: Application.get_env(:explorer, __MODULE__)[:global_ttl],
+    global_ttl: :infinity,
     ttl_check_interval: :timer.seconds(1),
     callback: &async_task_on_deletion(&1)
 
@@ -67,7 +67,7 @@ defmodule Explorer.Chain.Cache.Block do
     # If this gets called it means an async task was requested, but none exists
     # so a new one needs to be launched
     {:ok, task} =
-      Task.start(fn ->
+      Task.start_link(fn ->
         try do
           result = fetch_count_consensus_block()
 
@@ -78,7 +78,7 @@ defmodule Explorer.Chain.Cache.Block do
 
           Chain.upsert_last_fetched_counter(params)
 
-          set_count(result)
+          set_count(%ConCache.Item{ttl: Helper.ttl(__MODULE__, "CACHE_BLOCK_COUNT_PERIOD"), value: result})
         rescue
           e ->
             Logger.debug([

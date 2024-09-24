@@ -10,9 +10,10 @@ defmodule Explorer.Chain.Cache.AddressSum do
     key: :sum,
     key: :async_task,
     ttl_check_interval: Application.get_env(:explorer, __MODULE__)[:ttl_check_interval],
-    global_ttl: Application.get_env(:explorer, __MODULE__)[:global_ttl],
+    global_ttl: :infinity,
     callback: &async_task_on_deletion(&1)
 
+  alias Explorer.Chain.Cache.Helper
   alias Explorer.Etherscan
 
   defp handle_fallback(:sum) do
@@ -27,11 +28,11 @@ defmodule Explorer.Chain.Cache.AddressSum do
     # If this gets called it means an async task was requested, but none exists
     # so a new one needs to be launched
     {:ok, task} =
-      Task.start(fn ->
+      Task.start_link(fn ->
         try do
           result = Etherscan.fetch_sum_coin_total_supply()
 
-          set_sum(result)
+          set_sum(%ConCache.Item{ttl: Helper.ttl(__MODULE__, "CACHE_ADDRESS_SUM_PERIOD"), value: result})
         rescue
           e ->
             Logger.debug([

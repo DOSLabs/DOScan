@@ -158,7 +158,7 @@ defmodule BlockScoutWeb.PagingHelper do
         [
           necessity_by_association: %{
             :transactions => :optional,
-            [miner: :names] => :optional,
+            [miner: [:names, :smart_contract, :proxy_implementations]] => :optional,
             :nephews => :required,
             :rewards => :optional
           },
@@ -169,7 +169,7 @@ defmodule BlockScoutWeb.PagingHelper do
         [
           necessity_by_association: %{
             :transactions => :optional,
-            [miner: :names] => :optional,
+            [miner: [:names, :smart_contract, :proxy_implementations]] => :optional,
             :rewards => :optional
           },
           block_type: "Reorg"
@@ -184,12 +184,23 @@ defmodule BlockScoutWeb.PagingHelper do
     do: [
       necessity_by_association: %{
         :transactions => :optional,
-        [miner: :names] => :optional,
+        [miner: [:names, :smart_contract, :proxy_implementations]] => :optional,
         :rewards => :optional
       },
       block_type: "Block"
     ]
 
+  @doc """
+    Removes redundant parameters from the parameter map used when calling
+    `next_page_params` function.
+
+    ## Parameters
+    - `params`: A map of parameter entries.
+
+    ## Returns
+    - A modified map without redundant parameters needed for `next_page_params` function.
+  """
+  @spec delete_parameters_from_next_page_params(map()) :: map() | nil
   def delete_parameters_from_next_page_params(params) when is_map(params) do
     params
     |> Map.drop([
@@ -202,7 +213,10 @@ defmodule BlockScoutWeb.PagingHelper do
       "q",
       "sort",
       "order",
-      "state_filter"
+      "state_filter",
+      "l2_block_range_start",
+      "l2_block_range_end",
+      "batch_number"
     ])
   end
 
@@ -320,4 +334,18 @@ defmodule BlockScoutWeb.PagingHelper do
   defp do_mud_records_sorting("key1", "asc"), do: [asc_nulls_first: :key1]
   defp do_mud_records_sorting("key1", "desc"), do: [desc_nulls_last: :key1]
   defp do_mud_records_sorting(_, _), do: []
+
+  @spec validators_blackfort_sorting(%{required(String.t()) => String.t()}) :: [
+          {:sorting, SortingHelper.sorting_params()}
+        ]
+  def validators_blackfort_sorting(%{"sort" => sort_field, "order" => order}) do
+    [sorting: do_validators_blackfort_sorting(sort_field, order)]
+  end
+
+  def validators_blackfort_sorting(_), do: []
+
+  defp do_validators_blackfort_sorting("address_hash", "asc"), do: [asc_nulls_first: :address_hash]
+  defp do_validators_blackfort_sorting("address_hash", "desc"), do: [desc_nulls_last: :address_hash]
+
+  defp do_validators_blackfort_sorting(_, _), do: []
 end

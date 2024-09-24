@@ -177,7 +177,6 @@ defmodule Explorer.Chain.Token do
 
     from(
       token in __MODULE__,
-      select: token.contract_address_hash,
       where: token.cataloged == true and token.updated_at <= ^some_time_ago_date
     )
   end
@@ -240,6 +239,14 @@ defmodule Explorer.Chain.Token do
   end
 
   @doc """
+    Gets tokens with given contract address hashes.
+  """
+  @spec get_by_contract_address_hashes([Hash.Address.t()], [Chain.api?()]) :: [Token.t()]
+  def get_by_contract_address_hashes(hashes, options) do
+    Chain.select_repo(options).all(from(t in __MODULE__, where: t.contract_address_hash in ^hashes))
+  end
+
+  @doc """
     For usage in Indexer.Fetcher.TokenInstance.LegacySanitizeERC721
   """
   @spec ordered_erc_721_token_address_hashes_list_query(integer(), Hash.Address.t() | nil) :: Ecto.Query.t()
@@ -270,5 +277,26 @@ defmodule Explorer.Chain.Token do
       [],
       timeout: @timeout
     )
+  end
+
+  @doc """
+  Drops token info for the given token:
+  Sets is_verified_via_admin_panel to false, icon_url to nil, symbol to nil, name to nil.
+  Don't forget to set/update token's symbol and name after this function.
+  """
+  @spec drop_token_info(t()) :: {:ok, t()} | {:error, Changeset.t()}
+  def drop_token_info(token) do
+    token
+    |> Changeset.change(%{is_verified_via_admin_panel: false, icon_url: nil, symbol: nil, name: nil})
+    |> Repo.update()
+  end
+
+  @doc """
+  Returns query for token by contract address hash
+  """
+  @spec token_by_contract_address_hash_query(binary() | Hash.Address.t()) :: Ecto.Query.t()
+  def token_by_contract_address_hash_query(contract_address_hash) do
+    __MODULE__
+    |> where([token], token.contract_address_hash == ^contract_address_hash)
   end
 end

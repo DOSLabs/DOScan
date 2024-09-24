@@ -17,10 +17,11 @@ defmodule Explorer.Chain.Cache.GasUsage do
     name: :gas_usage,
     key: :sum,
     key: :async_task,
-    global_ttl: Application.get_env(:explorer, __MODULE__)[:global_ttl],
+    global_ttl: :infinity,
     ttl_check_interval: :timer.seconds(1),
     callback: &async_task_on_deletion(&1)
 
+  alias Explorer.Chain.Cache.Helper
   alias Explorer.Chain.Transaction
   alias Explorer.Repo
 
@@ -48,11 +49,11 @@ defmodule Explorer.Chain.Cache.GasUsage do
       # If this gets called it means an async task was requested, but none exists
       # so a new one needs to be launched
       {:ok, task} =
-        Task.start(fn ->
+        Task.start_link(fn ->
           try do
             result = fetch_sum_gas_used()
 
-            set_sum(result)
+            set_sum(%ConCache.Item{ttl: Helper.ttl(__MODULE__, "CACHE_TOTAL_GAS_USAGE_PERIOD"), value: result})
           rescue
             e ->
               Logger.debug([

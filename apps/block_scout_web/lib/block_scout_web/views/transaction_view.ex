@@ -11,7 +11,7 @@ defmodule BlockScoutWeb.TransactionView do
   alias Explorer.ExchangeRates.Token
   alias Timex.Duration
 
-  import BlockScoutWeb.Gettext
+  use Gettext, backend: BlockScoutWeb.Gettext
   import BlockScoutWeb.AddressView, only: [from_address_hash: 1, short_token_id: 2, tag_name_to_label: 1]
   import BlockScoutWeb.Tokens.Helper
 
@@ -449,7 +449,7 @@ defmodule BlockScoutWeb.TransactionView do
   end
 
   def involves_contract?(%Transaction{from_address: from_address, to_address: to_address}) do
-    AddressView.contract?(from_address) || AddressView.contract?(to_address)
+    Address.smart_contract?(from_address) || Address.smart_contract?(to_address)
   end
 
   def involves_token_transfers?(%Transaction{token_transfers: []}), do: false
@@ -597,7 +597,7 @@ defmodule BlockScoutWeb.TransactionView do
   end
 
   def trim(length, string) do
-    %{show: String.slice(string, 0..length), hide: String.slice(string, (length + 1)..String.length(string))}
+    %{show: String.slice(string, 0..length), hide: String.slice(string, (length + 1)..-1//1)}
   end
 
   defp template_to_string(template) when is_list(template) do

@@ -4,8 +4,8 @@ defmodule Explorer.Migrator.FillingMigration do
   """
 
   @callback migration_name :: String.t()
-  @callback unprocessed_data_query :: Ecto.Query.t()
-  @callback last_unprocessed_identifiers :: [any()]
+  @callback unprocessed_data_query :: Ecto.Query.t() | nil
+  @callback last_unprocessed_identifiers(map()) :: {[any()], map()}
   @callback update_batch([any()]) :: any()
   @callback update_cache :: any()
 
@@ -32,35 +32,42 @@ defmodule Explorer.Migrator.FillingMigration do
 
       @impl true
       def init(_) do
-        case MigrationStatus.get_status(migration_name()) do
-          "completed" ->
-            update_cache()
-            :ignore
+        {:ok, %{}, {:continue, :ok}}
+      end
 
-          _ ->
+      @impl true
+      def handle_continue(:ok, state) do
+        case MigrationStatus.fetch(migration_name()) do
+          %{status: "completed"} ->
+            update_cache()
+            {:stop, :normal, state}
+
+          migration_status ->
             MigrationStatus.set_status(migration_name(), "started")
             schedule_batch_migration()
-            {:ok, %{}}
+            {:noreply, (migration_status && migration_status.meta) || %{}}
         end
       end
 
       @impl true
       def handle_info(:migrate_batch, state) do
-        case last_unprocessed_identifiers() do
-          [] ->
+        case last_unprocessed_identifiers(state) do
+          {[], new_state} ->
             update_cache()
             MigrationStatus.set_status(migration_name(), "completed")
-            {:stop, :normal, state}
+            {:stop, :normal, new_state}
 
-          hashes ->
-            hashes
+          {identifiers, new_state} ->
+            identifiers
             |> Enum.chunk_every(batch_size())
             |> Enum.map(&run_task/1)
             |> Task.await_many(:infinity)
 
+            MigrationStatus.update_meta(migration_name(), new_state)
+
             schedule_batch_migration()
 
-            {:noreply, state}
+            {:noreply, new_state}
         end
       end
 

@@ -6,6 +6,7 @@ defmodule Explorer.Chain.Import.Runner.Blocks do
   require Ecto.Query
 
   import Ecto.Query, only: [from: 2, where: 3, subquery: 1]
+  import Explorer.Chain.Import.Runner.Helper, only: [chain_type_dependent_import: 3]
 
   alias Ecto.{Changeset, Multi, Repo}
 
@@ -23,6 +24,9 @@ defmodule Explorer.Chain.Import.Runner.Blocks do
     TokenTransfer,
     Transaction
   }
+
+  alias Explorer.Chain.Celo.Helper, as: CeloHelper
+  alias Explorer.Chain.Celo.PendingEpochBlockOperation, as: CeloPendingEpochBlockOperation
 
   alias Explorer.Chain.Block.Reward
   alias Explorer.Chain.Import.Runner
@@ -207,6 +211,19 @@ defmodule Explorer.Chain.Import.Runner.Blocks do
         :blocks_update_token_holder_counts
       )
     end)
+    |> chain_type_dependent_import(
+      :celo,
+      &Multi.run(&1, :celo_pending_epoch_block_operations, fn repo, %{blocks: blocks} ->
+        Instrumenter.block_import_stage_runner(
+          fn ->
+            celo_pending_epoch_block_operations(repo, blocks, insert_options)
+          end,
+          :address_referencing,
+          :blocks,
+          :celo_pending_epoch_block_operations
+        )
+      end)
+    )
   end
 
   @impl Runner
@@ -721,7 +738,7 @@ defmodule Explorer.Chain.Import.Runner.Blocks do
   end
 
   defp refs_to_token_transfers_query(historical_token_transfers_query, filtered_query) do
-    if Application.get_env(:explorer, :chain_type) == :polygon_zkevm do
+    if Application.get_env(:explorer, :chain_type) in [:polygon_zkevm, :rsk] do
       from(historical_tt in subquery(historical_token_transfers_query),
         inner_join: tt in subquery(filtered_query),
         on:
@@ -762,7 +779,7 @@ defmodule Explorer.Chain.Import.Runner.Blocks do
   end
 
   defp derived_token_transfers_query(refs_to_token_transfers, filtered_query) do
-    if Application.get_env(:explorer, :chain_type) == :polygon_zkevm do
+    if Application.get_env(:explorer, :chain_type) in [:polygon_zkevm, :rsk] do
       from(tt in filtered_query,
         inner_join: tt_1 in subquery(refs_to_token_transfers),
         on:
@@ -915,5 +932,25 @@ defmodule Explorer.Chain.Import.Runner.Blocks do
     else
       blocks
     end
+  end
+
+  defp celo_pending_epoch_block_operations(repo, inserted_blocks, %{timeout: timeout, timestamps: timestamps}) do
+    ordered_epoch_blocks =
+      inserted_blocks
+      |> Enum.filter(fn block -> CeloHelper.epoch_block_number?(block.number) && block.consensus end)
+      |> Enum.map(&%{block_hash: &1.hash})
+      |> Enum.sort_by(& &1.block_hash)
+      |> Enum.dedup_by(& &1.block_hash)
+
+    Import.insert_changes_list(
+      repo,
+      ordered_epoch_blocks,
+      conflict_target: :block_hash,
+      on_conflict: :nothing,
+      for: CeloPendingEpochBlockOperation,
+      returning: true,
+      timeout: timeout,
+      timestamps: timestamps
+    )
   end
 end

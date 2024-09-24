@@ -7,6 +7,7 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
   alias BlockScoutWeb.Models.UserFromAuth
   alias Explorer.{Chain, Repo, TestHelper}
   alias Explorer.Chain.Address.Counters
+  alias Explorer.Chain.Events.Subscriber
 
   alias Explorer.Chain.{
     Address,
@@ -24,6 +25,7 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
 
   alias Explorer.Account.WatchlistAddress
   alias Explorer.Chain.Address.CurrentTokenBalance
+  alias Indexer.Fetcher.OnDemand.ContractCode, as: ContractCodeOnDemand
   alias Plug.Conn
 
   import Explorer.Chain, only: [hash_to_lower_case_string: 1]
@@ -35,6 +37,18 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
   setup :set_mox_global
 
   setup :verify_on_exit!
+
+  setup %{json_rpc_named_arguments: json_rpc_named_arguments} do
+    mocked_json_rpc_named_arguments = Keyword.put(json_rpc_named_arguments, :transport, EthereumJSONRPC.Mox)
+
+    start_supervised!({Task.Supervisor, name: Indexer.TaskSupervisor})
+
+    start_supervised!({ContractCodeOnDemand, [mocked_json_rpc_named_arguments, [name: ContractCodeOnDemand]]})
+
+    %{json_rpc_named_arguments: mocked_json_rpc_named_arguments}
+
+    :ok
+  end
 
   defp topic(topic_hex_string) do
     {:ok, topic} = Explorer.Chain.Hash.Full.cast(topic_hex_string)
@@ -62,7 +76,7 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
       correct_response = %{
         "hash" => Address.checksum(address.hash),
         "is_contract" => false,
-        "is_verified" => nil,
+        "is_verified" => false,
         "name" => nil,
         "private_tags" => [],
         "public_tags" => [],
@@ -71,10 +85,7 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
         "creation_tx_hash" => nil,
         "token" => nil,
         "coin_balance" => nil,
-        "exchange_rate" => nil,
-        # todo: added for backward compatibility, remove when frontend unbound from these props
-        "implementation_name" => nil,
-        "implementation_address" => nil,
+        "proxy_type" => nil,
         "implementations" => [],
         "block_number_balance_updated_at" => nil,
         "has_decompiled_code" => false,
@@ -89,13 +100,135 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
       }
 
       request = get(conn, "/api/v2/addresses/#{Address.checksum(address.hash)}")
-      assert ^correct_response = json_response(request, 200)
+      check_response(correct_response, json_response(request, 200))
 
       request = get(conn, "/api/v2/addresses/#{String.downcase(to_string(address.hash))}")
-      assert ^correct_response = json_response(request, 200)
+      check_response(correct_response, json_response(request, 200))
     end
 
-    test "get contract info", %{conn: conn} do
+    defp check_response(pattern_response, response) do
+      assert pattern_response["hash"] == response["hash"]
+      assert pattern_response["is_contract"] == response["is_contract"]
+      assert pattern_response["is_verified"] == response["is_verified"]
+      assert pattern_response["name"] == response["name"]
+      assert pattern_response["private_tags"] == response["private_tags"]
+      assert pattern_response["public_tags"] == response["public_tags"]
+      assert pattern_response["watchlist_names"] == response["watchlist_names"]
+      assert pattern_response["creator_address_hash"] == response["creator_address_hash"]
+      assert pattern_response["creation_tx_hash"] == response["creation_tx_hash"]
+      assert pattern_response["token"] == response["token"]
+      assert pattern_response["coin_balance"] == response["coin_balance"]
+      assert pattern_response["implementation_address"] == response["implementation_address"]
+      assert pattern_response["implementation_name"] == response["implementation_name"]
+      assert pattern_response["implementations"] == response["implementations"]
+      assert pattern_response["block_number_balance_updated_at"] == response["block_number_balance_updated_at"]
+      assert pattern_response["has_decompiled_code"] == response["has_decompiled_code"]
+      assert pattern_response["has_validated_blocks"] == response["has_validated_blocks"]
+      assert pattern_response["has_logs"] == response["has_logs"]
+      assert pattern_response["has_tokens"] == response["has_tokens"]
+      assert pattern_response["has_token_transfers"] == response["has_token_transfers"]
+      assert pattern_response["watchlist_address_id"] == response["watchlist_address_id"]
+      assert pattern_response["has_beacon_chain_withdrawals"] == response["has_beacon_chain_withdrawals"]
+      assert pattern_response["ens_domain_name"] == response["ens_domain_name"]
+      assert pattern_response["metadata"] == response["metadata"]
+    end
+
+    test "get EIP-1167 proxy contract info", %{conn: conn} do
+      implementation_contract =
+        insert(:smart_contract,
+          name: "Implementation",
+          external_libraries: [],
+          constructor_arguments: "",
+          abi: [
+            %{
+              "type" => "constructor",
+              "inputs" => [
+                %{"type" => "address", "name" => "_proxyStorage"},
+                %{"type" => "address", "name" => "_implementationAddress"}
+              ]
+            },
+            %{
+              "constant" => false,
+              "inputs" => [%{"name" => "x", "type" => "uint256"}],
+              "name" => "set",
+              "outputs" => [],
+              "payable" => false,
+              "stateMutability" => "nonpayable",
+              "type" => "function"
+            },
+            %{
+              "constant" => true,
+              "inputs" => [],
+              "name" => "get",
+              "outputs" => [%{"name" => "", "type" => "uint256"}],
+              "payable" => false,
+              "stateMutability" => "view",
+              "type" => "function"
+            }
+          ],
+          license_type: 9
+        )
+
+      implementation_contract_address_hash_string =
+        Base.encode16(implementation_contract.address_hash.bytes, case: :lower)
+
+      proxy_tx_input =
+        "0x11b804ab000000000000000000000000" <>
+          implementation_contract_address_hash_string <>
+          "000000000000000000000000000000000000000000000000000000000000006035323031313537360000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000284e159163400000000000000000000000034420c13696f4ac650b9fafe915553a1abcd7dd30000000000000000000000000000000000000000000000000000000000000140000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000001c00000000000000000000000000000000000000000000000000000000000000220000000000000000000000000ff5ae9b0a7522736299d797d80b8fc6f31d61100000000000000000000000000ff5ae9b0a7522736299d797d80b8fc6f31d6110000000000000000000000000000000000000000000000000000000000000003e8000000000000000000000000000000000000000000000000000000000000000000000000000000000000000034420c13696f4ac650b9fafe915553a1abcd7dd300000000000000000000000000000000000000000000000000000000000000184f7074696d69736d2053756273637269626572204e465473000000000000000000000000000000000000000000000000000000000000000000000000000000054f504e46540000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000037697066733a2f2f516d66544e504839765651334b5952346d6b52325a6b757756424266456f5a5554545064395538666931503332752f300000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c82bbe41f2cf04e3a8efa18f7032bdd7f6d98a81000000000000000000000000efba8a2a82ec1fb1273806174f5e28fbb917cf9500000000000000000000000000000000000000000000000000000000"
+
+      proxy_deployed_bytecode =
+        "0x363d3d373d3d3d363d73" <> implementation_contract_address_hash_string <> "5af43d82803e903d91602b57fd5bf3"
+
+      proxy_address =
+        insert(:contract_address,
+          contract_code: proxy_deployed_bytecode
+        )
+
+      tx =
+        insert(:transaction,
+          created_contract_address_hash: proxy_address.hash,
+          input: proxy_tx_input
+        )
+        |> with_block(status: :ok)
+
+      name = implementation_contract.name
+      from = Address.checksum(tx.from_address_hash)
+      tx_hash = to_string(tx.hash)
+      address_hash = Address.checksum(proxy_address.hash)
+
+      {:ok, implementation_contract_address_hash} =
+        Chain.string_to_address_hash("0x" <> implementation_contract_address_hash_string)
+
+      checksummed_implementation_contract_address_hash =
+        implementation_contract_address_hash && Address.checksum(implementation_contract_address_hash)
+
+      insert(:proxy_implementation,
+        proxy_address_hash: proxy_address.hash,
+        proxy_type: "eip1167",
+        address_hashes: [implementation_contract.address_hash],
+        names: [name]
+      )
+
+      request = get(conn, "/api/v2/addresses/#{Address.checksum(proxy_address.hash)}")
+
+      assert %{
+               "hash" => ^address_hash,
+               "is_contract" => true,
+               "is_verified" => true,
+               "private_tags" => [],
+               "public_tags" => [],
+               "watchlist_names" => [],
+               "creator_address_hash" => ^from,
+               "creation_tx_hash" => ^tx_hash,
+               "proxy_type" => "eip1167",
+               "implementations" => [
+                 %{"address" => ^checksummed_implementation_contract_address_hash, "name" => ^name}
+               ]
+             } = json_response(request, 200)
+    end
+
+    test "get EIP-1967 proxy contract info", %{conn: conn} do
       smart_contract = insert(:smart_contract)
 
       tx =
@@ -134,7 +267,7 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
                "watchlist_names" => [],
                "creator_address_hash" => ^from,
                "creation_tx_hash" => ^tx_hash,
-               "implementation_address" => ^implementation_address_hash_string,
+               "proxy_type" => "eip1967",
                "implementations" => [%{"address" => ^implementation_address_hash_string, "name" => nil}]
              } = json_response(request, 200)
     end
@@ -167,6 +300,44 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
       assert response = json_response(request, 200)
 
       assert response["watchlist_address_id"] == watchlist_address.id
+    end
+
+    test "broadcasts fetched_bytecode event", %{conn: conn} do
+      address = insert(:address)
+      address_hash = address.hash
+      string_address_hash = to_string(address.hash)
+
+      contract_code = "0x6080"
+
+      EthereumJSONRPC.Mox
+      |> expect(:json_rpc, fn [
+                                %{
+                                  id: id,
+                                  jsonrpc: "2.0",
+                                  method: "eth_getCode",
+                                  params: [^string_address_hash, "latest"]
+                                }
+                              ],
+                              _ ->
+        {:ok, [%{id: id, result: contract_code}]}
+      end)
+
+      topic = "addresses:#{address_hash}"
+
+      {:ok, _reply, _socket} =
+        BlockScoutWeb.UserSocketV2
+        |> socket("no_id", %{})
+        |> subscribe_and_join(topic)
+
+      request = get(conn, "/api/v2/addresses/#{address.hash}")
+      assert _response = json_response(request, 200)
+
+      assert_receive %Phoenix.Socket.Message{
+                       payload: %{fetched_bytecode: ^contract_code},
+                       event: "fetched_bytecode",
+                       topic: ^topic
+                     },
+                     :timer.seconds(1)
     end
   end
 
@@ -781,7 +952,12 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
         for _ <- 0..50 do
           tx = insert(:transaction, input: "0xabcd010203040506") |> with_block()
 
-          insert(:token_transfer, transaction: tx, block: tx.block, block_number: tx.block_number, from_address: address)
+          insert(:token_transfer,
+            transaction: tx,
+            block: tx.block,
+            block_number: tx.block_number,
+            from_address: address
+          )
 
           insert(:token_transfer,
             transaction: tx,
@@ -846,7 +1022,12 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
         for _ <- 0..50 do
           tx = insert(:transaction, input: "0xabcd010203040506") |> with_block()
 
-          insert(:token_transfer, transaction: tx, block: tx.block, block_number: tx.block_number, from_address: address)
+          insert(:token_transfer,
+            transaction: tx,
+            block: tx.block,
+            block_number: tx.block_number,
+            from_address: address
+          )
         end
 
       request = get(conn, "/api/v2/addresses/#{address.hash}/token-transfers")
@@ -891,7 +1072,12 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
         for _ <- 0..50 do
           tx = insert(:transaction, input: "0xabcd010203040506") |> with_block()
 
-          insert(:token_transfer, transaction: tx, block: tx.block, block_number: tx.block_number, from_address: address)
+          insert(:token_transfer,
+            transaction: tx,
+            block: tx.block,
+            block_number: tx.block_number,
+            from_address: address
+          )
         end
 
       for _ <- 0..50 do
@@ -918,7 +1104,12 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
         for _ <- 0..49 do
           tx = insert(:transaction, input: "0xabcd010203040506") |> with_block()
 
-          insert(:token_transfer, transaction: tx, block: tx.block, block_number: tx.block_number, from_address: address)
+          insert(:token_transfer,
+            transaction: tx,
+            block: tx.block,
+            block_number: tx.block_number,
+            from_address: address
+          )
         end
 
       tt_to =
@@ -2287,8 +2478,12 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
 
       total_supply = to_string(Chain.total_supply())
 
-      assert %{"items" => [], "next_page_params" => nil, "exchange_rate" => nil, "total_supply" => ^total_supply} =
-               json_response(request, 200)
+      pattern_response = %{"items" => [], "next_page_params" => nil, "total_supply" => total_supply}
+      response = json_response(request, 200)
+
+      assert pattern_response["items"] == response["items"]
+      assert pattern_response["next_page_params"] == response["next_page_params"]
+      assert pattern_response["total_supply"] == response["total_supply"]
     end
 
     test "check pagination", %{conn: conn} do
