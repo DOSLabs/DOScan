@@ -189,8 +189,8 @@ defmodule EthereumJSONRPC do
   def fetch_balances(params_list, json_rpc_named_arguments, chunk_size \\ nil)
       when is_list(params_list) and is_list(json_rpc_named_arguments) do
     filtered_params =
-      if Application.get_env(:ethereum_jsonrpc, :disable_archive_balances?) do
-        {:ok, max_block_number} = fetch_block_number_by_tag("latest", json_rpc_named_arguments)
+      with true <- Application.get_env(:ethereum_jsonrpc, :disable_archive_balances?),
+           {:ok, max_block_number} <- fetch_block_number_by_tag("latest", json_rpc_named_arguments) do
         window = Application.get_env(:ethereum_jsonrpc, :archive_balances_window)
 
         params_list
@@ -200,7 +200,7 @@ defmodule EthereumJSONRPC do
           _ -> false
         end)
       else
-        params_list
+        _ -> params_list
       end
 
     filtered_params_in_range =
@@ -270,7 +270,7 @@ defmodule EthereumJSONRPC do
   Fetches blocks by block number range.
   """
   @spec fetch_blocks_by_range(Range.t(), json_rpc_named_arguments) :: {:ok, Blocks.t()} | {:error, reason :: term}
-  def fetch_blocks_by_range(_first.._last = range, json_rpc_named_arguments) do
+  def fetch_blocks_by_range(_first.._last//_ = range, json_rpc_named_arguments) do
     range
     |> Enum.map(fn number -> %{number: number} end)
     |> fetch_blocks_by_params(&Block.ByNumber.request/1, json_rpc_named_arguments)
