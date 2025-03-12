@@ -17,7 +17,8 @@ config :block_scout_web,
   # 604800 seconds, 1 week
   session_cookie_ttl: 60 * 60 * 24 * 7,
   invalid_session_key: "invalid_session",
-  api_v2_temp_token_key: "api_v2_temp_token"
+  api_v2_temp_token_key: "api_v2_temp_token",
+  http_adapter: HTTPoison
 
 config :block_scout_web,
   admin_panel_enabled: ConfigHelper.parse_bool_env_var("ADMIN_PANEL_ENABLED")
@@ -106,8 +107,7 @@ config :block_scout_web, BlockScoutWeb.CSPHeader,
 config :block_scout_web, Api.GraphQL,
   enabled: ConfigHelper.parse_bool_env_var("API_GRAPHQL_ENABLED", "true"),
   token_limit: ConfigHelper.parse_integer_env_var("API_GRAPHQL_TOKEN_LIMIT", 1000),
-  # Needs to be 215 to support the schema introspection for graphiql
-  max_complexity: ConfigHelper.parse_integer_env_var("API_GRAPHQL_MAX_COMPLEXITY", 215)
+  max_complexity: ConfigHelper.parse_integer_env_var("API_GRAPHQL_MAX_COMPLEXITY", 100)
 
 # Configures Ueberauth local settings
 config :ueberauth, Ueberauth,

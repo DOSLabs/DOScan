@@ -49,7 +49,18 @@ defmodule Indexer.Block.FetcherTest do
 
   describe "import_range/2" do
     setup %{json_rpc_named_arguments: json_rpc_named_arguments} do
-      CoinBalanceCatchup.Supervisor.Case.start_supervised!(json_rpc_named_arguments: json_rpc_named_arguments)
+      CoinBalanceCatchup.Supervisor.Case.start_supervised!(
+        json_rpc_named_arguments: json_rpc_named_arguments,
+        poll: false
+      )
+
+      configuration = Application.get_env(:indexer, Indexer.Fetcher.InternalTransaction.Supervisor)
+      Application.put_env(:indexer, Indexer.Fetcher.InternalTransaction.Supervisor, disabled?: false)
+
+      on_exit(fn ->
+        Application.put_env(:indexer, Indexer.Fetcher.InternalTransaction.Supervisor, configuration)
+      end)
+
       ContractCode.Supervisor.Case.start_supervised!(json_rpc_named_arguments: json_rpc_named_arguments)
       InternalTransaction.Supervisor.Case.start_supervised!(json_rpc_named_arguments: json_rpc_named_arguments)
       Token.Supervisor.Case.start_supervised!(json_rpc_named_arguments: json_rpc_named_arguments)
@@ -275,7 +286,9 @@ defmodule Indexer.Block.FetcherTest do
     } do
       block_number = @first_full_block_number
 
-      Indexer.Fetcher.Filecoin.AddressInfo.Supervisor.Case.start_supervised!()
+      Indexer.Fetcher.Filecoin.AddressInfo.Supervisor.Case.start_supervised!(
+        json_rpc_named_arguments: json_rpc_named_arguments
+      )
 
       if json_rpc_named_arguments[:transport] == EthereumJSONRPC.Mox do
         case Keyword.fetch!(json_rpc_named_arguments, :variant) do
@@ -493,6 +506,11 @@ defmodule Indexer.Block.FetcherTest do
         end
       end
 
+      config = Application.get_env(:ethereum_jsonrpc, EthereumJSONRPC.Geth)
+      Application.put_env(:ethereum_jsonrpc, EthereumJSONRPC.Geth, Keyword.put(config, :block_traceable?, true))
+
+      on_exit(fn -> Application.put_env(:ethereum_jsonrpc, EthereumJSONRPC.Geth, config) end)
+
       case Keyword.fetch!(json_rpc_named_arguments, :variant) do
         EthereumJSONRPC.Geth ->
           block_number = 48230
@@ -684,7 +702,9 @@ defmodule Indexer.Block.FetcherTest do
     } do
       block_number = 7_374_455
 
-      Indexer.Fetcher.Filecoin.AddressInfo.Supervisor.Case.start_supervised!()
+      Indexer.Fetcher.Filecoin.AddressInfo.Supervisor.Case.start_supervised!(
+        json_rpc_named_arguments: json_rpc_named_arguments
+      )
 
       if json_rpc_named_arguments[:transport] == EthereumJSONRPC.Mox do
         EthereumJSONRPC.Mox
@@ -941,7 +961,7 @@ defmodule Indexer.Block.FetcherTest do
               end)
               # async requests need to be grouped in one expect because the order is non-deterministic while multiple expect
               # calls on the same name/arity are used in order
-              |> expect(:json_rpc, 10, fn json, _options ->
+              |> expect(:json_rpc, 5, fn json, _options ->
                 case json do
                   [
                     %{
@@ -1137,7 +1157,13 @@ defmodule Indexer.Block.FetcherTest do
                       errors: []
                     }} = Fetcher.fetch_and_import_range(block_fetcher, block_number..block_number)
 
-            wait_for_tasks(InternalTransaction)
+            configuration = Application.get_env(:indexer, Indexer.Fetcher.InternalTransaction.Supervisor)
+            Application.put_env(:indexer, Indexer.Fetcher.InternalTransaction.Supervisor, disabled?: false)
+
+            on_exit(fn ->
+              Application.put_env(:indexer, Indexer.Fetcher.InternalTransaction.Supervisor, configuration)
+            end)
+
             wait_for_tasks(CoinBalanceCatchup)
 
             assert Repo.aggregate(Chain.Block, :count, :hash) == 1
