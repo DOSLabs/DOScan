@@ -12,6 +12,7 @@ defmodule Indexer.Fetcher.OnDemand.TokenBalance do
   alias Explorer.Chain.Events.Publisher
   alias Explorer.Chain.Hash
   alias Explorer.Counters.AverageBlockTime
+  alias Explorer.Helper, as: ExplorerHelper
   alias Explorer.Token.BalanceReader
   alias Timex.Duration
 
@@ -84,8 +85,8 @@ defmodule Indexer.Fetcher.OnDemand.TokenBalance do
                                                                                     acc ->
         prepared_ctb = %{
           token_contract_address_hash:
-            "0x" <> Base.encode16(stale_current_token_balance.token.contract_address_hash.bytes),
-          address_hash: "0x" <> Base.encode16(address_hash.bytes),
+            ExplorerHelper.add_0x_prefix(stale_current_token_balance.token.contract_address_hash),
+          address_hash: ExplorerHelper.add_0x_prefix(address_hash),
           block_number: block_number,
           token_id: token_id && Decimal.to_integer(token_id),
           token_type: stale_current_token_balance.token_type
@@ -195,9 +196,16 @@ defmodule Indexer.Fetcher.OnDemand.TokenBalance do
   end
 
   defp prepare_updated_balance({{:error, error}, ctb}, block_number) do
+    error_message =
+      if ctb.token_id do
+        "Error on updating current token #{to_string(ctb.token_contract_address_hash)} balance for address #{to_string(ctb.address_hash)} and token id #{to_string(ctb.token_id)} at block number #{block_number}: "
+      else
+        "Error on updating current token #{to_string(ctb.token_contract_address_hash)} balance for address #{to_string(ctb.address_hash)} at block number #{block_number}: "
+      end
+
     Logger.warning(fn ->
       [
-        "Error on updating current token #{to_string(ctb.token_contract_address_hash)} balance for address #{to_string(ctb.address_hash)} at block number #{block_number}: ",
+        error_message,
         inspect(error)
       ]
     end)

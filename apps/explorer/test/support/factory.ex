@@ -1,5 +1,6 @@
 defmodule Explorer.Factory do
   use ExMachina.Ecto, repo: Explorer.Repo
+  use Utils.CompileTimeEnvHelper, chain_type: [:explorer, :chain_type]
 
   require Ecto.Query
 
@@ -40,6 +41,7 @@ defmodule Explorer.Factory do
     InternalTransaction,
     Log,
     PendingBlockOperation,
+    PendingTransactionOperation,
     SmartContract,
     SmartContractAdditionalSource,
     Token,
@@ -51,6 +53,10 @@ defmodule Explorer.Factory do
 
   alias Explorer.Chain.Optimism.OutputRoot
   alias Explorer.Chain.SmartContract.Proxy.Models.Implementation
+  alias Explorer.Chain.Zilliqa.Hash.BLSPublicKey
+  alias Explorer.Chain.Zilliqa.Staker, as: ZilliqaStaker
+
+  alias Explorer.Migrator.MigrationStatus
 
   alias Explorer.SmartContract.Helper
   alias Explorer.Tags.{AddressTag, AddressToTag}
@@ -60,10 +66,10 @@ defmodule Explorer.Factory do
   alias Explorer.Utility.{MissingBalanceOfToken, MissingBlockRange}
 
   alias Ueberauth.Strategy.Auth0
-  alias Ueberauth.Auth.Info
+  alias Ueberauth.Auth.{Extra, Info}
   alias Ueberauth.Auth
 
-  if Application.compile_env(:explorer, :chain_type) == :zksync do
+  if @chain_type == :zksync do
     @optimization_runs "1"
   else
     @optimization_runs 1
@@ -78,13 +84,20 @@ defmodule Explorer.Factory do
   end
 
   def auth_factory do
+    email = sequence(:email, &"test_user-#{&1}@blockscout.com")
+    image = sequence("https://example.com/avatar/test_user")
+    name = sequence("User Test")
+    nickname = sequence("test_user")
+    uid = sequence("blockscout|000")
+    address_hash = to_string(build(:contract_address).hash)
+
     %Auth{
       info: %Info{
         birthday: nil,
         description: nil,
-        email: sequence(:email, &"test_user-#{&1}@blockscout.com"),
+        email: email,
         first_name: nil,
-        image: sequence("https://example.com/avatar/test_user"),
+        image: image,
         last_name: nil,
         location: nil,
         name: sequence("User Test"),
@@ -94,7 +107,36 @@ defmodule Explorer.Factory do
       },
       provider: :auth0,
       strategy: Auth0,
-      uid: sequence("blockscout|000")
+      uid: uid,
+      extra: %Extra{
+        raw_info: %{
+          user: %{
+            "created_at" => "2024-09-06T13:49:20.481Z",
+            "email" => email,
+            "email_verified" => true,
+            "identities" => [
+              %{
+                "connection" => "email",
+                "isSocial" => false,
+                "provider" => "email",
+                "user_id" => "66db0852af53e2c0ae80ddb2"
+              }
+            ],
+            "last_ip" => "42.42.42.42",
+            "last_login" => "2024-09-14T12:14:26.965Z",
+            "logins_count" => 11,
+            "name" => name,
+            "nickname" => nickname,
+            "picture" => image,
+            "updated_at" => "2024-09-14T12:14:26.966Z",
+            "user_id" => uid,
+            "user_metadata" => %{
+              "web3_address_hash" => address_hash
+            }
+          },
+          token: nil
+        }
+      }
     }
   end
 
@@ -186,7 +228,7 @@ defmodule Explorer.Factory do
   end
 
   def tag_transaction_db_factory(%{user: user}) do
-    %TagTransaction{name: sequence("name"), tx_hash: insert(:transaction).hash, identity_id: user.id}
+    %TagTransaction{name: sequence("name"), transaction_hash: insert(:transaction).hash, identity_id: user.id}
   end
 
   def address_to_tag_factory do
@@ -229,6 +271,19 @@ defmodule Explorer.Factory do
     %Address{
       hash: address_hash()
     }
+    |> Map.merge(address_factory_chain_type_fields())
+  end
+
+  case @chain_type do
+    :zksync ->
+      defp address_factory_chain_type_fields() do
+        %{
+          contract_code_refetched: true
+        }
+      end
+
+    _ ->
+      defp address_factory_chain_type_fields(), do: %{}
   end
 
   def address_name_factory do
@@ -532,7 +587,7 @@ defmodule Explorer.Factory do
     |> Map.merge(block_factory_chain_type_fields())
   end
 
-  case Application.compile_env(:explorer, :chain_type) do
+  case @chain_type do
     :arbitrum ->
       defp block_factory_chain_type_fields() do
         %{
@@ -686,6 +741,10 @@ defmodule Explorer.Factory do
     %PendingBlockOperation{}
   end
 
+  def pending_transaction_operation_factory do
+    %PendingTransactionOperation{}
+  end
+
   def internal_transaction_factory() do
     gas = Enum.random(21_000..100_000)
     gas_used = Enum.random(0..gas)
@@ -825,11 +884,12 @@ defmodule Explorer.Factory do
 
     token_address = insert(:contract_address, contract_code: contract_code)
     token = insert(:token, contract_address: token_address)
+    block = build(:block)
 
     %TokenTransfer{
-      block: build(:block),
+      block: block,
       amount: Decimal.new(1),
-      block_number: block_number(),
+      block_number: block.number,
       from_address: from_address,
       to_address: to_address,
       token_contract_address: token_address,
@@ -896,7 +956,7 @@ defmodule Explorer.Factory do
     |> Map.merge(transaction_factory_chain_type_fields())
   end
 
-  case Application.compile_env(:explorer, :chain_type) do
+  case @chain_type do
     :arbitrum ->
       defp transaction_factory_chain_type_fields() do
         %{
@@ -962,7 +1022,7 @@ defmodule Explorer.Factory do
       abi: contract_code_info.abi,
       contract_code_md5: bytecode_md5,
       verified_via_sourcify: Enum.random([true, false]),
-      is_vyper_contract: Enum.random([true, false]),
+      language: Enum.random([:solidity, :vyper]),
       verified_via_eth_bytecode_db: Enum.random([true, false]),
       verified_via_verifier_alliance: Enum.random([true, false])
     }
@@ -1234,6 +1294,14 @@ defmodule Explorer.Factory do
     }
   end
 
+  def db_migration_status_factory do
+    %MigrationStatus{
+      migration_name: nil,
+      status: "started",
+      meta: nil
+    }
+  end
+
   defp op_output_root_l2_output_index do
     sequence("op_output_root_l2_output_index", & &1)
   end
@@ -1260,6 +1328,34 @@ defmodule Explorer.Factory do
       address_hash: address.hash,
       state: Enum.random(0..2)
     }
+  end
+
+  def zilliqa_staker_factory do
+    control_address = insert(:address)
+    reward_address = insert(:address)
+    signing_address = insert(:address)
+
+    block = insert(:block)
+
+    %ZilliqaStaker{
+      bls_public_key: zilliqa_bls_public_key(),
+      index: sequence(:zilliqa_staker_index, & &1),
+      control_address_hash: control_address.hash,
+      reward_address_hash: reward_address.hash,
+      signing_address_hash: signing_address.hash,
+      added_at_block_number: block.number,
+      stake_updated_at_block_number: block.number,
+      balance: Decimal.new(1_000_000)
+    }
+  end
+
+  def zilliqa_bls_public_key do
+    {:ok, bls_public_key} =
+      :zilliqa_bls_public_key
+      |> sequence(& &1)
+      |> BLSPublicKey.cast()
+
+    to_string(bls_public_key)
   end
 
   def celo_pending_epoch_block_operation_factory do

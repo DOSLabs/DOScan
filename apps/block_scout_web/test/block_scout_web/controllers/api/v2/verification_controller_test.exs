@@ -105,7 +105,7 @@ defmodule BlockScoutWeb.API.V2.VerificationControllerTest do
 
         Application.put_env(:explorer, :solc_bin_api_url, "https://solc-bin.ethereum.org")
 
-        contract_address = insert(:contract_address, contract_code: "0x")
+        contract_address = insert(:contract_address, contract_code: "0x01")
 
         :transaction
         |> insert(
@@ -336,7 +336,7 @@ defmodule BlockScoutWeb.API.V2.VerificationControllerTest do
                        :timer.seconds(300)
 
         # Assert that the `is_blueprint=true` is stored in the database after verification
-        TestHelper.get_eip1967_implementation_zero_addresses()
+        TestHelper.get_all_proxies_implementation_zero_addresses()
 
         request = get(conn, "/api/v2/smart-contracts/#{Address.checksum(contract_address.hash)}")
         response = json_response(request, 200)
