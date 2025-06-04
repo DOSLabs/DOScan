@@ -11,6 +11,7 @@ defmodule Explorer.Chain.Block.Schema do
     Address,
     Block,
     Hash,
+    InternalTransaction,
     PendingBlockOperation,
     Transaction,
     Wei,
@@ -164,6 +165,8 @@ defmodule Explorer.Chain.Block.Schema do
 
         has_many(:transactions, Transaction, references: :hash)
         has_many(:transaction_forks, Transaction.Fork, foreign_key: :uncle_hash, references: :hash)
+
+        has_many(:internal_transactions, InternalTransaction, foreign_key: :block_hash, references: :hash)
 
         has_many(:rewards, Reward, foreign_key: :block_hash, references: :hash)
 
@@ -543,18 +546,38 @@ defmodule Explorer.Chain.Block do
   def next_block_base_fee_per_gas(block) do
     {base_fee_max_change_denominator, elasticity_multiplier} = get_eip1559_config(block.number)
 
-    gas_target = Decimal.div(block.gas_limit, elasticity_multiplier)
+    gas_target = Decimal.div_int(block.gas_limit, elasticity_multiplier)
 
-    gas_used_delta = Decimal.sub(block.gas_used, gas_target)
+    lower_bound = Application.get_env(:explorer, :base_fee_lower_bound)
 
     base_fee_per_gas_decimal = block.base_fee_per_gas |> Wei.to(:wei)
 
     base_fee_per_gas_decimal &&
-      base_fee_per_gas_decimal
-      |> Decimal.mult(gas_used_delta)
-      |> Decimal.div(gas_target)
-      |> Decimal.div(base_fee_max_change_denominator)
-      |> Decimal.add(base_fee_per_gas_decimal)
+      block.gas_used
+      |> Decimal.gt?(gas_target)
+      |> if do
+        gas_used_delta = Decimal.sub(block.gas_used, gas_target)
+
+        base_fee_per_gas_decimal
+        |> get_base_fee_per_gas_delta(gas_used_delta, gas_target, base_fee_max_change_denominator)
+        |> Decimal.max(Decimal.new(1))
+        |> Decimal.add(base_fee_per_gas_decimal)
+      else
+        gas_used_delta = Decimal.sub(gas_target, block.gas_used)
+
+        base_fee_per_gas_decimal
+        |> get_base_fee_per_gas_delta(gas_used_delta, gas_target, base_fee_max_change_denominator)
+        |> Decimal.negate()
+        |> Decimal.add(base_fee_per_gas_decimal)
+      end
+      |> Decimal.max(lower_bound)
+  end
+
+  defp get_base_fee_per_gas_delta(base_fee_per_gas_decimal, gas_used_delta, gas_target, base_fee_max_change_denominator) do
+    base_fee_per_gas_decimal
+    |> Decimal.mult(gas_used_delta)
+    |> Decimal.div_int(gas_target)
+    |> Decimal.div_int(base_fee_max_change_denominator)
   end
 
   @spec set_refetch_needed(integer | [integer]) :: :ok
@@ -577,4 +600,21 @@ defmodule Explorer.Chain.Block do
   end
 
   def set_refetch_needed(block_number), do: set_refetch_needed([block_number])
+
+  @doc """
+  Generates a query to fetch blocks by their hashes.
+
+  ## Parameters
+
+    - `hashes`: A list of block hashes to filter by.
+
+  ## Returns
+
+    - An Ecto query that can be used to retrieve blocks matching the given hashes.
+  """
+  @spec by_hashes_query([binary()]) :: Ecto.Query.t()
+  def by_hashes_query(hashes) do
+    __MODULE__
+    |> where([block], block.hash in ^hashes)
+  end
 end

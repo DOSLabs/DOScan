@@ -63,6 +63,24 @@ defmodule Explorer.Helper do
     "0x#{truncated_hash}"
   end
 
+  @doc """
+    Safely parses a string or integer into an integer value.
+
+    Handles both string and integer inputs:
+    - For string input: Converts only if the entire string represents a valid integer
+    - For integer input: Returns the integer as is
+    - For any other input: Returns nil
+
+    ## Parameters
+    - `int_or_string`: A binary string containing an integer or an integer value
+
+    ## Returns
+    - The parsed integer if successful
+    - `nil` if the input is invalid or contains non-integer characters
+  """
+  @spec parse_integer(binary() | integer()) :: integer() | nil
+  def parse_integer(int_or_string)
+
   def parse_integer(integer_string) when is_binary(integer_string) do
     case Integer.parse(integer_string) do
       {integer, ""} -> integer
@@ -151,25 +169,25 @@ defmodule Explorer.Helper do
   @doc """
   Decode json
   """
-  @spec decode_json(any()) :: map() | list() | nil
-  def decode_json(data, nft? \\ false)
+  @spec decode_json(any(), boolean()) :: map() | list() | {:error, any()} | nil
+  def decode_json(data, error_as_tuple? \\ false)
 
   def decode_json(nil, _), do: nil
 
-  def decode_json(data, nft?) do
+  def decode_json(data, error_as_tuple?) do
     if String.valid?(data) do
-      safe_decode_json(data, nft?)
+      safe_decode_json(data, error_as_tuple?)
     else
       data
       |> :unicode.characters_to_binary(:latin1)
-      |> safe_decode_json(nft?)
+      |> safe_decode_json(error_as_tuple?)
     end
   end
 
-  defp safe_decode_json(data, nft?) do
+  defp safe_decode_json(data, error_as_tuple?) do
     case Jason.decode(data) do
       {:ok, decoded} -> decoded
-      _ -> if nft?, do: {:error, data}, else: %{error: data}
+      {:error, reason} -> if error_as_tuple?, do: {:error, reason}, else: %{error: data}
     end
   end
 
@@ -340,5 +358,154 @@ defmodule Explorer.Helper do
     else
       "0x" <> Base.encode16(binary_hash, case: :lower)
     end
+  end
+
+  @doc """
+  Converts an integer to its hexadecimal string representation prefixed with "0x".
+
+  The resulting hexadecimal string is in lowercase.
+
+  ## Parameters
+
+    - `integer` (integer): The integer to be converted to a hexadecimal string.
+
+  ## Returns
+
+    - `binary()`: A string representing the hexadecimal value of the input integer, prefixed with "0x".
+
+  ## Examples
+
+      iex> Explorer.Helper.integer_to_hex(255)
+      "0x00ff"
+
+      iex> Explorer.Helper.integer_to_hex(4096)
+      "0x1000"
+
+  """
+  @spec integer_to_hex(integer()) :: binary()
+  def integer_to_hex(integer), do: "0x" <> String.downcase(Integer.to_string(integer, 16))
+
+  @doc """
+  Converts a `Decimal` value to its hexadecimal representation.
+
+  ## Parameters
+
+    - `decimal` (`Decimal.t()`): The decimal value to be converted.
+
+  ## Returns
+
+    - `binary()`: The hexadecimal representation of the given decimal value.
+    - `nil`: If the conversion fails.
+
+  ## Examples
+
+      iex> decimal_to_hex(Decimal.new(255))
+      "0xff"
+
+      iex> decimal_to_hex(Decimal.new(0))
+      "0x0"
+
+      iex> decimal_to_hex(nil)
+      nil
+  """
+  @spec decimal_to_hex(Decimal.t()) :: binary() | nil
+  def decimal_to_hex(decimal) do
+    decimal
+    |> Decimal.to_integer()
+    |> integer_to_hex()
+  end
+
+  @doc """
+  Converts a `DateTime` struct to its hexadecimal representation.
+
+  If the input is `nil`, the function returns `nil`.
+
+  ## Parameters
+
+    - `datetime`: A `DateTime` struct or `nil`.
+
+  ## Returns
+
+    - A binary string representing the hexadecimal value of the Unix timestamp
+      of the given `DateTime`, or `nil` if the input is `nil`.
+
+  ## Examples
+
+      iex> datetime = ~U[2023-03-15 12:34:56Z]
+      iex> Explorer.Helper.datetime_to_hex(datetime)
+      "0x6411e6b0"
+
+      iex> Explorer.Helper.datetime_to_hex(nil)
+      nil
+  """
+  @spec datetime_to_hex(DateTime.t() | nil) :: binary() | nil
+  def datetime_to_hex(nil), do: nil
+
+  def datetime_to_hex(datetime) do
+    datetime
+    |> DateTime.to_unix()
+    |> integer_to_hex()
+  end
+
+  @doc """
+    Converts `0x` string to the byte sequence (binary). Throws `ArgumentError` exception if
+    the padding is incorrect or a non-alphabet character is present in the string.
+
+    ## Parameters
+    - `hash`: The 0x string of bytes.
+
+    ## Returns
+    - The binary byte sequence.
+  """
+  @spec hash_to_binary(String.t()) :: binary()
+  def hash_to_binary(hash) do
+    hash
+    |> String.trim_leading("0x")
+    |> Base.decode16!(case: :mixed)
+  end
+
+  @doc """
+  Converts a Unix timestamp to a Date struct.
+
+  Takes a non-negative integer representing seconds since Unix epoch (January 1,
+  1970, 00:00:00 UTC) and returns the corresponding date.
+
+  ## Parameters
+  - `unix_timestamp`: Non-negative integer of seconds since Unix epoch
+
+  ## Returns
+  - A Date struct representing the date part of the timestamp
+
+  ## Raises
+  - ArgumentError: If the timestamp is invalid
+  """
+  @spec unix_timestamp_to_date(non_neg_integer(), System.time_unit()) :: Date.t()
+  def unix_timestamp_to_date(unix_timestamp, unit \\ :second) do
+    unix_timestamp
+    |> DateTime.from_unix!(unit)
+    |> DateTime.to_date()
+  end
+
+  @doc """
+  Adds `inserted_at` and `updated_at` timestamps to a list of maps.
+
+  This function takes a list of maps (`params`) and adds the current UTC
+  timestamp (`DateTime.utc_now/0`) as the values for the `:inserted_at` and
+  `:updated_at` keys in each map.
+
+  ## Parameters
+
+    - `params` - A list of maps to which the timestamps will be added.
+
+  ## Returns
+
+    - A list of maps, each containing the original keys and values along with
+      the `:inserted_at` and `:updated_at` keys set to the current UTC timestamp.
+  """
+  @spec add_timestamps([map()]) :: [map()]
+  def add_timestamps(params) do
+    now = DateTime.utc_now()
+
+    Enum.map(params, &Map.merge(&1, %{inserted_at: now, updated_at: now}))
   end
 end

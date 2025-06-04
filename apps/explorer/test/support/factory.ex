@@ -36,10 +36,10 @@ defmodule Explorer.Factory do
     Block,
     ContractMethod,
     Data,
-    DecompiledSmartContract,
     Hash,
     InternalTransaction,
     Log,
+    MultichainSearchDbExportRetryQueue,
     PendingBlockOperation,
     PendingTransactionOperation,
     SmartContract,
@@ -169,7 +169,7 @@ defmodule Explorer.Factory do
   end
 
   def watchlist_address_db_factory(%{wl_id: id}) do
-    hash = build(:address).hash
+    hash = insert(:address).hash
 
     %WatchlistAddress{
       name: sequence("test"),
@@ -745,6 +745,10 @@ defmodule Explorer.Factory do
     %PendingTransactionOperation{}
   end
 
+  def multichain_search_db_export_retry_queue_factory do
+    %MultichainSearchDbExportRetryQueue{}
+  end
+
   def internal_transaction_factory() do
     gas = Enum.random(21_000..100_000)
     gas_used = Enum.random(0..gas)
@@ -1034,16 +1038,6 @@ defmodule Explorer.Factory do
 
   def unique_smart_contract_factory do
     Map.replace(smart_contract_factory(), :name, sequence("SimpleStorage"))
-  end
-
-  def decompiled_smart_contract_factory do
-    contract_code_info = contract_code_info()
-
-    %DecompiledSmartContract{
-      address_hash: insert(:address, contract_code: contract_code_info.bytecode, decompiled: true).hash,
-      decompiler_version: "test_decompiler",
-      decompiled_source_code: contract_code_info.source_code
-    }
   end
 
   def proxy_implementation_factory do
@@ -1360,5 +1354,37 @@ defmodule Explorer.Factory do
 
   def celo_pending_epoch_block_operation_factory do
     %CeloPendingEpochBlockOperation{}
+  end
+
+  def withdrawal_log_factory(params) do
+    weth_log(TokenTransfer.weth_withdrawal_signature(), params)
+  end
+
+  def deposit_log_factory(params) do
+    weth_log(TokenTransfer.weth_deposit_signature(), params)
+  end
+
+  defp weth_log(first_topic, %{
+         from_address: from_address,
+         token_contract_address: token_contract_address,
+         amount: amount,
+         transaction: transaction,
+         block: block
+       }) do
+    data = "0x" <> (Integer.to_string(amount, 16) |> String.downcase() |> String.pad_leading(64, "0"))
+
+    %Log{
+      address: token_contract_address,
+      address_hash: token_contract_address.hash,
+      block: block,
+      block_number: block.number,
+      data: data,
+      first_topic: first_topic,
+      second_topic: zero_padded_address_hash_string(from_address.hash),
+      third_topic: nil,
+      fourth_topic: nil,
+      index: sequence("log_index", & &1),
+      transaction: transaction
+    }
   end
 end
