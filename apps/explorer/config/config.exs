@@ -12,6 +12,7 @@ import Config
 # General application configuration
 config :explorer,
   chain_type: ConfigHelper.chain_type(),
+  chain_identity: ConfigHelper.chain_identity(),
   ecto_repos: ConfigHelper.repos(),
   token_functions_reader_max_retries: 3,
   # for not fully indexed blockchains
@@ -110,6 +111,10 @@ config :explorer, Explorer.Chain.Cache.Counters.BlockPriorityFeeCount,
 
 config :explorer, Explorer.TokenInstanceOwnerAddressMigration.Supervisor, enabled: true
 
+config :explorer, Explorer.Migrator.DeleteZeroValueInternalTransactions, enabled: false
+
+config :explorer, Explorer.Chain.Mud, enabled: ConfigHelper.parse_bool_env_var("MUD_INDEXER_ENABLED")
+
 for migrator <- [
       # Background migrations
       Explorer.Migrator.TransactionsDenormalization,
@@ -133,7 +138,12 @@ for migrator <- [
       Explorer.Migrator.SanitizeEmptyContractCodeAddresses,
       Explorer.Migrator.BackfillMetadataURL,
       Explorer.Migrator.SanitizeErc1155TokenBalancesWithoutTokenIds,
-      Explorer.Migrator.ReindexDuplicatedInternalTransactions
+      Explorer.Migrator.ReindexDuplicatedInternalTransactions,
+      Explorer.Migrator.MergeAdjacentMissingBlockRanges,
+      Explorer.Migrator.UnescapeQuotesInTokens,
+      Explorer.Migrator.SanitizeDuplicateSmartContractAdditionalSources,
+      Explorer.Migrator.FillInternalTransactionToAddressHashWithCreatedContractAddressHash,
+      Explorer.Migrator.EmptyInternalTransactionsData
     ] do
   config :explorer, migrator, enabled: true
 end
@@ -166,7 +176,12 @@ for index_operation <- [
       Explorer.Migrator.HeavyDbIndexOperation.CreateLogsDepositsWithdrawalsIndex,
       Explorer.Migrator.HeavyDbIndexOperation.CreateAddressesTransactionsCountDescPartialIndex,
       Explorer.Migrator.HeavyDbIndexOperation.CreateAddressesTransactionsCountAscCoinBalanceDescHashPartialIndex,
-      Explorer.Migrator.HeavyDbIndexOperation.CreateInternalTransactionsBlockHashTransactionIndexIndexUniqueIndex
+      Explorer.Migrator.HeavyDbIndexOperation.CreateInternalTransactionsBlockNumberTransactionIndexIndexUniqueIndex,
+      Explorer.Migrator.HeavyDbIndexOperation.CreateSmartContractAdditionalSourcesUniqueIndex,
+      Explorer.Migrator.HeavyDbIndexOperation.DropTokenInstancesTokenIdIndex,
+      Explorer.Migrator.HeavyDbIndexOperation.CreateTokensNamePartialFtsIndex,
+      Explorer.Migrator.HeavyDbIndexOperation.UpdateInternalTransactionsPrimaryKey,
+      Explorer.Migrator.HeavyDbIndexOperation.DropInternalTransactionsBlockHashTransactionIndexIndexIndex
     ] do
   config :explorer, index_operation, enabled: true
 end
@@ -183,7 +198,12 @@ config :explorer, Explorer.SmartContract.CertifiedSmartContractCataloger, enable
 
 config :explorer, Explorer.Utility.RateLimiter, enabled: true
 
-config :explorer, Explorer.Repo, migration_timestamps: [type: :utc_datetime_usec]
+config :explorer, Explorer.Utility.Hammer.Redis, enabled: true
+config :explorer, Explorer.Utility.Hammer.ETS, enabled: true
+
+config :explorer, Explorer.Repo,
+  migration_timestamps: [type: :utc_datetime_usec],
+  disconnect_on_error_codes: [:query_canceled]
 
 config :explorer, Explorer.Tracer,
   service: :explorer,
@@ -191,24 +211,22 @@ config :explorer, Explorer.Tracer,
   trace_key: :blockscout
 
 config :explorer,
-  solc_bin_api_url: "https://solc-bin.ethereum.org"
+  solc_bin_api_url: "https://binaries.soliditylang.org"
 
-config :explorer, :http_adapter, HTTPoison
+config :explorer, :http_client, Explorer.HttpClient.Tesla
 
 config :explorer, Explorer.Chain.BridgedToken, enabled: ConfigHelper.parse_bool_env_var("BRIDGED_TOKENS_ENABLED")
 
 config :logger, :explorer,
-  # keep synced with `config/config.exs`
-  format: "$dateT$time $metadata[$level] $message\n",
-  metadata:
-    ~w(application fetcher request_id first_block_number last_block_number missing_block_range_count missing_block_count
-       block_number step count error_count shrunk import_id transaction_id)a,
+  metadata: ConfigHelper.logger_metadata(),
   metadata_filter: [application: :explorer]
 
 config :spandex_ecto, SpandexEcto.EctoLogger,
   service: :ecto,
   tracer: Explorer.Tracer,
   otp_app: :explorer
+
+config :tesla, adapter: Tesla.Adapter.Mint
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

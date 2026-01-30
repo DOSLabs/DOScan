@@ -44,6 +44,9 @@ config :explorer, Explorer.TokenInstanceOwnerAddressMigration.Supervisor, enable
 
 config :explorer, Explorer.Utility.RateLimiter, enabled: false
 
+config :explorer, Explorer.Utility.Hammer.Redis, enabled: false
+config :explorer, Explorer.Utility.Hammer.ETS, enabled: true
+
 for migrator <- [
       # Background migrations
       Explorer.Migrator.TransactionsDenormalization,
@@ -69,6 +72,12 @@ for migrator <- [
       Explorer.Migrator.BackfillMetadataURL,
       Explorer.Migrator.SanitizeErc1155TokenBalancesWithoutTokenIds,
       Explorer.Migrator.ReindexDuplicatedInternalTransactions,
+      Explorer.Migrator.MergeAdjacentMissingBlockRanges,
+      Explorer.Migrator.UnescapeQuotesInTokens,
+      Explorer.Migrator.SanitizeDuplicateSmartContractAdditionalSources,
+      Explorer.Migrator.DeleteZeroValueInternalTransactions,
+      Explorer.Migrator.FillInternalTransactionToAddressHashWithCreatedContractAddressHash,
+      Explorer.Migrator.EmptyInternalTransactionsData,
 
       # Heavy DB index operations
       Explorer.Migrator.HeavyDbIndexOperation.CreateLogsBlockHashIndex,
@@ -97,7 +106,12 @@ for migrator <- [
       Explorer.Migrator.HeavyDbIndexOperation.CreateLogsDepositsWithdrawalsIndex,
       Explorer.Migrator.HeavyDbIndexOperation.CreateAddressesTransactionsCountDescPartialIndex,
       Explorer.Migrator.HeavyDbIndexOperation.CreateAddressesTransactionsCountAscCoinBalanceDescHashPartialIndex,
-      Explorer.Migrator.HeavyDbIndexOperation.CreateInternalTransactionsBlockHashTransactionIndexIndexUniqueIndex
+      Explorer.Migrator.HeavyDbIndexOperation.CreateInternalTransactionsBlockNumberTransactionIndexIndexUniqueIndex,
+      Explorer.Migrator.HeavyDbIndexOperation.CreateSmartContractAdditionalSourcesUniqueIndex,
+      Explorer.Migrator.HeavyDbIndexOperation.DropTokenInstancesTokenIdIndex,
+      Explorer.Migrator.HeavyDbIndexOperation.CreateTokensNamePartialFtsIndex,
+      Explorer.Migrator.HeavyDbIndexOperation.UpdateInternalTransactionsPrimaryKey,
+      Explorer.Migrator.HeavyDbIndexOperation.DropInternalTransactionsBlockHashTransactionIndexIndexIndex
     ] do
   config :explorer, migrator, enabled: false
 end

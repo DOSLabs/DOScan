@@ -6,12 +6,12 @@ defmodule Explorer.Chain.BridgedToken do
 
   import Ecto.Changeset
   import EthereumJSONRPC, only: [json_rpc: 2]
+  import Explorer.Chain.Address.Reputation, only: [reputation_association: 0]
 
   import Ecto.Query,
     only: [
       from: 2,
-      limit: 2,
-      where: 2
+      limit: 2
     ]
 
   alias ABI.{TypeDecoder, TypeEncoder}
@@ -28,8 +28,6 @@ defmodule Explorer.Chain.BridgedToken do
     Token,
     Transaction
   }
-
-  alias Explorer.Helper, as: ExplorerHelper
 
   require Logger
 
@@ -582,10 +580,10 @@ defmodule Explorer.Chain.BridgedToken do
            |> json_rpc(eth_call_foreign_json_rpc_named_arguments),
          token0_hash <- parse_contract_response(token0_encoded, :address),
          token1_hash <- parse_contract_response(token1_encoded, :address),
-         false <- is_nil(token0_hash),
-         false <- is_nil(token1_hash),
-         token0_hash_str <- ExplorerHelper.add_0x_prefix(token0_hash),
-         token1_hash_str <- ExplorerHelper.add_0x_prefix(token1_hash),
+         {:ok, token0_hash} <- Hash.Address.cast(token0_hash),
+         {:ok, token1_hash} <- Hash.Address.cast(token1_hash),
+         token0_hash_str <- to_string(token0_hash),
+         token1_hash_str <- to_string(token1_hash),
          {:ok, "0x" <> token0_name_encoded} <-
            @name_signature
            |> Contract.eth_call_request(token0_hash_str, 1, nil, nil)
@@ -704,8 +702,8 @@ defmodule Explorer.Chain.BridgedToken do
          |> json_rpc(eth_call_foreign_json_rpc_named_arguments) do
       {:ok, "0x" <> token_encoded} ->
         with token_hash <- parse_contract_response(token_encoded, :address),
-             false <- is_nil(token_hash),
-             token_hash_str <- ExplorerHelper.add_0x_prefix(token_hash),
+             {:ok, token_hash} <- Hash.Address.cast(token_hash),
+             token_hash_str <- to_string(token_hash),
              {:ok, "0x" <> token_decimals_encoded} <-
                @decimals_signature
                |> Contract.eth_call_request(token_hash_str, 1, nil, nil)
@@ -945,7 +943,7 @@ defmodule Explorer.Chain.BridgedToken do
         where: t.total_supply > ^0,
         where: t.bridged,
         select: {t, bt},
-        preload: [:contract_address]
+        preload: [:contract_address, ^reputation_association()]
       )
 
     base_query_with_paging =
@@ -958,7 +956,7 @@ defmodule Explorer.Chain.BridgedToken do
         case Search.prepare_search_term(filter) do
           {:some, filter_term} ->
             base_query_with_paging
-            |> where(fragment("to_tsvector('english', symbol || ' ' || name) @@ to_tsquery(?)", ^filter_term))
+            |> Token.apply_fts_filter(filter_term)
 
           _ ->
             base_query_with_paging

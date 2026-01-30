@@ -9,7 +9,6 @@ defmodule Explorer.Tags.AddressToTag do
 
   alias Explorer.{Chain, Repo}
   alias Explorer.Chain.{Address, Hash}
-  alias Explorer.Helper, as: ExplorerHelper
   alias Explorer.Tags.AddressTag
 
   # Notation.import_types(BlockScoutWeb.GraphQL.Schema.Types)
@@ -71,7 +70,7 @@ defmodule Explorer.Tags.AddressToTag do
       current_address_hashes_strings =
         current_address_hashes
         |> Enum.map(fn address_hash ->
-          ExplorerHelper.add_0x_prefix(address_hash.bytes)
+          to_string(address_hash)
         end)
 
       current_address_hashes_strings_tuples = MapSet.new(current_address_hashes_strings)
@@ -107,7 +106,7 @@ defmodule Explorer.Tags.AddressToTag do
         end)
         |> Enum.filter(&(!is_nil(&1)))
 
-      unless Enum.empty?(addresses_to_delete) do
+      if !Enum.empty?(addresses_to_delete) do
         delete_query_base =
           from(
             att in __MODULE__,

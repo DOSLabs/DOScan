@@ -18,9 +18,11 @@ defmodule Indexer.Fetcher.TokenBalance do
 
   require Logger
 
+  alias EthereumJSONRPC.Utility.RangesHelper
   alias Explorer.Chain
   alias Explorer.Chain.Address.{CurrentTokenBalance, TokenBalance}
-  alias Explorer.Chain.Hash
+  alias Explorer.Chain.Events.Publisher
+  alias Explorer.Chain.{Hash, Token}
   alias Explorer.Utility.MissingBalanceOfToken
   alias Indexer.{BufferedTask, TokenBalances, Tracer}
   alias Indexer.Fetcher.TokenBalance.Supervisor, as: TokenBalanceSupervisor
@@ -48,7 +50,12 @@ defmodule Indexer.Fetcher.TokenBalance do
     if TokenBalanceSupervisor.disabled?() do
       :ok
     else
-      formatted_params = Enum.map(token_balances, &entry/1)
+      filtered_balances =
+        token_balances
+        |> RangesHelper.filter_by_block_ranges()
+        |> RangesHelper.filter_traceable_block_numbers()
+
+      formatted_params = Enum.map(filtered_balances, &entry/1)
 
       BufferedTask.buffer(__MODULE__, formatted_params, realtime?, :infinity)
     end
@@ -58,7 +65,7 @@ defmodule Indexer.Fetcher.TokenBalance do
   def child_spec([init_options, gen_server_options]) do
     {state, mergeable_init_options} = Keyword.pop(init_options, :json_rpc_named_arguments)
 
-    unless state do
+    if !state do
       raise ArgumentError,
             ":json_rpc_named_arguments must be provided to `#{__MODULE__}.child_spec " <>
               "to allow for json_rpc calls when running."
@@ -74,14 +81,21 @@ defmodule Indexer.Fetcher.TokenBalance do
 
   @impl BufferedTask
   def init(initial, reducer, _) do
+    entry_reducer = fn token_balance, acc ->
+      token_balance
+      |> entry()
+      |> reducer.(acc)
+    end
+
+    stream_reducer =
+      entry_reducer
+      |> RangesHelper.stream_reducer_by_block_ranges()
+      |> RangesHelper.stream_reducer_traceable()
+
     {:ok, final} =
-      Chain.stream_unfetched_token_balances(
+      TokenBalance.stream_unfetched_token_balances(
         initial,
-        fn token_balance, acc ->
-          token_balance
-          |> entry()
-          |> reducer.(acc)
-        end,
+        stream_reducer,
         true
       )
 
@@ -162,11 +176,7 @@ defmodule Indexer.Fetcher.TokenBalance do
 
   defp handle_missing_balance_of_tokens(failed_token_balances) do
     {missing_balance_of_balances, other_failed_balances} =
-      Enum.split_with(failed_token_balances, fn
-        %{error: :unable_to_decode} -> true
-        %{error: error} when is_binary(error) -> String.match?(error, ~r/execution.*revert/)
-        _ -> false
-      end)
+      Enum.split_with(failed_token_balances, &EthereumJSONRPC.contract_failure?/1)
 
     MissingBalanceOfToken.insert_from_params(missing_balance_of_balances)
 
@@ -220,6 +230,21 @@ defmodule Indexer.Fetcher.TokenBalance do
     }
 
     case Chain.import(import_params) do
+      {:ok, %{address_current_token_balances: imported_ctbs}} ->
+        imported_ctbs
+        |> Enum.group_by(& &1.address_hash)
+        |> Enum.each(fn {address_hash, ctbs} ->
+          Publisher.broadcast(
+            %{
+              address_current_token_balances: %{
+                address_hash: to_string(address_hash),
+                address_current_token_balances: ctbs
+              }
+            },
+            :realtime
+          )
+        end)
+
       {:ok, _} ->
         :ok
 
@@ -250,7 +275,7 @@ defmodule Indexer.Fetcher.TokenBalance do
   end
 
   defp put_token_type_to_balance_object(token_balance) do
-    token_type = Chain.get_token_type(token_balance.token_contract_address_hash)
+    token_type = Token.get_token_type(token_balance.token_contract_address_hash)
 
     if token_type do
       Map.put(token_balance, :token_type, token_type)

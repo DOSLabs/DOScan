@@ -103,7 +103,7 @@ defmodule Explorer.Chain.Address.CurrentTokenBalance do
         offset = (max(paging_options.page_number, 1) - 1) * paging_options.page_size
 
         token_contract_address_hash
-        |> token_holders_query
+        |> token_holders_query()
         |> order_by([tb], desc: :value, desc: :address_hash)
         |> Chain.page_token_balances(paging_options)
         |> limit(^paging_options.page_size)
@@ -192,7 +192,7 @@ defmodule Explorer.Chain.Address.CurrentTokenBalance do
   """
   def last_token_balances(address_hash, type \\ [])
 
-  def last_token_balances(address_hash, [type | _]) do
+  def last_token_balances(address_hash, types) when is_list(types) and types != [] do
     fiat_balance = fiat_value_query()
 
     from(
@@ -202,7 +202,7 @@ defmodule Explorer.Chain.Address.CurrentTokenBalance do
       left_join: t in assoc(ctb, :token),
       on: ctb.token_contract_address_hash == t.contract_address_hash,
       preload: [token: t],
-      where: t.type == ^type,
+      where: t.type in ^types,
       select: ctb,
       select_merge: ^%{fiat_value: fiat_balance},
       order_by: ^[desc_nulls_last: fiat_balance],

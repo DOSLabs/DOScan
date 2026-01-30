@@ -30,6 +30,7 @@ defmodule Indexer.Helper do
   @infinite_retries_number 100_000_000
   @block_check_interval_range_size 100
   @block_by_number_chunk_size 50
+  @http_get_request_max_attempts 10
 
   @beacon_blob_fetcher_reference_slot_eth 8_500_000
   @beacon_blob_fetcher_reference_timestamp_eth 1_708_824_023
@@ -223,12 +224,12 @@ defmodule Indexer.Helper do
     [
       transport: EthereumJSONRPC.HTTP,
       transport_options: [
-        http: EthereumJSONRPC.HTTP.HTTPoison,
+        http: EthereumJSONRPC.HTTP.Tesla,
         urls: [rpc_url],
         http_options: [
           recv_timeout: :timer.minutes(10),
           timeout: :timer.minutes(10),
-          hackney: [pool: :ethereum_jsonrpc]
+          pool: :ethereum_jsonrpc
         ]
       ]
     ]
@@ -264,6 +265,7 @@ defmodule Indexer.Helper do
     end)
   end
 
+  # todo: refactor: reuse existing code from EthereumJSONRPC app
   @doc """
     Retrieves event logs from Ethereum-like blockchains within a specified block
     range for a given address and set of topics using JSON-RPC.
@@ -381,6 +383,53 @@ defmodule Indexer.Helper do
   end
 
   @doc """
+  Processes a large batch of contract calls by splitting them into smaller
+  chunks for efficiency and resiliency.
+
+  This function takes a potentially large list of contract call requests,
+  divides them into manageable chunks, applies the provided reader function to
+  each chunk, and then consolidates the results.
+
+  The chunking approach helps prevent timeouts that can occur when making too
+  many simultaneous RPC calls.
+
+  ## Parameters
+  - `requests`: A list of `EthereumJSONRPC.Contract.call()` instances
+    representing contract calls to execute.
+  - `chunk_size`: The maximum number of contract calls to include in each chunk.
+  - `reader`: A function that takes a chunk of contract call requests and
+           returns `{responses, errors}` tuple.
+
+  ## Returns
+  - A tuple `{responses, errors}` where:
+  - `responses`: A concatenated list of all response tuples `{:ok, result}` or
+                `{:error, reason}` from all chunks, maintaining the original
+                order.
+  - `errors`: A deduplicated list of all error messages encountered across all
+    chunks.
+  """
+  @spec read_contracts_with_retries_by_chunks(
+          [EthereumJSONRPC.Contract.call()],
+          integer(),
+          ([EthereumJSONRPC.Contract.call()] ->
+             {[{:ok | :error, any()}], list()})
+        ) ::
+          {[{:ok | :error, any()}], list()}
+  def read_contracts_with_retries_by_chunks(requests, chunk_size, reader)
+      when is_list(requests) and is_integer(chunk_size) and chunk_size > 0 do
+    {responses_lists, errors_lists} =
+      requests
+      |> Enum.chunk_every(chunk_size)
+      |> Enum.map(reader)
+      |> Enum.unzip()
+
+    {
+      Enum.concat(responses_lists),
+      errors_lists |> Enum.concat() |> Enum.uniq()
+    }
+  end
+
+  @doc """
     Retrieves decoded results of `eth_call` requests to contracts, with retry
     logic for handling errors.
 
@@ -415,7 +464,8 @@ defmodule Indexer.Helper do
           [EthereumJSONRPC.Contract.call()],
           [map()],
           EthereumJSONRPC.json_rpc_named_arguments(),
-          integer()
+          integer(),
+          boolean()
         ) :: {[{:ok | :error, any()}], list()}
   def read_contracts_with_retries(requests, abi, json_rpc_named_arguments, retries_left, log_error? \\ true)
       when is_list(requests) and is_list(abi) and is_integer(retries_left) do
@@ -724,32 +774,44 @@ defmodule Indexer.Helper do
   end
 
   @doc """
-    Sends HTTP GET request to the given URL and returns JSON response. Makes max 10 attempts and then returns an error in case of failure.
+    Sends HTTP GET request to the given URL and returns a response. Makes max 10 attempts and then returns an error in case of failure.
     There is a timeout between attempts (increasing from 3 seconds to 20 minutes max as the number of attempts increases).
 
     ## Parameters
     - `url`: The URL which needs to be requested.
+    - `response_format`: Can be `:json` (by default) or `:raw`. In case of `:json`, the response is decoded with `Jason.decode`.
     - `attempts_done`: The number of attempts done. Incremented by the function itself.
+    - `avoid_retry_for_statuses`: The list of http error codes we don't need to re-send the request for.
+                                  E.g. for 404 error we don't try to re-send the request.
 
     ## Returns
-    - `{:ok, response}` where `response` is a map decoded from a JSON object.
-    - `{:error, reason}` in case of failure (after three unsuccessful attempts).
+    - `{:ok, response}` where `response` is a map decoded from a JSON object, or the raw bytes (depending on the `response_format` parameter).
+    - `{:error, reason}` in case of failure (after all unsuccessful attempts).
   """
-  @spec http_get_request(String.t(), non_neg_integer()) :: {:ok, map()} | {:error, any()}
-  def http_get_request(url, attempts_done \\ 0) do
-    recv_timeout = 5_000
+  @spec http_get_request(String.t(), :json | :raw, non_neg_integer(), [non_neg_integer()]) ::
+          {:ok, map() | binary()} | {:error, any()}
+  def http_get_request(url, response_format \\ :json, attempts_done \\ 0, avoid_retry_for_statuses \\ [404]) do
+    recv_timeout = 60_000
     connect_timeout = 8_000
     client = Tesla.client([{Tesla.Middleware.Timeout, timeout: recv_timeout}], Tesla.Adapter.Mint)
 
     case Tesla.get(client, url, opts: [adapter: [timeout: recv_timeout, transport_opts: [timeout: connect_timeout]]]) do
       {:ok, %{body: body, status: 200}} ->
-        Jason.decode(body)
+        if response_format == :json do
+          Jason.decode(body)
+        else
+          {:ok, body}
+        end
 
-      {:ok, %{body: body, status: _}} ->
-        http_get_request_error(url, body, attempts_done)
+      {:ok, %{body: body, status: status}} ->
+        if status in avoid_retry_for_statuses do
+          http_get_request_error(url, response_format, body, @http_get_request_max_attempts, avoid_retry_for_statuses)
+        else
+          http_get_request_error(url, response_format, body, attempts_done, avoid_retry_for_statuses)
+        end
 
       {:error, error} ->
-        http_get_request_error(url, error, attempts_done)
+        http_get_request_error(url, response_format, error, attempts_done, avoid_retry_for_statuses)
     end
   end
 
@@ -757,14 +819,18 @@ defmodule Indexer.Helper do
   #
   # ## Parameters
   # - `url`: The URL which needs to be requested.
+  # - `response_format`: Can be `:json` (by default) or `:raw`. In case of `:json`, the response is decoded with `Jason.decode`.
   # - `error`: The error description for logging purposes.
   # - `attempts_done`: The number of attempts done. Incremented by the function itself.
+  # - `avoid_retry_for_statuses`: The list of http error codes we don't need to re-send the request for.
+  #                               E.g. for 404 error we don't try to re-send the request.
   #
   # ## Returns
   # - `{:ok, response}` tuple if the re-call was successful.
   # - `{:error, reason}` if all attempts were failed.
-  @spec http_get_request_error(String.t(), any(), non_neg_integer()) :: {:ok, map()} | {:error, any()}
-  defp http_get_request_error(url, error, attempts_done) do
+  @spec http_get_request_error(String.t(), :json | :raw, any(), non_neg_integer(), [non_neg_integer()]) ::
+          {:ok, map()} | {:error, any()}
+  defp http_get_request_error(url, response_format, error, attempts_done, avoid_retry_for_statuses) do
     old_truncate = Application.get_env(:logger, :truncate)
     Logger.configure(truncate: :infinity)
 
@@ -780,11 +846,11 @@ defmodule Indexer.Helper do
     # retry to send the request
     attempts_done = attempts_done + 1
 
-    if attempts_done < 10 do
+    if attempts_done < @http_get_request_max_attempts do
       # wait up to 20 minutes and then retry
       :timer.sleep(min(3000 * Integer.pow(2, attempts_done - 1), 1_200_000))
       Logger.info("Retry to send the request to #{url} ...")
-      http_get_request(url, attempts_done)
+      http_get_request(url, response_format, attempts_done, avoid_retry_for_statuses)
     else
       {:error, "Error while sending request to #{url}"}
     end

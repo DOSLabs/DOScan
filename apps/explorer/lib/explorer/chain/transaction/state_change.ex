@@ -3,6 +3,9 @@ defmodule Explorer.Chain.Transaction.StateChange do
     Helper functions and struct for storing state changes
   """
 
+  use Utils.RuntimeEnvHelper,
+    miner_gets_burnt_fees?: [:explorer, [Explorer.Chain.Transaction, :block_miner_gets_burnt_fees?]]
+
   alias Explorer.Chain
   alias Explorer.Chain.{Address, Block, Hash, InternalTransaction, TokenTransfer, Transaction, Wei}
   alias Explorer.Chain.Transaction.StateChange
@@ -20,8 +23,6 @@ defmodule Explorer.Chain.Transaction.StateChange do
         }
 
   @type coin_balances_map :: %{Hash.Address.t() => {Address.t(), Wei.t()}}
-
-  @zero_wei %Wei{value: Decimal.new(0)}
 
   @spec coin_balances_before(Transaction.t(), [Transaction.t()], coin_balances_map()) :: coin_balances_map()
   def coin_balances_before(transaction, block_transactions, coin_balances_before_block) do
@@ -57,8 +58,12 @@ defmodule Explorer.Chain.Transaction.StateChange do
     end
   end
 
-  defp update_coin_balances_from_internal_transaction(%InternalTransaction{call_type: :delegatecall}, coin_balances),
-    do: coin_balances
+  defp update_coin_balances_from_internal_transaction(
+         %InternalTransaction{call_type: call_type, call_type_enum: call_type_enum},
+         coin_balances
+       )
+       when :delegatecall in [call_type, call_type_enum],
+       do: coin_balances
 
   defp update_coin_balances_from_internal_transaction(%InternalTransaction{index: 0}, coin_balances), do: coin_balances
 
@@ -193,8 +198,20 @@ defmodule Explorer.Chain.Transaction.StateChange do
     transaction.value
   end
 
+  # Calculates block miner profit for the given transaction.
+  #
+  # Typically that is priority fee, but if `BLOCK_MINER_GETS_BURNT_FEES` is enabled,
+  # the profit is the sum of the priority fee and the fee which would be burnt.
+  #
+  # ## Parameters
+  # - `transaction`: The transaction entity containing info needed to calculate the profit.
+  # - `block`: The block entity containing info needed to calculate the profit.
+  #
+  # ## Returns
+  # - The miner profit amount in Wei.
+  @spec miner_profit(Transaction.t(), Block.t()) :: Wei.t()
   defp miner_profit(transaction, block) do
-    base_fee_per_gas = block.base_fee_per_gas || %Wei{value: Decimal.new(0)}
+    base_fee_per_gas = block.base_fee_per_gas || Wei.zero()
     max_priority_fee_per_gas = transaction.max_priority_fee_per_gas || transaction.gas_price
     max_fee_per_gas = transaction.max_fee_per_gas || transaction.gas_price
 
@@ -203,7 +220,16 @@ defmodule Explorer.Chain.Transaction.StateChange do
         Wei.to(x, :wei)
       end)
 
-    Wei.mult(priority_fee_per_gas, transaction.gas_used)
+    burnt_fees_for_miner =
+      case miner_gets_burnt_fees?() && Transaction.burnt_fees(transaction.gas_used, max_fee_per_gas, base_fee_per_gas) do
+        false -> Wei.zero()
+        nil -> Wei.zero()
+        value -> value
+      end
+
+    priority_fee_per_gas
+    |> Wei.mult(transaction.gas_used)
+    |> Wei.sum(burnt_fees_for_miner)
   end
 
   defp error?(transaction) do
@@ -277,7 +303,7 @@ defmodule Explorer.Chain.Transaction.StateChange do
 
   defp update_balance(coin_balances, address_hash, update_function) do
     if Map.has_key?(coin_balances, address_hash) do
-      Map.update(coin_balances, address_hash, @zero_wei, fn {address, balance} ->
+      Map.update(coin_balances, address_hash, Wei.zero(), fn {address, balance} ->
         {address, update_function.(balance)}
       end)
     else
@@ -301,7 +327,7 @@ defmodule Explorer.Chain.Transaction.StateChange do
       balance_diff = Decimal.sub(balance, balance_before)
       transfer = elem(List.first(transfers), 1)
 
-      if transfer.token.type != "ERC-20" or has_diff?(balance_diff) do
+      if transfer.token.type not in ["ERC-20", "ZRC-2"] or has_diff?(balance_diff) do
         %StateChange{
           coin_or_token_transfers: transfers,
           address: address,

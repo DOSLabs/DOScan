@@ -118,7 +118,7 @@ defmodule Explorer.Migrator.RestoreOmittedWETHTransfers do
   # fetch token balances
   @impl true
   def handle_info(:migrate, %{queue: queue, current_concurrency: current_concurrency} = state) do
-    if Enum.count(queue) > 0 and current_concurrency < concurrency() do
+    if not Enum.empty?(queue) and current_concurrency < concurrency() do
       to_take = batch_size() * (concurrency() - current_concurrency)
       {to_process, remainder} = Enum.split(queue, to_take)
 
@@ -248,7 +248,7 @@ defmodule Explorer.Migrator.RestoreOmittedWETHTransfers do
 
   defp check_token_types(token_address_hashes) do
     token_address_hashes
-    |> Chain.get_token_types()
+    |> Token.get_token_types()
     |> Enum.reduce(true, fn {token_hash, token_type}, acc ->
       if token_type == "ERC-20" do
         acc

@@ -16,8 +16,6 @@ defmodule Explorer.Migrator.SwitchPendingOperationsTest do
       end)
     end
 
-    # TODO: remove tag after the migration of internal transactions PK to [:block_hash, :transaction_index, :index]
-    @tag :skip
     test "from pbo to pto" do
       first_block = insert(:block)
       second_block = insert(:block)
@@ -64,7 +62,9 @@ defmodule Explorer.Migrator.SwitchPendingOperationsTest do
         |> insert_list(:transaction)
         |> with_block(second_block)
 
-      Enum.each(transactions_1 ++ transactions_2, fn %{hash: transaction_hash} ->
+      pending_transactions = insert_list(4, :transaction)
+
+      Enum.each(transactions_1 ++ transactions_2 ++ pending_transactions, fn %{hash: transaction_hash} ->
         insert(:pending_transaction_operation, transaction_hash: transaction_hash)
       end)
 
