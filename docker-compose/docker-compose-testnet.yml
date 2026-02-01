@@ -1,0 +1,214 @@
+# DOS Chain Testnet Explorer - v2
+# Combines Builder workflow with custom build
+# Domain: test.doscan.io
+
+services:
+  # ==========================================================================
+  # AvalancheGo Node - syncs L1 chain
+  # ==========================================================================
+  avago:
+    image: avaplatform/subnet-evm_avalanchego:v0.8.0-fuji_v1.14.0-fuji
+    container_name: avago
+    restart: always
+    ports:
+      - "127.0.0.1:9650:9650"
+      - "9651:9651"
+    volumes:
+      - avago_data:/root/.avalanchego
+    environment:
+      AVAGO_PARTIAL_SYNC_PRIMARY_NETWORK: "true"
+      AVAGO_PUBLIC_IP_RESOLUTION_SERVICE: "opendns"
+      AVAGO_NETWORK_ID: fuji
+      AVAGO_HTTP_HOST: "0.0.0.0"
+      AVAGO_TRACK_SUBNETS: "ydvj9cWpa5jM7VsHcdzk16KDBqc9us6zuhmTwc7Px6b42ACVN"
+      AVAGO_HTTP_ALLOWED_HOSTS: "*"
+      # Chain config for DOS Testnet L1
+      AVAGO_CHAIN_CONFIG_CONTENT: "eyJlNFBIdGg4dXRCQVBvcmc0c0ZSVGFXbURmVVdmOVg4bkFFQ2N6R3gxQkpWbVlCdjNBIjp7IkNvbmZpZyI6ImV5SndjblZ1YVc1bkxXVnVZV0pzWldRaU9tWmhiSE5sTENKc2IyY3RiR1YyWld3aU9pSmtaV0oxWnlJc0luZGhjbkF0WVhCcExXVnVZV0pzWldRaU9uUnlkV1VzSW1WMGFDMWhjR2x6SWpwYkltVjBhQ0lzSW1WMGFDMW1hV3gwWlhJaUxDSnVaWFFpTENKaFpHMXBiaUlzSW5kbFlqTWlMQ0pwYm5SbGNtNWhiQzFsZEdnaUxDSnBiblJsY201aGJDMWliRzlqYTJOb1lXbHVJaXdpYVc1MFpYSnVZV3d0ZEhKaGJuTmhZM1JwYjI0aUxDSnBiblJsY201aGJDMWtaV0oxWnlJc0ltbHVkR1Z5Ym1Gc0xXRmpZMjkxYm5RaUxDSnBiblJsY201aGJDMXdaWEp6YjI1aGJDSXNJbVJsWW5Wbklpd2laR1ZpZFdjdGRISmhZMlZ5SWl3aVpHVmlkV2N0Wm1sc1pTMTBjbUZqWlhJaUxDSmtaV0oxWnkxb1lXNWtiR1Z5SWwxOSIsIlVwZ3JhZGUiOm51bGx9fQ=="
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9650/ext/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ==========================================================================
+  # Database
+  # ==========================================================================
+  redis-db:
+    image: redis:alpine
+    container_name: redis-db
+    restart: always
+    command: redis-server
+    volumes:
+      - redis_data:/data
+
+  db-init:
+    image: postgres:15
+    entrypoint:
+      - sh
+      - -c
+      - |
+        chown -R 2000:2000 /var/lib/postgresql/data
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  db:
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    image: postgres:15
+    shm_size: 256m
+    restart: always
+    container_name: db
+    command: postgres -c 'max_connections=200' -c 'client_connection_check_interval=60000'
+    environment:
+      POSTGRES_PASSWORD: ""
+      POSTGRES_USER: "postgres"
+      POSTGRES_HOST_AUTH_METHOD: "trust"
+    ports:
+      - "7432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # ==========================================================================
+  # Backend - Build from source v9.0.2
+  # ==========================================================================
+  backend:
+    depends_on:
+      - db
+      - redis-db
+      - avago
+    build:
+      context: /home/ubuntu/services/blockscout
+      dockerfile: ./docker/Dockerfile
+      args:
+        RELEASE_VERSION: 9.0.2
+    pull_policy: never
+    restart: always
+    stop_grace_period: 5m
+    container_name: backend
+    command: sh -c 'bin/blockscout eval "Elixir.Explorer.ReleaseTasks.create_and_migrate()" && bin/blockscout start'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    environment:
+      # RPC Connection - to avago container
+      ETHEREUM_JSONRPC_VARIANT: geth
+      ETHEREUM_JSONRPC_HTTP_URL: http://avago:9650/ext/bc/e4PHth8utBAPorg4sFRTaWmDfUWf9X8nAECczGx1BJVmYBv3A/rpc
+      ETHEREUM_JSONRPC_TRACE_URL: http://avago:9650/ext/bc/e4PHth8utBAPorg4sFRTaWmDfUWf9X8nAECczGx1BJVmYBv3A/rpc
+      ETHEREUM_JSONRPC_WS_URL: ws://avago:9650/ext/bc/e4PHth8utBAPorg4sFRTaWmDfUWf9X8nAECczGx1BJVmYBv3A/ws
+
+      # Database
+      DATABASE_URL: postgresql://postgres:@db:5432/blockscout?ssl=false
+      SECRET_KEY_BASE: RMgI4C1HSkxsEjdhtGMfwAHfyT6CKWXOgzCboJflfSm4jeAber4AuFdWuqry7prU
+
+      # Network Info
+      CHAIN_ID: '3939'
+      NETWORK: DOS Chain
+      SUBNETWORK: Testnet
+      BLOCKSCOUT_HOST: test.doscan.io
+      BLOCKSCOUT_PROTOCOL: https
+      BLOCKSCOUT_VERSION: 9.0.2
+
+      # Indexer Settings
+      INDEXER_DISABLE_PENDING_TRANSACTIONS_FETCHER: "true"
+      INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER: "true"
+      ETHEREUM_JSONRPC_DISABLE_ARCHIVE_BALANCES: "true"
+
+      # Features
+      ECTO_USE_SSL: "false"
+      PORT: 4000
+      DISABLE_EXCHANGE_RATES: "true"
+      SUPPORTED_CHAINS: "[]"
+      TXS_STATS_DAYS_TO_COMPILE_AT_INIT: 10
+
+      # Microservices (disabled for simplicity)
+      MICROSERVICE_SC_VERIFIER_ENABLED: "false"
+      MICROSERVICE_VISUALIZE_SOL2UML_ENABLED: "false"
+      MICROSERVICE_SIG_PROVIDER_ENABLED: "false"
+    links:
+      - db:database
+    ports:
+      - "4000:4000"
+
+  # ==========================================================================
+  # Frontend
+  # ==========================================================================
+  frontend:
+    depends_on:
+      - backend
+    image: ghcr.io/blockscout/frontend:v1.37.4
+    pull_policy: always
+    platform: linux/amd64
+    restart: always
+    container_name: frontend
+    environment:
+      # API Configuration
+      NEXT_PUBLIC_API_HOST: test.doscan.io
+      NEXT_PUBLIC_API_PROTOCOL: https
+      NEXT_PUBLIC_API_BASE_PATH: /
+      NEXT_PUBLIC_API_WEBSOCKET_PROTOCOL: wss
+      NEXT_PUBLIC_API_SPEC_URL: https://raw.githubusercontent.com/blockscout/blockscout-api-v2-swagger/main/swagger.yaml
+
+      # App Configuration
+      NEXT_PUBLIC_APP_HOST: test.doscan.io
+      NEXT_PUBLIC_APP_PROTOCOL: https
+
+      # Network Info
+      NEXT_PUBLIC_NETWORK_NAME: DOS Chain Testnet
+      NEXT_PUBLIC_NETWORK_SHORT_NAME: DOS
+      NEXT_PUBLIC_NETWORK_ID: 3939
+      NEXT_PUBLIC_NETWORK_RPC_URL: https://test.doschain.com
+      NEXT_PUBLIC_NETWORK_CURRENCY_NAME: DOS
+      NEXT_PUBLIC_NETWORK_CURRENCY_SYMBOL: DOS
+      NEXT_PUBLIC_NETWORK_CURRENCY_DECIMALS: 18
+      NEXT_PUBLIC_IS_TESTNET: "true"
+
+      # UI Configuration
+      NEXT_PUBLIC_HOMEPAGE_CHARTS: "['daily_txs']"
+      NEXT_PUBLIC_HOMEPAGE_PLATE_BACKGROUND: "linear-gradient(90deg, rgb(232, 52, 53) 0%, rgb(139, 28, 232) 100%)"
+
+      # Branding
+      NEXT_PUBLIC_NETWORK_LOGO: https://raw.githubusercontent.com/DOSLabs/DOScan-Frontend-Configs/main/configs/network-logos/dos.svg
+      NEXT_PUBLIC_NETWORK_LOGO_DARK: https://raw.githubusercontent.com/DOSLabs/DOScan-Frontend-Configs/main/configs/network-logos/dos-dark.svg
+      NEXT_PUBLIC_NETWORK_ICON: https://raw.githubusercontent.com/DOSLabs/DOScan-Frontend-Configs/main/configs/network-icons/dos.svg
+      FAVICON_MASTER_URL: https://raw.githubusercontent.com/DOSLabs/DOScan-Frontend-Configs/main/configs/network-icons/dos.svg
+
+      # Disable Blockscout branding
+      NEXT_PUBLIC_PROMOTE_BLOCKSCOUT_IN_TITLE: "false"
+
+      # Disable services not needed
+      NEXT_PUBLIC_VISUALIZE_API_HOST: ""
+      NEXT_PUBLIC_STATS_API_HOST: ""
+    ports:
+      - "3000:3000"
+
+  # ==========================================================================
+  # Caddy - Reverse Proxy with Auto SSL
+  # ==========================================================================
+  caddy:
+    depends_on:
+      - backend
+      - frontend
+    image: caddy:latest
+    container_name: caddy
+    restart: always
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    volumes:
+      - ./Caddyfile-testnet:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+
+volumes:
+  postgres_data:
+  redis_data:
+  avago_data:
+  caddy_data:
+  caddy_config:
