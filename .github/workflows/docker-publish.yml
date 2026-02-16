@@ -50,7 +50,7 @@ jobs:
         with:
           images: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-            ${{ vars.DOCKERHUB_USERNAME != '' && format('{0}/doscan-backend', vars.DOCKERHUB_USERNAME) || '' }}
+            ${{ vars.DOCKERHUB_USERNAME != '' && format('{0}/blockscout', vars.DOCKERHUB_USERNAME) || '' }}
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
