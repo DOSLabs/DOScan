@@ -147,7 +147,7 @@ defmodule BlockScoutWeb.API.RPC.AddressView do
       "timeStamp" => "#{DateTime.to_unix(internal_transaction.block_timestamp)}",
       "from" => "#{internal_transaction.from_address_hash}",
       "to" => "#{internal_transaction.to_address_hash}",
-      "value" => "#{internal_transaction.value.value}",
+      "value" => "#{(internal_transaction.value && internal_transaction.value.value) || 0}",
       "contractAddress" => "#{internal_transaction.created_contract_address_hash}",
       "transactionHash" => to_string(internal_transaction.transaction_hash),
       "index" => to_string(internal_transaction.index),
@@ -234,6 +234,12 @@ defmodule BlockScoutWeb.API.RPC.AddressView do
     token_transfer
     |> prepare_common_token_transfer(max_block_number, decoded_input)
     |> Map.put_new(:value, to_string(token_transfer.amount))
+  end
+
+  defp prepare_token_transfer(%{token_type: "ERC-7984"} = token_transfer, max_block_number, decoded_input) do
+    token_transfer
+    |> prepare_common_token_transfer(max_block_number, decoded_input)
+    |> Map.put_new(:value, nil)
   end
 
   defp prepare_token_transfer(token_transfer, max_block_number, decoded_input) do

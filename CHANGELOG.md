@@ -4,6 +4,8 @@
 
 ### 🚀 Features
 
+- ERC-7984 Confidential Tokens ([#13593](https://github.com/blockscout/blockscout/pull/13593))
+- Move current token balances into a separate fetcher ([#13923](https://github.com/blockscout/blockscout/issues/13923))
 - Re-architect internal transaction format with call-type enum, error dictionary, and normalization ([#13893](https://github.com/blockscout/blockscout/issues/13893))
 - Add audit-reports import endpoint ([#13884](https://github.com/blockscout/blockscout/issues/13884))
 - Solady smart-contract proxy with immutable arguments support ([#13794](https://github.com/blockscout/blockscout/issues/13794))
@@ -23,6 +25,10 @@
 
 ### 🐛 Bug Fixes
 
+- `HttpClient.get` usage in genesis data module ([#13945](https://github.com/blockscout/blockscout/pull/13945))
+- Multichain counter starting time and small fixes ([#13920](https://github.com/blockscout/blockscout/pull/13920))
+- Fix 500 on empty ens domain search ([#13928](https://github.com/blockscout/blockscout/pull/13928))
+- Limit `getlogs` after filtering consensus ([#13934](https://github.com/blockscout/blockscout/pull/13934))
 - Handle nil in update_transactions_cache/2 ([#13911](https://github.com/blockscout/blockscout/pull/13911))
 - Fix token balances broadcasting function ([#13902](https://github.com/blockscout/blockscout/issues/13902))
 - Wrong `next_page_params` in OP Deposits ([#13870](https://github.com/blockscout/blockscout/issues/13870))
@@ -45,7 +51,6 @@
 - Fix NaN gas limit for `selfdestruct` internal transaction in the REST API ([#13827](https://github.com/blockscout/blockscout/issues/13827))
 - Handle normal termination of Indexer.Fetcher.OnDemand.ContractCode process ([#13828](https://github.com/blockscout/blockscout/issues/13828))
 - Validate block number in the api/v2/blocks/:block_number API endpoint ([#13795](https://github.com/blockscout/blockscout/issues/13795))
-- Fix block reindex condition in ContractCreator on-demand ([#13831](https://github.com/blockscout/blockscout/issues/13831))
 - Fix methodId detection ([#13811](https://github.com/blockscout/blockscout/issues/13811))
 - Improve Arbitrum L1->L2 message discovery for reorg and RPC consistency ([#13770](https://github.com/blockscout/blockscout/issues/13770))
 
@@ -55,6 +60,10 @@
 
 ### ⚙️ Miscellaneous Tasks
 
+- Enhance indexer metrics calculation ([#13985](https://github.com/blockscout/blockscout/pull/13985))
+- Don't send historic rate for recent txs ([#13960](https://github.com/blockscout/blockscout/pull/13960))
+- Increase default for MIGRATION_EMPTY_INTERNAL_TRANSACTIONS_DATA_BATCH_SIZE to 1000 ([#13953](https://github.com/blockscout/blockscout/pull/13953))
+- Improve EmptyInternalTransactionsData migration ([#13918](https://github.com/blockscout/blockscout/pull/13918))
 - Disable Auth0 when Dynamic enabled ([#13912](https://github.com/blockscout/blockscout/pull/13912))
 - Add swagger spec for account abstraction endpoints ([#13897](https://github.com/blockscout/blockscout/issues/13897))
 - Clear token "skip_metadata" property ([#13891](https://github.com/blockscout/blockscout/issues/13891))
@@ -76,10 +85,7 @@
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `BLOCK_MINER_GETS_BURNT_FEES`                           | If `true`, the Burnt fees are added to block miner profit and displayed in UI as zero. Implemented in [#13894](https://github.com/blockscout/blockscout/pull/13894).                                                                                                                                                                                                                                                                               | Version: v10.0.0\+ <br />Default: `false` <br />Applications: API                                                                                                                                                                                                                                                                                                                  |
 | `UNIVERSAL_PROXY_CONFIG`                               | JSON-encoded configuration string used to define settings for the universal proxy. Implemented in [#13787](https://github.com/blockscout/blockscout/pull/13787).                                                                                                                                                                                                                                                                                   | Version: v10.0.0\+ <br />Default: (empty) <br />Applications: API                                                                                                                                                                                                                                                                                                                  |
-| `MIGRATION_FILL_INTERNAL_TRANSACTION_TO_ADDRESS_HASH_WITH_CREATED_CONTRACT_ADDRESS_HASH_BATCH_SIZE` | Specifies the block batch size selected for the fill internal transaction `to_address_hash` migration. Implemented in [#13846](https://github.com/blockscout/blockscout/pull/13846).                                                                                                                                                | Version: v10.0.0\+ <br />Default: `100` <br />Applications: Indexer |
-| `MIGRATION_FILL_INTERNAL_TRANSACTION_TO_ADDRESS_HASH_WITH_CREATED_CONTRACT_ADDRESS_HASH_CONCURRENCY` | Specifies how many concurrent processes can handle the fill internal transaction `to_address_hash` migration. Implemented in [#13846](https://github.com/blockscout/blockscout/pull/13846).                                                                                                                                        | Version: v10.0.0\+ <br />Default: `1` <br />Applications: Indexer |
-| `MIGRATION_FILL_INTERNAL_TRANSACTION_TO_ADDRESS_HASH_WITH_CREATED_CONTRACT_ADDRESS_HASH_TIMEOUT` | Defines the timeout between processing each batch (`batch_size` \* `concurrency`) in the fill internal transaction `to_address_hash` migration. Implemented in [#13846](https://github.com/blockscout/blockscout/pull/13846).                                                                                                          | Version: v10.0.0\+ <br />Default: `0s` <br />Applications: Indexer |
-| `MIGRATION_EMPTY_INTERNAL_TRANSACTIONS_DATA_BATCH_SIZE`  | Number of internal transactions to clear their data in the batch. Implemented in [#13893](https://github.com/blockscout/blockscout/pull/13893).                                                                                                                                                                                                                                | Version: v10.0.0\+ <br />Default: `100` <br />Applications: Indexer        |
+| `MIGRATION_EMPTY_INTERNAL_TRANSACTIONS_DATA_BATCH_SIZE`  | Number of internal transactions to clear their data in the batch. Implemented in [#13893](https://github.com/blockscout/blockscout/pull/13893).                                                                                                                                                                                                                                | Version: v10.0.0\+ <br />Default: `1000` <br />Applications: Indexer        |
 | `MIGRATION_EMPTY_INTERNAL_TRANSACTIONS_DATA_CONCURRENCY` | Number of parallel clearing internal transaction data batches processing. Implemented in [#13893](https://github.com/blockscout/blockscout/pull/13893).                                                                                                                                                                                                                        | Version: v10.0.0\+ <br />Default: `1` <br />Applications: Indexer          |
 | `MIGRATION_EMPTY_INTERNAL_TRANSACTIONS_DATA_TIMEOUT`     | Timeout between clearing internal transaction data batches processing. Implemented in [#13893](https://github.com/blockscout/blockscout/pull/13893).                                                                                                                                                                                                                           | Version: v10.0.0\+ <br />Default: `0` <br />Applications: Indexer          |
 | `CACHE_PENDING_OPERATIONS_COUNT_PERIOD`               | Time interval to restart the task which calculates the total pending operations count.  Introduced in [#12474](https://github.com/blockscout/blockscout/pull/12474).                                                                                                                                                                                          | Version: v10.0.0\+ <br />Default: `5m` <br />Applications: API, Indexer    |
@@ -88,6 +94,8 @@
 | `INDEXER_OPTIMISM_L1_BATCH_EIGENDA_PROXY_BASE_URL`   | Defines a URL to EigenDA proxy node which is used by the DA indexer (planned to be optional in the future). Example for MegaETH: `http://megaeth-eigenda-proxy.node.blockscout.com:3100`. Implemented in [#13709](https://github.com/blockscout/blockscout/pull/13709).                                                                                                                                                                                                                                                                                                       | Version: v10.0.0+ <br />Default: (empty) <br />Applications: Indexer                                       |
 | `INDEXER_ARBITRUM_MESSAGES_TRACKING_FAILURE_THRESHOLD`             | The time threshold for L1 message tracking tasks. If a task has not run successfully within this threshold, it is marked as failed and enters a cooldown period before retrying. Implemented in [#13792](https://github.com/blockscout/blockscout/pull/13792).                                                                                                                                                 | Version: v10.0.0+ <br />Default: `10m` <br />Applications: Indexer                                      |
 | `INDEXER_ARBITRUM_MISSED_MESSAGE_IDS_RANGE`                        | Size of each message ID range inspected when discovering L1-to-L2 messages with missing L1 origination information. Implemented in [#13792](https://github.com/blockscout/blockscout/pull/13792).                                                                                                                                                                                                              | Version: v10.0.0+ <br />Default: `10000` <br />Applications: Indexer                                      |
+| `INDEXER_CURRENT_TOKEN_BALANCES_BATCH_SIZE`                        | Batch size for current token balances fetcher. Implemented in [#13923](https://github.com/blockscout/blockscout/pull/13923).                                                                                                                                                                                                              | Version: v10.0.0+ <br />Default: `100` <br />Applications: Indexer      |
+| `INDEXER_CURRENT_TOKEN_BALANCES_CONCURRENCY`                        | Concurrency for current token balances fetcher. Implemented in [#13923](https://github.com/blockscout/blockscout/pull/13923).                                                                                                                                                                                                              | Version: v10.0.0+ <br />Default: `10` <br />Applications: Indexer    |
 
 
 ### Deprecated ENV variables
@@ -96,6 +104,39 @@
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | -------------- | --------------------- |
 | `CACHE_PBO_COUNT_PERIOD`  | Time interval to restart the task which calculates the total pending_block_operations count.  | `20m` | v5.2.0+ |  | v10.0.0 |
 
+
+## 9.3.5
+
+### 🐛 Bug Fixes
+
+- Fix block reindex condition in ContractCreator on-demand ([#13831](https://github.com/blockscout/blockscout/issues/13831))
+
+
+## 9.3.4
+
+### ⚡ Performance
+
+- Fix /token-transfers timeout when filtering scam tokens enabled ([#13973](https://github.com/blockscout/blockscout/pull/13973))
+
+
+## 9.3.3
+
+### ⚙️ Miscellaneous Tasks
+
+- Replace ZeroValueDeleteQueue with filtering on import ([#13921](https://github.com/blockscout/blockscout/pull/13921), [#13947](https://github.com/blockscout/blockscout/pull/13947))
+- Allow to set IT storage period not only in days ([#13932](https://github.com/blockscout/blockscout/pull/13932))
+
+### New ENV variables
+
+| Variable                                                            | Description                                                                                                                                                                                     | Parameters                                                          |
+|---------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
+| `MIGRATION_DELETE_ZERO_VALUE_INTERNAL_TRANSACTIONS_STORAGE_PERIOD`  | Specifies the period for which recent zero-value calls won't be deleted in delete zero-value calls migration. Implemented in [#13932](https://github.com/blockscout/blockscout/pull/13932).     | Version: v9.3.3\+ <br />Default: `30d` <br />Applications: Indexer  |
+
+### Deprecated ENV variables
+
+| Variable                                                                 | Description                                                                                                    | Default | Version   | Deprecated in Version |
+|--------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|---------|-----------|-----------------------|
+| `MIGRATION_DELETE_ZERO_VALUE_INTERNAL_TRANSACTIONS_STORAGE_PERIOD_DAYS`  | Specifies the period for which recent zero-value calls won't be deleted in delete zero-value calls migration.  | `30`    | v9.3.0+   | v9.3.3                |
 
 
 ## 9.3.2

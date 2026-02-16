@@ -171,6 +171,7 @@ defmodule Explorer.Chain.TokenTransfer do
 
   # event NativeCoinBurned(address indexed from, uint256 amount)
   @arc_native_coin_burned_event "0xaaf1ef013644e67c5cea90217acdf0accd334f8437fc9a89a53cfc9b25fb5c25"
+  @erc7984_transfer_event "0x67500e8d0ed826d2194f514dd0d8124f35648ab6e3fb5e6ed867134cffe661e9"
 
   @transfer_function_signature "0xa9059cbb"
 
@@ -244,6 +245,8 @@ defmodule Explorer.Chain.TokenTransfer do
   def arc_native_coin_minted_event, do: @arc_native_coin_minted_event
 
   def arc_native_coin_burned_event, do: @arc_native_coin_burned_event
+
+  def erc7984_transfer_event, do: @erc7984_transfer_event
 
   @doc """
   ERC 20's transfer(address,uint256) function signature
@@ -331,7 +334,7 @@ defmodule Explorer.Chain.TokenTransfer do
         |> preload(^preloads)
         |> order_by([tt], desc: tt.block_number, desc: tt.log_index)
         |> maybe_filter_by_token_type(token_type)
-        |> ExplorerHelper.maybe_hide_scam_addresses(:token_contract_address_hash, options)
+        |> ExplorerHelper.maybe_hide_scam_addresses_for_token_transfers(options)
         |> page_token_transfer(paging_options)
         |> limit(^paging_options.page_size)
         |> Chain.select_repo(options).all()
@@ -593,7 +596,7 @@ defmodule Explorer.Chain.TokenTransfer do
       |> join(:inner, [tt], token in assoc(tt, :token), as: :token)
       |> preload([token: token], [{:token, token}])
       |> filter_by_type(token_types)
-      |> ExplorerHelper.maybe_hide_scam_addresses(:token_contract_address_hash, options)
+      |> ExplorerHelper.maybe_hide_scam_addresses_for_token_transfers(options)
       |> handle_paging_options(paging_options)
     else
       to_address_hash_query =
@@ -603,7 +606,7 @@ defmodule Explorer.Chain.TokenTransfer do
         |> filter_by_token_address_hash(token_address_hash)
         |> filter_by_type(token_types)
         |> order_by([tt], desc: tt.block_number, desc: tt.log_index)
-        |> ExplorerHelper.maybe_hide_scam_addresses(:token_contract_address_hash, options)
+        |> ExplorerHelper.maybe_hide_scam_addresses_for_token_transfers(options)
         |> handle_paging_options(paging_options)
         |> Chain.wrapped_union_subquery()
 
@@ -614,7 +617,7 @@ defmodule Explorer.Chain.TokenTransfer do
         |> filter_by_token_address_hash(token_address_hash)
         |> filter_by_type(token_types)
         |> order_by([tt], desc: tt.block_number, desc: tt.log_index)
-        |> ExplorerHelper.maybe_hide_scam_addresses(:token_contract_address_hash, options)
+        |> ExplorerHelper.maybe_hide_scam_addresses_for_token_transfers(options)
         |> handle_paging_options(paging_options)
         |> Chain.wrapped_union_subquery()
 
