@@ -4,7 +4,7 @@
 
 ### 🚀 Features
 
-- ERC-7984 Confidential Tokens ([#13593](https://github.com/blockscout/blockscout/pull/13593))
+- ERC-7984 Confidential Tokens ([#13593](https://github.com/blockscout/blockscout/pull/13593), [#14019](https://github.com/blockscout/blockscout/pull/14019), [#14022](https://github.com/blockscout/blockscout/pull/14022), [#14023](https://github.com/blockscout/blockscout/pull/14023))
 - Move current token balances into a separate fetcher ([#13923](https://github.com/blockscout/blockscout/issues/13923))
 - Re-architect internal transaction format with call-type enum, error dictionary, and normalization ([#13893](https://github.com/blockscout/blockscout/issues/13893))
 - Add audit-reports import endpoint ([#13884](https://github.com/blockscout/blockscout/issues/13884))
@@ -25,6 +25,9 @@
 
 ### 🐛 Bug Fixes
 
+- Fix duplicating paging params ([#14010](https://github.com/blockscout/blockscout/pull/14010))
+- Handle maybe_reject_zero_value for missing value ([#13990](https://github.com/blockscout/blockscout/pull/13990))
+- Handle internal transactions nil value([#13974](https://github.com/blockscout/blockscout/pull/13974))
 - `HttpClient.get` usage in genesis data module ([#13945](https://github.com/blockscout/blockscout/pull/13945))
 - Multichain counter starting time and small fixes ([#13920](https://github.com/blockscout/blockscout/pull/13920))
 - Fix 500 on empty ens domain search ([#13928](https://github.com/blockscout/blockscout/pull/13928))
@@ -60,6 +63,12 @@
 
 ### ⚙️ Miscellaneous Tasks
 
+- Improve pending block operations count metric ([#14024](https://github.com/blockscout/blockscout/pull/14024))
+- Add initial_stream delay to BufferedTask ([#14018](https://github.com/blockscout/blockscout/pull/14018), [#14020](https://github.com/blockscout/blockscout/pull/14020))
+- Adjust query for "missing_current_token_balances_count" indexer metric ([#14009](https://github.com/blockscout/blockscout/pull/14009))
+- Add support for new BENS api ([#13992](https://github.com/blockscout/blockscout/pull/13992))
+- Add internal transactions not null constraints ([#13976](https://github.com/blockscout/blockscout/pull/13976), [#13995](https://github.com/blockscout/blockscout/pull/13995))
+- Change 429 error text ([#13989](https://github.com/blockscout/blockscout/pull/13989))
 - Enhance indexer metrics calculation ([#13985](https://github.com/blockscout/blockscout/pull/13985))
 - Don't send historic rate for recent txs ([#13960](https://github.com/blockscout/blockscout/pull/13960))
 - Increase default for MIGRATION_EMPTY_INTERNAL_TRANSACTIONS_DATA_BATCH_SIZE to 1000 ([#13953](https://github.com/blockscout/blockscout/pull/13953))
