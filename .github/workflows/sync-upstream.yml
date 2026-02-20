@@ -1,0 +1,132 @@
+name: Sync upstream release
+
+on:
+  schedule:
+    - cron: '0 8 * * *' # Daily at 8:00 UTC (15:00 VN)
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Upstream tag to sync (e.g. v9.3.5). Leave empty to auto-detect latest.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  sync:
+    name: Sync with upstream blockscout/blockscout
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/blockscout/blockscout.git || true
+          git fetch upstream --tags
+
+      - name: Determine target tag
+        id: target
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            # Get latest release tag from upstream (filter only vX.Y.Z pattern)
+            TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Target tag: $TAG"
+
+          # Check if we already synced this tag
+          MARKER_TAG="synced-$TAG"
+          if git rev-parse "$MARKER_TAG" >/dev/null 2>&1; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Already synced $TAG, skipping"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "Will sync $TAG"
+          fi
+
+      - name: Merge upstream tag
+        if: steps.target.outputs.skip == 'false'
+        id: merge
+        run: |
+          TAG="${{ steps.target.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Merge upstream tag into current branch
+          if git merge "$TAG" --no-edit -m "Merge upstream $TAG"; then
+            echo "result=success" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::Merge conflict detected. Creating PR instead."
+            git merge --abort
+            echo "result=conflict" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Push and tag
+        if: steps.target.outputs.skip == 'false' && steps.merge.outputs.result == 'success'
+        run: |
+          TAG="${{ steps.target.outputs.tag }}"
+          git push origin HEAD
+
+          # Create marker tag so we don't re-sync
+          git tag "synced-$TAG"
+          git push origin "synced-$TAG"
+
+          # Create the release tag (same as upstream) to trigger docker-publish
+          git tag "$TAG" --force
+          git push origin "$TAG" --force
+
+      - name: Create release
+        if: steps.target.outputs.skip == 'false' && steps.merge.outputs.result == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.target.outputs.tag }}"
+          # Delete existing release if any (from upstream fork sync)
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          gh release create "$TAG" \
+            --title "DOScan $TAG" \
+            --notes "Synced from upstream [blockscout/blockscout $TAG](https://github.com/blockscout/blockscout/releases/tag/$TAG)" \
+            --latest
+
+      - name: Create PR on conflict
+        if: steps.target.outputs.skip == 'false' && steps.merge.outputs.result == 'conflict'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.target.outputs.tag }}"
+          BRANCH="sync-upstream-${TAG}"
+
+          git checkout -b "$BRANCH"
+          git merge "$TAG" --no-edit || true
+
+          # Stage everything including conflict markers
+          git add -A
+          git commit -m "WIP: Merge upstream $TAG (has conflicts)" --no-verify || true
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "Sync upstream $TAG (merge conflicts)" \
+            --body "$(cat <<EOF
+          ## Upstream Sync - $TAG
+
+          Auto-merge with upstream \`$TAG\` failed due to conflicts.
+
+          **To resolve:**
+          1. Check out this branch locally
+          2. Resolve conflicts
+          3. Push and merge this PR
+          4. Then create tag \`$TAG\` to trigger Docker build
+
+          [Upstream release notes](https://github.com/blockscout/blockscout/releases/tag/$TAG)
+          EOF
+          )" \
+            --head "$BRANCH" \
+            --base master
