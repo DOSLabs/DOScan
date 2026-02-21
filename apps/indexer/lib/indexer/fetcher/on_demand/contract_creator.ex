@@ -13,7 +13,7 @@ defmodule Indexer.Fetcher.OnDemand.ContractCreator do
   alias EthereumJSONRPC.Nonce
   alias Explorer.Chain.{Address, Block}
   alias Explorer.Chain.Cache.BlockNumber
-  alias Explorer.Utility.MissingBlockRange
+  alias Explorer.Utility.MissingRangesManipulator
 
   import Indexer.Block.Fetcher,
     only: [
@@ -99,7 +99,7 @@ defmodule Indexer.Fetcher.OnDemand.ContractCreator do
 
     unless Block.indexed?(contract_creation_block_number) do
       # Change `1` to specific label when `priority` field becomes `Ecto.Enum`.
-      MissingBlockRange.add_ranges_by_block_numbers([contract_creation_block_number], 1)
+      MissingRangesManipulator.add_ranges_by_block_numbers([contract_creation_block_number], 1)
     end
 
     :ok

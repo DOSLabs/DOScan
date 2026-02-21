@@ -21,7 +21,11 @@ jobs:
     name: Push Docker image to GitHub Container Registry
     runs-on: build
     env:
+<<<<<<< HEAD
       RELEASE_VERSION: 10.0.0
+=======
+      RELEASE_VERSION: 9.3.5
+>>>>>>> v9.3.5
     steps:
       - uses: actions/checkout@v5
       - name: Setup repo
