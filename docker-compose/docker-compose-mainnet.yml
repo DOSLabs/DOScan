@@ -63,7 +63,7 @@ services:
         condition: service_healthy
       redis-db:
         condition: service_healthy
-    image: metados/blockscout:9.3.5
+    image: metados/blockscout:latest
     pull_policy: always
     restart: always
     stop_grace_period: 5m
