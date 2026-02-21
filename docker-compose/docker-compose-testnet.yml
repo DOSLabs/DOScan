@@ -113,9 +113,9 @@ services:
       BLOCKSCOUT_PROTOCOL: https
       BLOCKSCOUT_VERSION: 9.0.2
 
-      # Indexer Settings
-      INDEXER_DISABLE_PENDING_TRANSACTIONS_FETCHER: "true"
-      INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER: "true"
+      # Indexer Settings - Enable internal/pending txs
+      INDEXER_DISABLE_PENDING_TRANSACTIONS_FETCHER: "false"
+      INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER: "false"
       ETHEREUM_JSONRPC_DISABLE_ARCHIVE_BALANCES: "true"
 
       # Features
@@ -125,10 +125,25 @@ services:
       SUPPORTED_CHAINS: "[]"
       TXS_STATS_DAYS_TO_COMPILE_AT_INIT: 10
 
-      # Microservices (disabled for simplicity)
-      MICROSERVICE_SC_VERIFIER_ENABLED: "false"
-      MICROSERVICE_VISUALIZE_SOL2UML_ENABLED: "false"
-      MICROSERVICE_SIG_PROVIDER_ENABLED: "false"
+      # Admin & API Features
+      ADMIN_PANEL_ENABLED: "true"
+      API_GRAPHQL_ENABLED: "true"
+
+      # Sourcify Integration
+      SOURCIFY_INTEGRATION_ENABLED: "true"
+      SOURCIFY_SERVER_URL: "https://sourcify.dev/server"
+      SOURCIFY_REPO_URL: "https://repo.sourcify.dev/contracts"
+
+      # Microservices - All Enabled
+      MICROSERVICE_SC_VERIFIER_ENABLED: "true"
+      MICROSERVICE_SC_VERIFIER_URL: "http://smart-contract-verifier:8050/"
+      MICROSERVICE_SC_VERIFIER_TYPE: "sc_verifier"
+      MICROSERVICE_VISUALIZE_SOL2UML_ENABLED: "true"
+      MICROSERVICE_VISUALIZE_SOL2UML_URL: "http://visualizer:8050/"
+      MICROSERVICE_SIG_PROVIDER_ENABLED: "true"
+      MICROSERVICE_SIG_PROVIDER_URL: "http://sig-provider:8050/"
+      MICROSERVICE_ACCOUNT_ABSTRACTION_ENABLED: "true"
+      MICROSERVICE_ACCOUNT_ABSTRACTION_URL: "http://user-ops-indexer:8090/"
     links:
       - db:database
     ports:
@@ -140,51 +155,71 @@ services:
   frontend:
     depends_on:
       - backend
-    image: ghcr.io/blockscout/frontend:v1.37.4
+    image: ghcr.io/blockscout/frontend:latest
     pull_policy: always
     platform: linux/amd64
     restart: always
     container_name: frontend
-    environment:
-      # API Configuration
-      NEXT_PUBLIC_API_HOST: test.doscan.io
-      NEXT_PUBLIC_API_PROTOCOL: https
-      NEXT_PUBLIC_API_BASE_PATH: /
-      NEXT_PUBLIC_API_WEBSOCKET_PROTOCOL: wss
-      NEXT_PUBLIC_API_SPEC_URL: https://raw.githubusercontent.com/blockscout/blockscout-api-v2-swagger/main/swagger.yaml
-
-      # App Configuration
-      NEXT_PUBLIC_APP_HOST: test.doscan.io
-      NEXT_PUBLIC_APP_PROTOCOL: https
-
-      # Network Info
-      NEXT_PUBLIC_NETWORK_NAME: DOS Chain Testnet
-      NEXT_PUBLIC_NETWORK_SHORT_NAME: DOS
-      NEXT_PUBLIC_NETWORK_ID: 3939
-      NEXT_PUBLIC_NETWORK_RPC_URL: https://test.doschain.com
-      NEXT_PUBLIC_NETWORK_CURRENCY_NAME: DOS
-      NEXT_PUBLIC_NETWORK_CURRENCY_SYMBOL: DOS
-      NEXT_PUBLIC_NETWORK_CURRENCY_DECIMALS: 18
-      NEXT_PUBLIC_IS_TESTNET: "true"
-
-      # UI Configuration
-      NEXT_PUBLIC_HOMEPAGE_CHARTS: "['daily_txs']"
-      NEXT_PUBLIC_HOMEPAGE_PLATE_BACKGROUND: "linear-gradient(90deg, rgb(232, 52, 53) 0%, rgb(139, 28, 232) 100%)"
-
-      # Branding
-      NEXT_PUBLIC_NETWORK_LOGO: https://raw.githubusercontent.com/DOSLabs/DOScan-Frontend-Configs/main/configs/network-logos/dos.svg
-      NEXT_PUBLIC_NETWORK_LOGO_DARK: https://raw.githubusercontent.com/DOSLabs/DOScan-Frontend-Configs/main/configs/network-logos/dos-dark.svg
-      NEXT_PUBLIC_NETWORK_ICON: https://raw.githubusercontent.com/DOSLabs/DOScan-Frontend-Configs/main/configs/network-icons/dos.svg
-      FAVICON_MASTER_URL: https://raw.githubusercontent.com/DOSLabs/DOScan-Frontend-Configs/main/configs/network-icons/dos.svg
-
-      # Disable Blockscout branding
-      NEXT_PUBLIC_PROMOTE_BLOCKSCOUT_IN_TITLE: "false"
-
-      # Disable services not needed
-      NEXT_PUBLIC_VISUALIZE_API_HOST: ""
-      NEXT_PUBLIC_STATS_API_HOST: ""
+    env_file:
+      - ./envs/common-frontend-testnet.env
     ports:
       - "3000:3000"
+
+  # ==========================================================================
+  # Microservices
+  # ==========================================================================
+  smart-contract-verifier:
+    image: ghcr.io/blockscout/smart-contract-verifier:latest
+    pull_policy: always
+    platform: linux/amd64
+    restart: always
+    container_name: smart-contract-verifier
+    env_file:
+      - ./envs/common-smart-contract-verifier.env
+    ports:
+      - "8043:8050"
+
+  visualizer:
+    image: ghcr.io/blockscout/visualizer:latest
+    pull_policy: always
+    platform: linux/amd64
+    restart: always
+    container_name: visualizer
+    env_file:
+      - ./envs/common-visualizer.env
+    ports:
+      - "8044:8050"
+
+  sig-provider:
+    image: ghcr.io/blockscout/sig-provider:latest
+    pull_policy: always
+    platform: linux/amd64
+    restart: always
+    container_name: sig-provider
+    ports:
+      - "8045:8050"
+
+  user-ops-indexer:
+    depends_on:
+      - db
+      - avago
+    image: ghcr.io/blockscout/user-ops-indexer:latest
+    pull_policy: always
+    platform: linux/amd64
+    restart: always
+    container_name: user-ops-indexer
+    environment:
+      USER_OPS_INDEXER__INDEXER__RPC_URL: http://avago:9650/ext/bc/e4PHth8utBAPorg4sFRTaWmDfUWf9X8nAECczGx1BJVmYBv3A/rpc
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V08: "true"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V08_ENTRY_POINT: "0x433709009B8330FDa32311DF1C2AFA402eD8D009"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V06: "false"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V07: "false"
+      USER_OPS_INDEXER__DATABASE__CONNECT__URL: postgresql://postgres:@db:5432/blockscout
+      USER_OPS_INDEXER__DATABASE__CREATE_DATABASE: "false"
+      USER_OPS_INDEXER__DATABASE__RUN_MIGRATIONS: "true"
+      USER_OPS_INDEXER__SERVER__HTTP__ADDR: "0.0.0.0:8090"
+    ports:
+      - "8090:8090"
 
   # ==========================================================================
   # Caddy - Reverse Proxy with Auto SSL
