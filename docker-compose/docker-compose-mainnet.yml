@@ -14,6 +14,11 @@ services:
     command: redis-server
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   db-init:
     image: postgres:15
@@ -43,14 +48,21 @@ services:
       - "127.0.0.1:7432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
   # ==========================================================================
   # Backend - Blockscout Latest
   # ==========================================================================
   backend:
     depends_on:
-      - db
-      - redis-db
+      db:
+        condition: service_healthy
+      redis-db:
+        condition: service_healthy
     image: doscan-backend:latest
     pull_policy: never
     restart: always
@@ -65,13 +77,20 @@ services:
       - db:database
     ports:
       - "127.0.0.1:4000:4000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/v2/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   # ==========================================================================
   # Frontend - Blockscout Latest
   # ==========================================================================
   frontend:
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     image: doscan-frontend:latest
     pull_policy: never
     restart: always
@@ -80,6 +99,12 @@ services:
       - ./envs/common-frontend.env
     ports:
       - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   # ==========================================================================
   # Microservices
@@ -171,8 +196,10 @@ services:
   # ==========================================================================
   caddy:
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
     image: caddy:latest
     container_name: caddy
     restart: always
