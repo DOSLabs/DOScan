@@ -1,0 +1,129 @@
+name: Deploy Config
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docker-compose/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deploy target'
+        required: true
+        type: choice
+        options:
+          - mainnet
+          - testnet
+          - both
+
+jobs:
+  deploy-mainnet:
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.environment == 'mainnet' || inputs.environment == 'both'))
+    runs-on: ubuntu-latest
+    environment: mainnet
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy configs to archive VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ vars.MAINNET_HOST }}
+          username: ${{ vars.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: >-
+            docker-compose/docker-compose-mainnet.yml,
+            docker-compose/Caddyfile-mainnet,
+            docker-compose/envs/common-blockscout.env,
+            docker-compose/envs/common-frontend.env,
+            docker-compose/envs/common-smart-contract-verifier.env,
+            docker-compose/envs/common-visualizer.env
+          target: /tmp/doscan-deploy
+          strip_components: 1
+
+      - name: Apply configs and restart services
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.MAINNET_HOST }}
+          username: ${{ vars.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            DEPLOY_PATH=~/doscan
+            SRC=/tmp/doscan-deploy
+
+            # Backup current compose
+            cp $DEPLOY_PATH/compose.yml $DEPLOY_PATH/compose.yml.bak 2>/dev/null || true
+
+            # Copy new configs (preserve secrets in blockscout env)
+            cp $SRC/docker-compose-mainnet.yml $DEPLOY_PATH/compose.yml
+            cp $SRC/Caddyfile-mainnet $DEPLOY_PATH/Caddyfile
+            cp $SRC/envs/common-frontend.env $DEPLOY_PATH/envs/common-frontend.env
+            cp $SRC/envs/common-smart-contract-verifier.env $DEPLOY_PATH/envs/common-smart-contract-verifier.env
+            cp $SRC/envs/common-visualizer.env $DEPLOY_PATH/envs/common-visualizer.env
+
+            # For blockscout env: only copy if SECRET_KEY_BASE is not CHANGE_ME
+            if grep -q 'SECRET_KEY_BASE=CHANGE_ME' $SRC/envs/common-blockscout.env; then
+              echo "Skipping common-blockscout.env (contains placeholder secrets)"
+            else
+              cp $SRC/envs/common-blockscout.env $DEPLOY_PATH/envs/common-blockscout.env
+            fi
+
+            # Restart Blockscout services (NOT avago - runs as native systemd)
+            cd $DEPLOY_PATH
+            sudo docker compose up -d --no-deps --force-recreate frontend backend stats caddy
+
+            # Cleanup
+            rm -rf $SRC
+
+            echo "Deploy complete!"
+
+  deploy-testnet:
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.environment == 'testnet' || inputs.environment == 'both')
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy configs to dev VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ vars.TESTNET_HOST }}
+          username: ${{ vars.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: >-
+            docker-compose/docker-compose-testnet.yml,
+            docker-compose/Caddyfile-testnet,
+            docker-compose/envs/common-frontend-testnet.env,
+            docker-compose/envs/common-smart-contract-verifier.env,
+            docker-compose/envs/common-visualizer.env
+          target: /tmp/doscan-deploy
+          strip_components: 1
+
+      - name: Apply configs and restart services
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.TESTNET_HOST }}
+          username: ${{ vars.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            DEPLOY_PATH=/home/ubuntu/services/DOScan/docker-compose
+            SRC=/tmp/doscan-deploy
+
+            cp $SRC/docker-compose-testnet.yml $DEPLOY_PATH/docker-compose.yml
+            cp $SRC/Caddyfile-testnet $DEPLOY_PATH/Caddyfile
+            cp $SRC/envs/common-frontend-testnet.env $DEPLOY_PATH/envs/common-frontend.env
+            cp $SRC/envs/common-smart-contract-verifier.env $DEPLOY_PATH/envs/common-smart-contract-verifier.env
+            cp $SRC/envs/common-visualizer.env $DEPLOY_PATH/envs/common-visualizer.env
+
+            cd $DEPLOY_PATH
+            sudo docker compose up -d --no-deps --force-recreate frontend backend stats caddy
+
+            rm -rf $SRC
+
+            echo "Testnet deploy complete!"

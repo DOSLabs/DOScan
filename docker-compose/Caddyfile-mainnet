@@ -1,0 +1,63 @@
+doscan.io, www.doscan.io {
+    tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+
+    # Backend API
+    handle /api/* {
+        reverse_proxy backend:4000
+    }
+
+    # WebSocket
+    handle /socket/* {
+        reverse_proxy backend:4000
+    }
+
+    # Sitemap
+    handle /sitemap.xml {
+        reverse_proxy backend:4000
+    }
+
+    # Auth
+    handle /auth/* {
+        reverse_proxy backend:4000
+    }
+
+    # Metrics
+    handle /metrics {
+        reverse_proxy backend:4000
+    }
+
+    # Visualizer API (path-based)
+    handle /visualize/* {
+        reverse_proxy visualizer:8050
+    }
+
+    # Frontend (default)
+    handle {
+        reverse_proxy frontend:3000
+    }
+}
+
+api.doscan.io {
+    tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+    reverse_proxy backend:4000
+}
+
+stats.doscan.io {
+    tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+
+    header Access-Control-Allow-Origin "https://doscan.io"
+    header Access-Control-Allow-Methods "GET, OPTIONS"
+    header Access-Control-Allow-Headers "Content-Type"
+
+    reverse_proxy stats:8050
+}
+
+viz.doscan.io {
+    tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+
+    header Access-Control-Allow-Origin "https://doscan.io"
+    header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+    header Access-Control-Allow-Headers "Content-Type"
+
+    reverse_proxy visualizer:8050
+}
