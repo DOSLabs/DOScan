@@ -71,12 +71,9 @@ jobs:
               cp $SRC/envs/common-blockscout.env $DEPLOY_PATH/envs/common-blockscout.env
             fi
 
-            # Clean up orphan/conflicting containers before recreate
+            # Recreate only services with config changes (no downtime)
             cd $DEPLOY_PATH
-            sudo docker compose down --remove-orphans 2>/dev/null || true
-
-            # Start all services (NOT avago - runs as native systemd)
-            sudo docker compose up -d
+            sudo docker compose up -d --remove-orphans
 
             # Cleanup
             rm -rf $SRC
@@ -125,8 +122,7 @@ jobs:
             cp $SRC/envs/common-visualizer.env $DEPLOY_PATH/envs/common-visualizer.env
 
             cd $DEPLOY_PATH
-            sudo docker compose down --remove-orphans 2>/dev/null || true
-            sudo docker compose up -d
+            sudo docker compose up -d --remove-orphans
 
             rm -rf $SRC
 
