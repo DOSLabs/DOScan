@@ -116,6 +116,33 @@ services:
       - "127.0.0.1:8045:8050"
 
   # ==========================================================================
+  # User Ops Indexer (ERC-4337 Account Abstraction)
+  # ==========================================================================
+  user-ops-indexer:
+    depends_on:
+      - db
+      - backend
+    image: ghcr.io/blockscout/user-ops-indexer:latest
+    pull_policy: always
+    platform: linux/amd64
+    restart: always
+    container_name: user-ops-indexer
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      USER_OPS_INDEXER__INDEXER__RPC_URL: "http://host.docker.internal:9650/ext/bc/22v7AG7h6qaVxd4bLvAsSsg2LZ4RCn5iVYgFn7a2Fj1LCuYwjv/rpc"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V08: "true"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V08_ENTRY_POINT: "0x433709009B8330FDa32311DF1C2AFA402eD8D009"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V06: "false"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V07: "false"
+      USER_OPS_INDEXER__DATABASE__CONNECT__URL: "postgresql://postgres:@db:5432/blockscout"
+      USER_OPS_INDEXER__DATABASE__CREATE_DATABASE: "false"
+      USER_OPS_INDEXER__DATABASE__RUN_MIGRATIONS: "true"
+      USER_OPS_INDEXER__SERVER__HTTP__ADDR: "0.0.0.0:8090"
+    ports:
+      - "127.0.0.1:8090:8090"
+
+  # ==========================================================================
   # Stats Service
   # ==========================================================================
   stats:

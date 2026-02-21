@@ -71,9 +71,12 @@ jobs:
               cp $SRC/envs/common-blockscout.env $DEPLOY_PATH/envs/common-blockscout.env
             fi
 
-            # Restart Blockscout services (NOT avago - runs as native systemd)
+            # Clean up orphan/conflicting containers before recreate
             cd $DEPLOY_PATH
-            sudo docker compose up -d --no-deps --force-recreate frontend backend stats caddy
+            sudo docker compose down --remove-orphans 2>/dev/null || true
+
+            # Start all services (NOT avago - runs as native systemd)
+            sudo docker compose up -d
 
             # Cleanup
             rm -rf $SRC
@@ -122,7 +125,8 @@ jobs:
             cp $SRC/envs/common-visualizer.env $DEPLOY_PATH/envs/common-visualizer.env
 
             cd $DEPLOY_PATH
-            sudo docker compose up -d --no-deps --force-recreate frontend backend stats caddy
+            sudo docker compose down --remove-orphans 2>/dev/null || true
+            sudo docker compose up -d
 
             rm -rf $SRC
 
