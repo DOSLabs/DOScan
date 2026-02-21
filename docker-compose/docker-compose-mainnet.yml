@@ -63,8 +63,8 @@ services:
         condition: service_healthy
       redis-db:
         condition: service_healthy
-    image: doscan-backend:latest
-    pull_policy: never
+    image: metados/blockscout:9.3.5
+    pull_policy: always
     restart: always
     stop_grace_period: 5m
     container_name: backend
