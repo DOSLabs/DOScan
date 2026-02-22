@@ -91,10 +91,12 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    image: doscan-frontend:latest
-    pull_policy: never
+    image: metados/blockscout-frontend:latest
+    pull_policy: always
     restart: always
     container_name: frontend
+    environment:
+      - HOSTNAME=0.0.0.0
     env_file:
       - ./envs/common-frontend.env
     ports:

@@ -82,8 +82,9 @@ jobs:
 
   deploy-testnet:
     if: >
-      github.event_name == 'workflow_dispatch' &&
-      (inputs.environment == 'testnet' || inputs.environment == 'both')
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.environment == 'testnet' || inputs.environment == 'both'))
     runs-on: ubuntu-latest
     environment: testnet
     steps:

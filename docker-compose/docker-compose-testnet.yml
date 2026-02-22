@@ -75,19 +75,15 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   # ==========================================================================
-  # Backend - Build from source v9.0.2
+  # Backend - Blockscout Latest
   # ==========================================================================
   backend:
     depends_on:
       - db
       - redis-db
       - avago
-    build:
-      context: /home/ubuntu/services/blockscout
-      dockerfile: ./docker/Dockerfile
-      args:
-        RELEASE_VERSION: 9.0.2
-    pull_policy: never
+    image: metados/blockscout:latest
+    pull_policy: always
     restart: always
     stop_grace_period: 5m
     container_name: backend
@@ -111,7 +107,7 @@ services:
       SUBNETWORK: Testnet
       BLOCKSCOUT_HOST: test.doscan.io
       BLOCKSCOUT_PROTOCOL: https
-      BLOCKSCOUT_VERSION: 9.0.2
+      BLOCKSCOUT_VERSION: 9.3.5
 
       # Indexer Settings - Enable internal/pending txs
       INDEXER_DISABLE_PENDING_TRANSACTIONS_FETCHER: "false"
@@ -155,11 +151,13 @@ services:
   frontend:
     depends_on:
       - backend
-    image: ghcr.io/blockscout/frontend:latest
+    image: metados/blockscout-frontend:latest
     pull_policy: always
     platform: linux/amd64
     restart: always
     container_name: frontend
+    environment:
+      - HOSTNAME=0.0.0.0
     env_file:
       - ./envs/common-frontend-testnet.env
     ports:
@@ -220,6 +218,28 @@ services:
       USER_OPS_INDEXER__SERVER__HTTP__ADDR: "0.0.0.0:8090"
     ports:
       - "8090:8090"
+
+  # ==========================================================================
+  # Stats Service
+  # ==========================================================================
+  stats:
+    depends_on:
+      - db
+    image: ghcr.io/blockscout/stats:latest
+    pull_policy: always
+    platform: linux/amd64
+    restart: always
+    container_name: stats
+    environment:
+      STATS__DB_URL: "postgresql://postgres:@db:5432/stats"
+      STATS__BLOCKSCOUT_DB_URL: "postgresql://postgres:@db:5432/blockscout"
+      STATS__CREATE_DATABASE: "true"
+      STATS__RUN_MIGRATIONS: "true"
+      STATS__SERVER__HTTP__ADDR: "0.0.0.0:8050"
+      STATS__SERVER__HTTP__CORS__ALLOWED_ORIGIN: "https://test.doscan.io"
+      STATS__IGNORE_BLOCKSCOUT_API_ABSENCE: "true"
+    ports:
+      - "127.0.0.1:8052:8050"
 
   # ==========================================================================
   # Caddy - Reverse Proxy with Auto SSL
