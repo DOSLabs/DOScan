@@ -241,29 +241,9 @@ services:
     ports:
       - "127.0.0.1:8052:8050"
 
-  # ==========================================================================
-  # Caddy - Reverse Proxy with Auto SSL
-  # ==========================================================================
-  caddy:
-    depends_on:
-      - backend
-      - frontend
-    image: caddy:latest
-    container_name: caddy
-    restart: always
-    extra_hosts:
-      - 'host.docker.internal:host-gateway'
-    volumes:
-      - ./Caddyfile-testnet:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
-    ports:
-      - "80:80"
-      - "443:443"
+  # Note: Caddy removed - dev VM uses nginx as reverse proxy
 
 volumes:
   postgres_data:
   redis_data:
   avago_data:
-  caddy_data:
-  caddy_config:
