@@ -14,6 +14,7 @@ on:
         options:
           - mainnet
           - testnet
+          - beta
           - both
 
 jobs:
@@ -128,3 +129,28 @@ jobs:
             rm -rf $SRC
 
             echo "Testnet deploy complete!"
+
+  deploy-beta:
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.environment == 'beta' || inputs.environment == 'both'))
+    runs-on: [self-hosted, beta]
+    environment: beta
+    steps:
+      - name: Pull latest and restart services
+        run: |
+          set -e
+          REPO=$HOME/Projects/DOScan
+          DEPLOY=$REPO/docker-compose
+
+          # Pull latest changes
+          cd $REPO
+          git pull origin main
+
+          # Restart beta compose
+          cd $DEPLOY
+          docker compose -f docker-compose-beta.yml -p doscan pull
+          docker compose -f docker-compose-beta.yml -p doscan up -d --remove-orphans
+
+          echo "Beta deploy complete!"
