@@ -52,7 +52,7 @@ services:
       - sh
       - -c
       - |
-        chown -R 2000:2000 /var/lib/postgresql/data
+        chown -R 999:999 /var/lib/postgresql/data
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
