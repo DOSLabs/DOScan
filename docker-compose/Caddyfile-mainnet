@@ -26,6 +26,15 @@ doscan.io, www.doscan.io {
         reverse_proxy backend:4000
     }
 
+    # Stats API (path-based, avoids Cloudflare subdomain issues)
+    handle /stats-api/* {
+        uri strip_prefix /stats-api
+        header Access-Control-Allow-Origin "https://doscan.io"
+        header Access-Control-Allow-Methods "GET, OPTIONS"
+        header Access-Control-Allow-Headers "Content-Type"
+        reverse_proxy stats:8050
+    }
+
     # Visualizer API (path-based)
     handle /visualize/* {
         reverse_proxy visualizer:8050
