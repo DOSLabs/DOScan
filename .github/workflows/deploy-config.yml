@@ -99,6 +99,9 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: >-
             docker-compose/docker-compose-testnet.yml,
+            docker-compose/envs/common-blockscout.env,
+            docker-compose/envs/common-blockscout-testnet.env,
+            docker-compose/envs/common-frontend.env,
             docker-compose/envs/common-frontend-testnet.env,
             docker-compose/envs/common-smart-contract-verifier.env,
             docker-compose/envs/common-visualizer.env
@@ -117,6 +120,9 @@ jobs:
             SRC=/tmp/doscan-deploy
 
             cp $SRC/docker-compose-testnet.yml $DEPLOY_PATH/docker-compose.yml
+            cp $SRC/envs/common-blockscout.env $DEPLOY_PATH/envs/common-blockscout.env
+            cp $SRC/envs/common-blockscout-testnet.env $DEPLOY_PATH/envs/common-blockscout-testnet.env
+            cp $SRC/envs/common-frontend.env $DEPLOY_PATH/envs/common-frontend.env
             cp $SRC/envs/common-frontend-testnet.env $DEPLOY_PATH/envs/common-frontend-testnet.env
             cp $SRC/envs/common-smart-contract-verifier.env $DEPLOY_PATH/envs/common-smart-contract-verifier.env
             cp $SRC/envs/common-visualizer.env $DEPLOY_PATH/envs/common-visualizer.env
