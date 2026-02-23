@@ -8,10 +8,11 @@ DOScan is the blockchain explorer for DOS Chain, built on [Blockscout](https://g
 
 ## Environments
 
-| Environment | Domain | Chain ID | VM | Status |
-|-------------|--------|----------|----|--------|
-| Testnet | test.doscan.io | 3939 | `dev` (20.198.249.62) | Active |
-| Mainnet | doscan.io | 7979 | `archive` (20.195.24.239) | Active (indexing) |
+| Environment | Domain | Chain ID | Host | Status |
+|-------------|--------|----------|------|--------|
+| Testnet | test.doscan.io | 3939 | Azure VM `dev` (20.198.249.62) | Active |
+| Mainnet | doscan.io | 7979 | Azure VM `archive` (20.195.24.239) | Active |
+| **Beta** | beta.doscan.io | 7979 | **Local WSL2** (Cloudflare Tunnel) | Active (2026-02-22) |
 
 ---
 
@@ -113,12 +114,11 @@ DOScan is the blockchain explorer for DOS Chain, built on [Blockscout](https://g
 ├── certs/                         # Cloudflare Origin SSL certificates (NOT in repo)
 │   ├── origin.pem                 # Certificate
 │   └── origin-key.pem            # Private key
-├── envs/
-│   ├── common-blockscout.env      # Backend config (RPC URLs, chain settings, SECRET_KEY_BASE)
-│   ├── common-frontend.env        # Frontend config (UI settings, stats/viz API hosts)
-│   ├── common-smart-contract-verifier.env
-│   └── common-visualizer.env
-└── frontend-override.env
+└── envs/
+    ├── common-blockscout.env      # Backend BASE config (RPC URLs, chain settings, SECRET_KEY_BASE)
+    ├── common-frontend.env        # Frontend BASE config (UI settings, stats/viz API hosts)
+    ├── common-smart-contract-verifier.env
+    └── common-visualizer.env
 ```
 
 ### Key Backend Config (`envs/common-blockscout.env`)
@@ -178,6 +178,41 @@ Track subnet: `nQCwF6V9y8VFjvMuPeQVWWYn6ba75518Dpf6ZMWZNb3NyTA94`
 
 **Flow:** GitHub Actions → SCP configs to VM → SSH apply + restart services
 
+### ENV File Override Pattern (2026-02-23)
+
+All environments use a **base + override** pattern for env files. Mainnet is the base; beta and testnet only override values that differ.
+
+```
+envs/
+├── common-blockscout.env          ← BASE (mainnet) — ~680 lines, all options
+├── common-blockscout-beta.env     ← Override (~25 lines): RPC, DB, host, secret, concurrency
+├── common-blockscout-testnet.env  ← Override (~34 lines): RPC, DB, chain ID, host, secret, sourcify
+├── common-frontend.env            ← BASE (mainnet) — ~200 lines, all options
+├── common-frontend-beta.env       ← Override (~11 lines): host, API host, stats/viz URLs
+├── common-frontend-testnet.env    ← Override (~38 lines): network name, chain ID, testnet flag, etc.
+├── common-smart-contract-verifier.env  ← Shared (all envs)
+└── common-visualizer.env               ← Shared (all envs)
+```
+
+Docker Compose loads base first, then override. Later values win:
+```yaml
+# Example from docker-compose-testnet.yml
+backend:
+  env_file:
+    - ./envs/common-blockscout.env          # base (mainnet)
+    - ./envs/common-blockscout-testnet.env  # override (testnet-specific)
+frontend:
+  env_file:
+    - ./envs/common-frontend.env            # base (mainnet)
+    - ./envs/common-frontend-testnet.env    # override (testnet-specific)
+```
+
+> **IMPORTANT — Empty string override pitfall:**
+> Setting `VAR=` (empty string) in override file is NOT the same as unsetting it.
+> Blockscout frontend validates env dependencies — e.g. `NEXT_PUBLIC_METADATA_ADDRESS_TAGS_UPDATE_ENABLED`
+> requires `NEXT_PUBLIC_METADATA_SERVICE_API_HOST` to be non-empty.
+> If you don't need to change a value, **don't include it in the override file** — let the base apply.
+
 **GitHub Environments & Secrets:**
 
 | Environment | Secret | Variables |
@@ -210,6 +245,117 @@ cd ~/doscan && sudo docker compose restart
 curl -s -X POST --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
   -H 'content-type:application/json' http://localhost:9650/ext/bc/22v7AG7h6qaVxd4bLvAsSsg2LZ4RCn5iVYgFn7a2Fj1LCuYwjv/rpc
 ```
+
+---
+
+## Beta Architecture (Local WSL2)
+
+### Host: Joy's WRX90 machine (WSL2 + Docker Desktop)
+
+- **Domain:** beta.doscan.io (via Cloudflare Tunnel)
+- **Compose Path:** `/home/joy/Projects/DOScan/docker-compose/docker-compose-beta.yml`
+- **AvalancheGo:** Separate Docker container `AvaGo-Mainnet` (NOT in DOScan compose)
+- **Database:** Shared PostgreSQL 17 container `DB` (port 5432), database `doscan`
+
+### Purpose
+
+Beta environment để test Blockscout trước khi deploy production. Indexes mainnet data (Chain ID 7979) qua local AvaGo-Mainnet node.
+
+### Architecture Diagram
+
+```
+                      ┌─────────────────┐
+                      │  CLOUDFLARE      │
+                      │  Tunnel (HTTPS)  │
+                      └────────┬────────┘
+                               │
+          ┌────────────────────┼─────────────────────┐
+          │                    │                      │
+          ▼                    ▼                      ▼
+  beta.doscan.io       beta-stats.doscan.io   beta-viz.doscan.io
+  beta-api.doscan.io
+          │                    │                      │
+          └────────────────────┼──────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│              Caddy (HTTP only, port 10080)                           │
+│  Cloudflare Tunnel handles HTTPS termination                        │
+├──────────────────────────────────────────────────────────────────────┤
+│  beta.doscan.io ──────┬──► :3000 Frontend       [default]          │
+│                        ├──► :4000 Backend  /api/* /socket/* /auth/* │
+│                        └──► :8050 Visualizer /visualize/*           │
+│  beta-api.doscan.io ─────► :4000 Backend (all paths)               │
+│  beta-stats.doscan.io ───► :8050 Stats                             │
+│  beta-viz.doscan.io ─────► :8050 Visualizer                        │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│            Docker Compose (doscan project)                           │
+├──────────────────────────────────────────────────────────────────────┤
+│  doscan-backend ────── metados/blockscout:latest                    │
+│    └── RPC: http://host.docker.internal:9650/ext/bc/22v7AG7.../rpc │
+│  doscan-frontend ───── ghcr.io/dos/doscan-frontend:latest           │
+│  doscan-redis ──────── redis:alpine                                 │
+│  doscan-verifier ───── ghcr.io/blockscout/smart-contract-verifier   │
+│  doscan-visualizer ─── ghcr.io/blockscout/visualizer                │
+│  doscan-sig-provider── ghcr.io/blockscout/sig-provider              │
+│  doscan-user-ops ───── ghcr.io/blockscout/user-ops-indexer          │
+│  doscan-stats ──────── ghcr.io/blockscout/stats                     │
+│  doscan-caddy ──────── caddy:latest (port 10080)                    │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│  External (same Docker host, separate compose)                       │
+├──────────────────────────────────────────────────────────────────────┤
+│  AvaGo-Mainnet ─── avaplatform/subnet-evm_avalanchego:v0.8.0_v1.14.0│
+│    port 9650 ── RPC for Blockscout (via host.docker.internal)       │
+│  DB ────────────── PostgreSQL 17 (pgvector), port 5432              │
+│    database: doscan                                                  │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│  Windows Service (PowerShell)                                        │
+├──────────────────────────────────────────────────────────────────────┤
+│  cloudflared.exe ── Dashboard-managed tunnel                        │
+│    Routes: beta.doscan.io       → localhost:10080                   │
+│            beta-api.doscan.io   → localhost:14000                   │
+│            beta-stats.doscan.io → localhost:18052                   │
+│            beta-viz.doscan.io   → localhost:18044                   │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Differences from Production
+
+| Aspect | Production (archive) | Beta (local) |
+|--------|---------------------|--------------|
+| SSL | Caddy + Cloudflare Origin Certs | Cloudflare Tunnel (HTTP-only Caddy) |
+| Database | PostgreSQL 15 in compose | Shared PostgreSQL 17 on host |
+| AvalancheGo | Native systemd | Docker container (separate compose) |
+| Frontend image | `doscan-frontend:latest` (local build) | `ghcr.io/dos/doscan-frontend:latest` (GHCR) |
+| Backend image | `doscan-backend:latest` (local build) | `metados/blockscout:latest` (Docker Hub) |
+| Ports | Standard (80/443, 4000, 3000) | Offset (10080, 14000, 13000, 18xxx) |
+
+### Compose File Structure (Beta)
+
+```
+/home/joy/Projects/DOScan/docker-compose/
+├── docker-compose-beta.yml              # Beta compose
+├── Caddyfile-beta                       # HTTP-only Caddy config
+└── envs/
+    ├── common-blockscout.env            # Backend BASE (shared with all envs)
+    ├── common-blockscout-beta.env       # Backend OVERRIDE: DB, RPC, host, secret, concurrency
+    ├── common-frontend.env              # Frontend BASE (shared with all envs)
+    ├── common-frontend-beta.env         # Frontend OVERRIDE: host, API host, stats/viz URLs
+    ├── common-smart-contract-verifier.env  # Shared with all envs
+    └── common-visualizer.env               # Shared with all envs
+```
+
+### Cloudflare Tunnel
+
+Beta uses **Cloudflare Tunnel** (Dashboard-managed) instead of Origin SSL certificates. The tunnel runs as a Windows Service (`cloudflared.exe`), not inside WSL2/Docker.
+
+All routes are consolidated into a single tunnel alongside other services (e.g., `api.dos.ai`).
 
 ---
 
@@ -280,9 +426,9 @@ az vm run-command invoke --resource-group METADOS --name dev \
 
 | Service | Container | Port | Image |
 |---------|-----------|------|-------|
-| Frontend | `frontend` | 3000 | `doscan-frontend:latest` (mainnet) / `ghcr.io/blockscout/frontend:latest` (testnet) |
-| Backend | `backend` | 4000 | `doscan-backend:latest` (mainnet) / `blockscout/blockscout:latest` (testnet) |
-| Database | `db` | 7432 | `postgres:15` |
+| Frontend | `frontend` | 3000 | `doscan-frontend:latest` (mainnet) / `ghcr.io/dos/doscan-frontend:latest` (beta) / `ghcr.io/blockscout/frontend:latest` (testnet) |
+| Backend | `backend` | 4000 | `doscan-backend:latest` (mainnet) / `metados/blockscout:latest` (beta) / `blockscout/blockscout:latest` (testnet) |
+| Database | `db` | 7432 | `postgres:15` (mainnet/testnet) / external PostgreSQL 17 (beta) |
 | Redis | `redis-db` | 6379 | `redis:alpine` |
 
 ### Microservices
