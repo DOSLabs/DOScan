@@ -2,7 +2,7 @@ name: Sync upstream release
 
 on:
   schedule:
-    - cron: '0 8 * * *' # Daily at 8:00 UTC (15:00 VN)
+    - cron: '0 2,8,14,20 * * *' # Every 6h UTC (09, 15, 21, 03 VN)
   workflow_dispatch:
     inputs:
       tag:
