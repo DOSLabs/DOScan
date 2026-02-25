@@ -65,17 +65,19 @@ services:
     image: metados/blockscout-frontend:latest
     pull_policy: always
     restart: always
+    environment:
+      - HOSTNAME=0.0.0.0
     env_file:
       - ./envs/common-frontend.env
       - ./envs/common-frontend-beta.env
     ports:
       - "127.0.0.1:13000:3000"
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"const h=require('http');h.get('http://localhost:3000',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))\""]
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 3
+      start_period: 30s
 
   # ==========================================================================
   # Microservices
@@ -168,6 +170,7 @@ services:
       backend:
         condition: service_healthy
     image: caddy:latest
+    pull_policy: always
     restart: always
     volumes:
       - ./Caddyfile-beta:/etc/caddy/Caddyfile
@@ -175,6 +178,13 @@ services:
       - caddy_config:/config
     ports:
       - "10080:80"
+      - "10081:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   redis_data:
