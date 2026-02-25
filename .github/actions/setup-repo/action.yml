@@ -17,7 +17,7 @@ inputs:
   docker-image:
     description: 'Docker image'
     required: true
-    default: ghcr.io/blockscout/blockscout
+    default: ghcr.io/dos/doscan
 outputs:
   docker-builder:
     description: 'Docker builder'
