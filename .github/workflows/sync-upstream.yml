@@ -146,8 +146,7 @@ jobs:
           fi
 
           # Delete existing release if any (from upstream fork sync)
-          RELEASE_ID=$(gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq '.id' 2>/dev/null || true)
-          if [ -n "$RELEASE_ID" ]; then
+          if RELEASE_ID=$(gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq '.id' 2>/dev/null); then
             echo "Deleting existing release $RELEASE_ID for $TAG"
             gh api -X DELETE "repos/${{ github.repository }}/releases/$RELEASE_ID" 2>/dev/null || true
           fi
@@ -157,7 +156,7 @@ jobs:
             -f tag_name="$TAG" \
             -f name="DOScan $TAG" \
             -f body="Synced from upstream [blockscout/blockscout $TAG](https://github.com/blockscout/blockscout/releases/tag/$TAG)" \
-            -F make_latest=true
+            -f make_latest="true"
 
       - name: Create PR on conflict
         if: steps.target.outputs.skip == 'false' && steps.merge.outputs.result == 'conflict'
