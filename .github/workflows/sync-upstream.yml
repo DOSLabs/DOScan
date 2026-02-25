@@ -30,7 +30,7 @@ jobs:
       - name: Add upstream remote
         run: |
           git remote add upstream https://github.com/blockscout/blockscout.git || true
-          git fetch upstream --tags
+          git fetch upstream --tags --force
 
       - name: Determine target tag
         id: target
