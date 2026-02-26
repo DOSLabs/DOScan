@@ -63,7 +63,7 @@ services:
         condition: service_healthy
       redis-db:
         condition: service_healthy
-    image: metados/blockscout:latest
+    image: ghcr.io/dos/doscan:10.0.1.commit.824dc3a5
     pull_policy: always
     restart: always
     stop_grace_period: 5m
