@@ -91,7 +91,7 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    image: metados/blockscout-frontend:latest
+    image: metados/blockscout-frontend@sha256:3554f66094aaddc235bae3800a6766fb6c0c1826a0a527eeceba9133509b78df
     pull_policy: always
     restart: always
     container_name: frontend
