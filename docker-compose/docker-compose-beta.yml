@@ -42,9 +42,6 @@ services:
     env_file:
       - ./envs/common-blockscout.env
       - ./envs/common-blockscout-beta.env
-    networks:
-      - default
-      - avalanchego
     ports:
       - "127.0.0.1:14000:4000"
     healthcheck:
@@ -62,7 +59,7 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    image: metados/blockscout-frontend:latest
+    image: metados/blockscout-frontend@sha256:3554f66094aaddc235bae3800a6766fb6c0c1826a0a527eeceba9133509b78df
     pull_policy: always
     restart: always
     environment:
@@ -127,7 +124,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      USER_OPS_INDEXER__INDEXER__RPC_URL: "http://host.docker.internal:9650/ext/bc/22v7AG7h6qaVxd4bLvAsSsg2LZ4RCn5iVYgFn7a2Fj1LCuYwjv/rpc"
+      USER_OPS_INDEXER__INDEXER__RPC_URL: "http://20.195.24.239:9650/ext/bc/22v7AG7h6qaVxd4bLvAsSsg2LZ4RCn5iVYgFn7a2Fj1LCuYwjv/rpc"
       USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V08: "true"
       USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V08_ENTRY_POINT: "0x433709009B8330FDa32311DF1C2AFA402eD8D009"
       USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V06: "false"
@@ -180,11 +177,11 @@ services:
       - "10080:80"
       - "10081:8080"
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80/"]
+      test: ["CMD", "caddy", "version"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 5s
 
 volumes:
   redis_data:
@@ -193,6 +190,3 @@ volumes:
 
 networks:
   default:
-  avalanchego:
-    name: avalanchego_default
-    external: true
