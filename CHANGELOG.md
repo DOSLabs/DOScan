@@ -1,10 +1,17 @@
 # Changelog
 
+## 10.0.4
+
+### 🐛 Bug Fixes
+
+- `confirm_otp` after `OpenApiSpex` integration ([#14098](https://github.com/blockscout/blockscout/issues/14098))
+
+
 ## 10.0.3
 
 ### ⚙️ Miscellaneous Tasks
 
-- Allow disabling contract creation internal transaction association ([#14090](https://github.com/blockscout/blockscout/issues/14090))
+- Allow disabling contract creation internal transaction association ([#14090](https://github.com/blockscout/blockscout/issues/14090), [#14097](https://github.com/blockscout/blockscout/pull/14097))
 
 
 ## 10.0.2
