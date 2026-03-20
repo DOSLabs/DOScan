@@ -1,12 +1,9 @@
-name: Publish regular Docker image on demand
+name: Zksync publish Docker image
 
 on:
-  workflow_dispatch:
-env:
-  OTP_VERSION: '27.3.4.6'
-  ELIXIR_VERSION: '1.19.4'
-  RELEASE_VERSION: 10.1.1
-
+  push:
+    branches:
+      - production-zksync
 permissions:
   contents: read
   packages: write
@@ -14,7 +11,10 @@ permissions:
 jobs:
   push_to_registry:
     name: Push Docker image to GitHub Container Registry
-    runs-on: ubuntu-latest
+    runs-on: build
+    env:
+      RELEASE_VERSION: 10.1.1
+      DOCKER_CHAIN_NAME: zksync
     steps:
       - uses: actions/checkout@v5
       - name: Setup repo
@@ -22,27 +22,25 @@ jobs:
         id: setup
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          docker-remote-multi-platform: false
+          docker-remote-multi-platform: true
+          docker-arm-host: ${{ secrets.ARM_RUNNER_HOSTNAME }}
+          docker-arm-host-key: ${{ secrets.ARM_RUNNER_KEY }}
 
-      - name: Build and push Docker image (indexer + API)
+      - name: Build and push Docker image (indexer  + API)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./docker/Dockerfile
           push: true
-          cache-from: type=registry,ref=ghcr.io/dos/doscan:buildcache
-          cache-to: type=registry,ref=ghcr.io/dos/doscan:buildcache,mode=max
-          tags: ghcr.io/dos/doscan:${{ env.RELEASE_VERSION }}.commit.${{ env.SHORT_SHA }}
+          tags: ghcr.io/blockscout/blockscout-${{ env.DOCKER_CHAIN_NAME }}-private:${{ env.RELEASE_VERSION }}-postrelease-${{ env.SHORT_SHA }}
           labels: ${{ steps.setup.outputs.docker-labels }}
-          platforms: linux/amd64
+          platforms: |
+            linux/amd64
+            linux/arm64/v8
           build-args: |
-            DECODE_NOT_A_CONTRACT_CALLS=false
-            MIXPANEL_URL=
-            MIXPANEL_TOKEN=
-            AMPLITUDE_URL=
-            AMPLITUDE_API_KEY=
             BLOCKSCOUT_VERSION=v${{ env.RELEASE_VERSION }}.+commit.${{ env.SHORT_SHA }}
             RELEASE_VERSION=${{ env.RELEASE_VERSION }}
+            CHAIN_TYPE=zksync
 
       - name: Build and push Docker image (indexer)
         uses: docker/build-push-action@v6
@@ -50,15 +48,13 @@ jobs:
           context: .
           file: ./docker/Dockerfile
           push: true
-          tags: ghcr.io/dos/doscan:${{ env.RELEASE_VERSION }}.commit.${{ env.SHORT_SHA }}-indexer
+          tags: ghcr.io/blockscout/blockscout-${{ env.DOCKER_CHAIN_NAME }}-private:${{ env.RELEASE_VERSION }}-postrelease-${{ env.SHORT_SHA }}-indexer
           labels: ${{ steps.setup.outputs.docker-labels }}
-          platforms: linux/amd64
+          platforms: |
+            linux/amd64
+            linux/arm64/v8
           build-args: |
             DISABLE_API=true
-            DECODE_NOT_A_CONTRACT_CALLS=false
-            MIXPANEL_URL=
-            MIXPANEL_TOKEN=
-            AMPLITUDE_URL=
-            AMPLITUDE_API_KEY=
             BLOCKSCOUT_VERSION=v${{ env.RELEASE_VERSION }}.+commit.${{ env.SHORT_SHA }}
             RELEASE_VERSION=${{ env.RELEASE_VERSION }}
+            CHAIN_TYPE=zksync
