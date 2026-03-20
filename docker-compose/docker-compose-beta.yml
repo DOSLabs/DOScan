@@ -59,7 +59,7 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    image: metados/blockscout-frontend@sha256:3554f66094aaddc235bae3800a6766fb6c0c1826a0a527eeceba9133509b78df
+    image: metados/blockscout-frontend@sha256:693dd82611787285ffd27c14fadefd2f7521b81bee5dc20abdfffe3637584943
     pull_policy: always
     restart: always
     environment:
