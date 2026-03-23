@@ -1,10 +1,25 @@
 # Changelog
 
+## 10.2.0
+
+### 🚀 Features
+
+- Fetch transaction receipts by block ([#14046](https://github.com/blockscout/blockscout/issues/14046))
+
+### New ENV variables
+
+| Variable                                            | Description                                                                                                                                                                                     | Parameters                                                          |
+|-----------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
+| `ETHEREUM_JSONRPC_RECEIPTS_BY_BLOCK`                          | If `true`, block fetchers will fetch transaction receipts by block instead of per transaction. Implemented in [#14046](https://github.com/blockscout/blockscout/pull/14046)                                                                                                                                                                                                                                                                                                                                                      | Version: v10.2.0\+ <br />Default: `false` <br />Applications: API, Indexer                                |
+| `ETHEREUM_JSONRPC_MAX_RECEIPTS_BY_BLOCK`                      | Max number of transactions in block for which receipts will be fetched by block. If block has more transactions, receipts will be fetched per transaction in purpose of reducing response body size. Implemented in [#14046](https://github.com/blockscout/blockscout/pull/14046)                                                                                                                                                                                                                                                | Version: v10.2.0\+ <br />Default: `1000` <br />Applications: API, Indexer                                 |
+
+
 ## 10.1.1
 
 ### 🐛 Bug Fixes
 
 - Authentication provider token redis key ([#14137](https://github.com/blockscout/blockscout/issues/14137))
+
 
 ## 10.1.0
 
@@ -22,6 +37,7 @@
 | `ACCOUNT_KEYCLOAK_CLIENT_ID`                        | [Keycloak](https://www.keycloak.org/) client ID. Implemented in [#14068](https://github.com/blockscout/blockscout/pull/14068).                                                                  | Version: v9.4.0\+ <br />Default: (empty) <br />Applications: API    |
 | `ACCOUNT_KEYCLOAK_CLIENT_SECRET`                    | [Keycloak](https://www.keycloak.org/) client secret. Implemented in [#14068](https://github.com/blockscout/blockscout/pull/14068).                                                              | Version: v9.4.0\+ <br />Default: (empty) <br />Applications: API    |
 | `ACCOUNT_KEYCLOAK_EMAIL_WEBHOOK_URL`                | URL address where new email users are reported. Implemented in [#14068](https://github.com/blockscout/blockscout/pull/14068).                                                                   | Version: v9.4.0\+ <br />Default: (empty) <br />Applications: API    |
+
 
 ## 10.0.8
 
