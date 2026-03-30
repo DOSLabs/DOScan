@@ -25,6 +25,9 @@ defmodule Explorer.Factory do
   alias Explorer.Admin.Administrator
   alias Explorer.Chain.Beacon.{Blob, BlobTransaction, Deposit}
   alias Explorer.Chain.Block.{EmissionReward, Range, Reward}
+  alias Explorer.Chain.Scroll.Batch, as: ScrollBatch
+  alias Explorer.Chain.Scroll.BatchBundle, as: ScrollBatchBundle
+  alias Explorer.Chain.Scroll.Bridge, as: ScrollBridge
   alias Explorer.Chain.Stability.Validator, as: ValidatorStability
 
   alias Explorer.Chain.{
@@ -37,6 +40,7 @@ defmodule Explorer.Factory do
     Block,
     ContractMethod,
     Data,
+    FheOperation,
     Hash,
     InternalTransaction,
     InternalTransaction.DeleteQueue,
@@ -77,6 +81,7 @@ defmodule Explorer.Factory do
     AddressIdToAddressHash,
     EventNotification,
     InternalTransactionsAddressPlaceholder,
+    MassiveBlock,
     MissingBalanceOfToken,
     MissingBlockRange
   }
@@ -939,6 +944,12 @@ defmodule Explorer.Factory do
     Map.replace(token_factory(), :name, sequence("Infinite Token"))
   end
 
+  def massive_block_factory do
+    %MassiveBlock{
+      number: block_number()
+    }
+  end
+
   def erc7984_token_factory do
     %Token{
       name: "Confidential Token",
@@ -1130,6 +1141,7 @@ defmodule Explorer.Factory do
   def transaction_factory do
     %Transaction{
       from_address: build(:address),
+      fhe_operations_count: 0,
       gas: Enum.random(21_000..100_000),
       gas_price: Enum.random(10..99) * 1_000_000_00,
       hash: transaction_hash(),
@@ -1554,6 +1566,39 @@ defmodule Explorer.Factory do
     hash
   end
 
+  def scroll_bridge_factory do
+    %ScrollBridge{
+      type: :deposit,
+      index: sequence("scroll_bridge_index", & &1),
+      l1_transaction_hash: transaction_hash(),
+      l2_transaction_hash: transaction_hash(),
+      amount: Enum.random(1..100_000),
+      block_number: block_number(),
+      block_timestamp: DateTime.utc_now(),
+      message_hash: transaction_hash()
+    }
+  end
+
+  def scroll_batch_factory do
+    %ScrollBatch{
+      number: sequence("scroll_batch_index", & &1),
+      commit_transaction_hash: transaction_hash(),
+      commit_block_number: block_number(),
+      commit_timestamp: DateTime.utc_now(),
+      bundle_id: 0,
+      container: :in_calldata
+    }
+  end
+
+  def scroll_batch_bundle_factory do
+    %ScrollBatchBundle{
+      final_batch_number: 50,
+      finalize_transaction_hash: transaction_hash(),
+      finalize_block_number: block_number(),
+      finalize_timestamp: DateTime.utc_now()
+    }
+  end
+
   def random_bool, do: Enum.random([true, false])
 
   def celo_epoch_factory do
@@ -1790,6 +1835,31 @@ defmodule Explorer.Factory do
       from_address: insert(:address),
       block: transaction.block,
       transaction: transaction
+    }
+  end
+
+  def fhe_operation_factory do
+    transaction = insert(:transaction) |> with_block()
+    block = transaction.block
+    caller = insert(:address)
+
+    %FheOperation{
+      transaction_hash: transaction.hash,
+      log_index: sequence("fhe_operation_log_index", & &1),
+      block_hash: block.hash,
+      block_number: block.number,
+      operation: sequence("fhe_operation", fn i -> "FheAdd#{i}" end),
+      operation_type: "arithmetic",
+      fhe_type: "Uint8",
+      is_scalar: false,
+      hcu_cost: sequence("fhe_operation_hcu_cost", fn i -> Kernel.+(100, i) end),
+      hcu_depth: sequence("fhe_operation_hcu_depth", fn i -> Kernel.+(1, rem(i, 5)) end),
+      caller: caller.hash,
+      result_handle: sequence("fhe_operation_result_handle", &<<&1::256>>),
+      input_handles: %{
+        "lhs" => "0x" <> Base.encode16(<<1::256>>, case: :lower),
+        "rhs" => "0x" <> Base.encode16(<<2::256>>, case: :lower)
+      }
     }
   end
 

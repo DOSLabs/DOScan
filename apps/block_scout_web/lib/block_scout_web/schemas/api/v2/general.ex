@@ -1049,7 +1049,7 @@ defmodule BlockScoutWeb.Schemas.API.V2.General do
       in: :query,
       schema: %Schema{type: :integer},
       required: false,
-      description: "Transaction index for paging"
+      description: "Item index for paging"
     },
     "index_nullable" => %Parameter{
       name: :index,
@@ -1219,6 +1219,13 @@ defmodule BlockScoutWeb.Schemas.API.V2.General do
       schema: %Schema{type: :integer},
       required: false,
       description: "Smart-contract ID for paging"
+    },
+    "number" => %Parameter{
+      name: :number,
+      in: :query,
+      schema: %Schema{type: :integer},
+      required: false,
+      description: "Number for paging"
     },
     "fetched_coin_balance" => %Parameter{
       name: :fetched_coin_balance,

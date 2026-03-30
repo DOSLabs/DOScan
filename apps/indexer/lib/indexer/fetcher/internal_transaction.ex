@@ -24,7 +24,6 @@ defmodule Indexer.Fetcher.InternalTransaction do
   alias Explorer.Chain
   alias Explorer.Chain.{Block, Hash, PendingBlockOperation, PendingTransactionOperation, Transaction}
   alias Explorer.Chain.Cache.{Accounts, Blocks}
-  alias Explorer.Chain.Zilliqa.Helper, as: ZilliqaHelper
   alias Indexer.{BufferedTask, Tracer}
   alias Indexer.Fetcher.InternalTransaction.Supervisor, as: InternalTransactionSupervisor
   alias Indexer.Transform.{AddressCoinBalances, Addresses, AddressTokenBalances}
@@ -258,7 +257,7 @@ defmodule Indexer.Fetcher.InternalTransaction do
 
   defp fetch_internal_transactions_by_transactions(transactions, json_rpc_named_arguments) do
     transactions
-    |> filter_non_traceable_transactions()
+    |> Transaction.filter_non_traceable_transactions()
     |> Enum.map(&params/1)
     |> case do
       [] ->
@@ -271,20 +270,6 @@ defmodule Indexer.Fetcher.InternalTransaction do
           :exit, error ->
             {:error, error, __STACKTRACE__}
         end
-    end
-  end
-
-  # TODO: should we cover this with tests?
-  @zetachain_non_traceable_type 88
-  @doc """
-  Filters out transactions that are known to not have traceable internal transactions.
-  """
-  @spec filter_non_traceable_transactions([Transaction.t() | map()]) :: [Transaction.t() | map()]
-  def filter_non_traceable_transactions(transactions) do
-    case Application.get_env(:explorer, :chain_type) do
-      :zetachain -> Enum.reject(transactions, &(Map.get(&1, :type) == @zetachain_non_traceable_type))
-      :zilliqa -> Enum.reject(transactions, &ZilliqaHelper.scilla_transaction?/1)
-      _ -> transactions
     end
   end
 
@@ -516,20 +501,22 @@ defmodule Indexer.Fetcher.InternalTransaction do
       address_token_balances =
         %{token_transfers_params: token_transfers_with_token}
         |> AddressTokenBalances.params_set()
-        |> Enum.map(fn %{address_hash: address_hash, token_contract_address_hash: token_contract_address_hash} = entry ->
-          with {:ok, address_hash} <- Hash.Address.cast(address_hash),
-               {:ok, token_contract_address_hash} <- Hash.Address.cast(token_contract_address_hash) do
-            entry
-            |> Map.put(:address_hash, address_hash)
-            |> Map.put(:token_contract_address_hash, token_contract_address_hash)
-          else
-            error -> Logger.error("Failed to cast string to hash: #{inspect(error)}")
-          end
-        end)
+        |> Enum.map(&cast_address_hashes_for_token_balance/1)
 
       async_import_token_balances(%{address_token_balances: address_token_balances}, false)
     else
       :ok
+    end
+  end
+
+  defp cast_address_hashes_for_token_balance(entry) do
+    with {:ok, address_hash} <- Hash.Address.cast(entry.address_hash),
+         {:ok, token_contract_address_hash} <- Hash.Address.cast(entry.token_contract_address_hash) do
+      entry
+      |> Map.put(:address_hash, address_hash)
+      |> Map.put(:token_contract_address_hash, token_contract_address_hash)
+    else
+      error -> Logger.error("Failed to cast string to hash: #{inspect(error)}")
     end
   end
 end
