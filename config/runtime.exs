@@ -119,6 +119,10 @@ config :block_scout_web, BlockScoutWeb.Chain,
   enable_testnet_label: ConfigHelper.parse_bool_env_var("SHOW_TESTNET_LABEL"),
   testnet_label_text: System.get_env("TESTNET_LABEL_TEXT", "Testnet")
 
+config :block_scout_web, BlockScoutWeb.Notifier,
+  block_broadcast_enrichment_timeout: 200,
+  block_broadcast_enrichment_disabled: ConfigHelper.parse_bool_env_var("DISABLE_BLOCK_BROADCAST_ENRICHMENT")
+
 config :block_scout_web, :footer,
   logo: System.get_env("FOOTER_LOGO"),
   chat_link: System.get_env("FOOTER_CHAT_LINK", "https://discord.gg/blockscout"),
@@ -845,7 +849,7 @@ config :explorer, Explorer.Migrator.ArbitrumDaRecordsNormalization,
 config :explorer, Explorer.Migrator.HeavyDbIndexOperation.CreateArbitrumBatchL2BlocksUnconfirmedBlocksIndex,
   enabled: ConfigHelper.chain_type() == :arbitrum
 
-config :explorer, Explorer.Migrator.HeavyDbIndexOperation.CreateTransactionsOperatorFeeConstantIndex,
+config :explorer, Explorer.Migrator.HeavyDbIndexOperation.DropTransactionsOperatorFeeConstantIndex,
   enabled: ConfigHelper.chain_type() == :optimism
 
 config :explorer, Explorer.Migrator.FilecoinPendingAddressOperations,
@@ -875,11 +879,6 @@ config :explorer, Explorer.Migrator.ShrinkInternalTransactions,
   enabled: ConfigHelper.parse_bool_env_var("SHRINK_INTERNAL_TRANSACTIONS_ENABLED"),
   batch_size: ConfigHelper.parse_integer_env_var("MIGRATION_SHRINK_INTERNAL_TRANSACTIONS_BATCH_SIZE", 100),
   concurrency: ConfigHelper.parse_integer_env_var("MIGRATION_SHRINK_INTERNAL_TRANSACTIONS_CONCURRENCY", 10)
-
-config :explorer, Explorer.Migrator.SmartContractLanguage,
-  enabled: !ConfigHelper.parse_bool_env_var("MIGRATION_SMART_CONTRACT_LANGUAGE_DISABLED"),
-  batch_size: ConfigHelper.parse_integer_env_var("MIGRATION_SMART_CONTRACT_LANGUAGE_BATCH_SIZE", 100),
-  concurrency: ConfigHelper.parse_integer_env_var("MIGRATION_SMART_CONTRACT_LANGUAGE_CONCURRENCY", 1)
 
 config :explorer, Explorer.Migrator.BackfillMetadataURL,
   enabled: !ConfigHelper.parse_bool_env_var("MIGRATION_BACKFILL_METADATA_URL_DISABLED"),
@@ -1013,6 +1012,7 @@ config :indexer,
   hide_indexing_progress_alert: ConfigHelper.parse_bool_env_var("INDEXER_HIDE_INDEXING_PROGRESS_ALERT"),
   fetcher_init_limit: ConfigHelper.parse_integer_env_var("INDEXER_FETCHER_INIT_QUERY_LIMIT", 100),
   fetcher_init_delay: ConfigHelper.parse_time_env_var("INDEXER_FETCHER_INIT_DELAY", "10m"),
+  massive_block_threshold: ConfigHelper.parse_integer_env_var("INDEXER_MASSIVE_BLOCK_THRESHOLD", 1000),
   token_balances_fetcher_init_limit:
     ConfigHelper.parse_integer_env_var("INDEXER_TOKEN_BALANCES_FETCHER_INIT_QUERY_LIMIT", 100_000),
   coin_balances_fetcher_init_limit:
@@ -1038,6 +1038,9 @@ config :indexer, :arc,
 
 config :indexer, Indexer.Supervisor, enabled: !disable_indexer?
 
+config :indexer, Indexer.Transform.FheOperations,
+  enabled: ConfigHelper.parse_bool_env_var("INDEXER_FHE_OPERATIONS_ENABLED", "false")
+
 config :indexer, Indexer.Fetcher.TransactionAction.Supervisor,
   enabled: ConfigHelper.parse_bool_env_var("INDEXER_TX_ACTIONS_ENABLE")
 
@@ -1059,6 +1062,9 @@ config :indexer, Indexer.Fetcher.TransactionAction,
 
 config :indexer, Indexer.PendingTransactionsSanitizer,
   interval: ConfigHelper.parse_time_env_var("INDEXER_PENDING_TRANSACTIONS_SANITIZER_INTERVAL", "1h")
+
+config :indexer, Indexer.TokenTransferBlockConsensusSanitizer,
+  interval: ConfigHelper.parse_time_env_var("INDEXER_TOKEN_TRANSFER_BLOCK_CONSENSUS_SANITIZER_INTERVAL", "20m")
 
 config :indexer, Indexer.Fetcher.PendingTransaction.Supervisor,
   disabled?: ConfigHelper.parse_bool_env_var("INDEXER_DISABLE_PENDING_TRANSACTIONS_FETCHER")

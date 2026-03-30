@@ -136,13 +136,13 @@ for migrator <- [
       Explorer.Migrator.RefetchContractCodes,
       Explorer.Migrator.BackfillMultichainSearchDB,
       Explorer.Migrator.SanitizeVerifiedAddresses,
-      Explorer.Migrator.SmartContractLanguage,
       Explorer.Migrator.SanitizeEmptyContractCodeAddresses,
       Explorer.Migrator.BackfillMetadataURL,
       Explorer.Migrator.SanitizeErc1155TokenBalancesWithoutTokenIds,
       Explorer.Migrator.ReindexDuplicatedInternalTransactions,
       Explorer.Migrator.MergeAdjacentMissingBlockRanges,
       Explorer.Migrator.UnescapeQuotesInTokens,
+      Explorer.Migrator.UnescapeAmpersandsInTokens,
       Explorer.Migrator.SanitizeDuplicateSmartContractAdditionalSources,
       Explorer.Migrator.EmptyInternalTransactionsData
     ] do
@@ -182,6 +182,8 @@ for index_operation <- [
       Explorer.Migrator.HeavyDbIndexOperation.CreateSmartContractAdditionalSourcesUniqueIndex,
       Explorer.Migrator.HeavyDbIndexOperation.DropTokenInstancesTokenIdIndex,
       Explorer.Migrator.HeavyDbIndexOperation.CreateTokensNamePartialFtsIndex,
+      Explorer.Migrator.HeavyDbIndexOperation.CreateTransactionsCreatedContractAddressHashWPendingIndex,
+      Explorer.Migrator.HeavyDbIndexOperation.DropTransactionsCreatedContractAddressHashWithPendingIndexA,
       Explorer.Migrator.HeavyDbIndexOperation.UpdateInternalTransactionsPrimaryKey,
       Explorer.Migrator.HeavyDbIndexOperation.DropInternalTransactionsBlockHashTransactionIndexIndexIndex,
       Explorer.Migrator.HeavyDbIndexOperation.DropInternalTransactionsCreatedContractAddressHashPartialIndex
