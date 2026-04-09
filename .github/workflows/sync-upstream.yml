@@ -227,6 +227,7 @@ jobs:
 
           git add -A
           git commit -m "WIP: Merge upstream $TAG (has conflicts)" --no-verify || true
+          git push origin --delete "$BRANCH" 2>/dev/null || true
           git push origin "$BRANCH"
 
           REMAINING=$(echo "${{ steps.merge.outputs.conflict_files }}" | head -20)
