@@ -13,8 +13,12 @@ defmodule Explorer.Token.MetadataRetriever do
   @no_uri_error "no uri"
   @vm_execution_error "VM execution error"
   @invalid_base64_data "invalid data:application/json;base64"
+<<<<<<< HEAD
   @invalid_ipfs_path "invalid ipfs path"
   @default_headers [{"User-Agent", "blockscout-10.0.6"}]
+=======
+  @default_headers [{"User-Agent", "blockscout-10.2.6"}]
+>>>>>>> v10.2.6
 
   # https://eips.ethereum.org/EIPS/eip-1155#metadata
   @erc1155_token_id_placeholder "{id}"
