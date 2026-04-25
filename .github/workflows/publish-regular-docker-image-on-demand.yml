@@ -5,7 +5,7 @@ on:
 env:
   OTP_VERSION: '27.3.4.6'
   ELIXIR_VERSION: '1.19.4'
-  RELEASE_VERSION: 10.0.6
+  RELEASE_VERSION: 10.2.1
 
 permissions:
   contents: read
@@ -32,9 +32,9 @@ jobs:
           context: .
           file: ./docker/Dockerfile
           push: true
-          cache-from: type=registry,ref=ghcr.io/blockscout/blockscout:buildcache
-          cache-to: type=registry,ref=ghcr.io/blockscout/blockscout:buildcache,mode=max
-          tags: ghcr.io/blockscout/blockscout:${{ env.RELEASE_VERSION }}.commit.${{ env.SHORT_SHA }}
+          cache-from: type=registry,ref=ghcr.io/dos/doscan:buildcache
+          cache-to: type=registry,ref=ghcr.io/dos/doscan:buildcache,mode=max
+          tags: ghcr.io/dos/doscan:${{ env.RELEASE_VERSION }}.commit.${{ env.SHORT_SHA }}
           labels: ${{ steps.setup.outputs.docker-labels }}
           platforms: |
             linux/amd64
@@ -54,7 +54,7 @@ jobs:
           context: .
           file: ./docker/Dockerfile
           push: true
-          tags: ghcr.io/blockscout/blockscout:${{ env.RELEASE_VERSION }}.commit.${{ env.SHORT_SHA }}-indexer
+          tags: ghcr.io/dos/doscan:${{ env.RELEASE_VERSION }}.commit.${{ env.SHORT_SHA }}-indexer
           labels: ${{ steps.setup.outputs.docker-labels }}
           platforms: |
             linux/amd64
