@@ -254,17 +254,22 @@ jobs:
           [Upstream release notes](https://github.com/blockscout/blockscout/releases/tag/$TAG)
           EOF
           )"
+          # Use REST API directly — gh pr create uses GraphQL which has a
+          # longer replication lag against new branches (>30s observed).
+          PR_TITLE="Sync upstream $TAG (merge conflicts)"
           for attempt in 1 2 3 4 5 6; do
-            if gh pr create \
-                 --title "Sync upstream $TAG (merge conflicts)" \
-                 --body "$PR_BODY" \
-                 --head "$BRANCH" \
-                 --base main; then
+            HTTP_CODE=$(jq -n --arg t "$PR_TITLE" --arg b "$PR_BODY" --arg h "$BRANCH" \
+              '{title:$t, body:$b, head:$h, base:"main"}' | \
+              gh api -X POST "repos/${GITHUB_REPOSITORY}/pulls" \
+                --input - \
+                --silent 2>&1)
+            if [ $? -eq 0 ]; then
               echo "PR created successfully on attempt $attempt"
               exit 0
             fi
-            echo "gh pr create failed (attempt $attempt), retrying in 5s..."
+            echo "PR creation failed (attempt $attempt): $HTTP_CODE"
+            echo "Retrying in 5s..."
             sleep 5
           done
-          echo "::error::gh pr create failed after 6 attempts"
+          echo "::error::PR creation failed after 6 attempts"
           exit 1
