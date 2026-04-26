@@ -230,22 +230,12 @@ jobs:
           git commit -m "WIP: Merge upstream $TAG (has conflicts)" --no-verify || true
           git push origin "$BRANCH" --force
 
-          # Wait for GitHub API to register the new branch (eventual consistency).
-          # Without this, gh pr create races and fails with:
-          #   GraphQL: ... No commits between main and BRANCH (createPullRequest)
-          for attempt in 1 2 3 4 5 6; do
-            if gh api "repos/${GITHUB_REPOSITORY}/branches/$BRANCH" --silent 2>/dev/null; then
-              echo "Branch $BRANCH visible on GitHub API"
-              break
-            fi
-            echo "Waiting for branch propagation (attempt $attempt)..."
-            sleep 2
-          done
-
+          # GitHub's GraphQL createPullRequest replica lags behind the REST
+          # branches endpoint. Even after the branch is visible via REST, the
+          # GraphQL mutation can return: "No commits between main and BRANCH".
+          # Retry the PR creation itself with backoff.
           REMAINING=$(echo "${{ steps.merge.outputs.conflict_files }}" | head -20)
-          gh pr create \
-            --title "Sync upstream $TAG (merge conflicts)" \
-            --body "$(cat <<EOF
+          PR_BODY="$(cat <<EOF
           ## Upstream Sync - $TAG
 
           Auto-merge with upstream \`$TAG\` failed. Version/workflow conflicts were auto-resolved,
@@ -263,6 +253,18 @@ jobs:
 
           [Upstream release notes](https://github.com/blockscout/blockscout/releases/tag/$TAG)
           EOF
-          )" \
-            --head "$BRANCH" \
-            --base main
+          )"
+          for attempt in 1 2 3 4 5 6; do
+            if gh pr create \
+                 --title "Sync upstream $TAG (merge conflicts)" \
+                 --body "$PR_BODY" \
+                 --head "$BRANCH" \
+                 --base main; then
+              echo "PR created successfully on attempt $attempt"
+              exit 0
+            fi
+            echo "gh pr create failed (attempt $attempt), retrying in 5s..."
+            sleep 5
+          done
+          echo "::error::gh pr create failed after 6 attempts"
+          exit 1
