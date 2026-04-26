@@ -230,6 +230,18 @@ jobs:
           git commit -m "WIP: Merge upstream $TAG (has conflicts)" --no-verify || true
           git push origin "$BRANCH" --force
 
+          # Wait for GitHub API to register the new branch (eventual consistency).
+          # Without this, gh pr create races and fails with:
+          #   GraphQL: ... No commits between main and BRANCH (createPullRequest)
+          for attempt in 1 2 3 4 5 6; do
+            if gh api "repos/${GITHUB_REPOSITORY}/branches/$BRANCH" --silent 2>/dev/null; then
+              echo "Branch $BRANCH visible on GitHub API"
+              break
+            fi
+            echo "Waiting for branch propagation (attempt $attempt)..."
+            sleep 2
+          done
+
           REMAINING=$(echo "${{ steps.merge.outputs.conflict_files }}" | head -20)
           gh pr create \
             --title "Sync upstream $TAG (merge conflicts)" \
