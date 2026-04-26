@@ -13,6 +13,7 @@ on:
 permissions:
   contents: write
   actions: write
+  pull-requests: write
 
 jobs:
   sync:
@@ -227,8 +228,7 @@ jobs:
 
           git add -A
           git commit -m "WIP: Merge upstream $TAG (has conflicts)" --no-verify || true
-          git push origin --delete "$BRANCH" 2>/dev/null || true
-          git push origin "$BRANCH"
+          git push origin "$BRANCH" --force
 
           REMAINING=$(echo "${{ steps.merge.outputs.conflict_files }}" | head -20)
           gh pr create \
