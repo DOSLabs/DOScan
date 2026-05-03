@@ -573,6 +573,11 @@ config :explorer, Explorer.Market.Fetcher.History,
       ConfigHelper.parse_integer_env_var("EXCHANGE_RATES_HISTORY_FIRST_FETCH_DAY_COUNT", 365)
     )
 
+config :explorer, Explorer.Chain.PendingOperationsHelper,
+  transactions_batch_size:
+    ConfigHelper.parse_integer_env_var("PENDING_OPERATIONS_HELPER_TRANSACTIONS_BATCH_SIZE", 1000, min: 1),
+  blocks_batch_size: ConfigHelper.parse_integer_env_var("PENDING_OPERATIONS_HELPER_BLOCKS_BATCH_SIZE", 10, min: 1)
+
 config :explorer, Explorer.Chain.Transaction,
   block_miner_gets_burnt_fees?: ConfigHelper.parse_bool_env_var("BLOCK_MINER_GETS_BURNT_FEES"),
   suave_bid_contracts: System.get_env("SUAVE_BID_CONTRACTS", ""),
@@ -1083,7 +1088,8 @@ config :indexer, Indexer.Transform.FheOperations,
   enabled: ConfigHelper.parse_bool_env_var("INDEXER_FHE_OPERATIONS_ENABLED", "false")
 
 config :indexer, Indexer.PendingTransactionsSanitizer,
-  interval: ConfigHelper.parse_time_env_var("INDEXER_PENDING_TRANSACTIONS_SANITIZER_INTERVAL", "1h")
+  interval: ConfigHelper.parse_time_env_var("INDEXER_PENDING_TRANSACTIONS_SANITIZER_INTERVAL", "1h"),
+  window_size: ConfigHelper.parse_time_env_var("INDEXER_PENDING_TRANSACTIONS_WINDOW_SIZE", "1d")
 
 config :indexer, Indexer.TokenTransferBlockConsensusSanitizer,
   interval: ConfigHelper.parse_time_env_var("INDEXER_TOKEN_TRANSFER_BLOCK_CONSENSUS_SANITIZER_INTERVAL", "20m")
@@ -1112,7 +1118,13 @@ config :indexer, Indexer.Fetcher.TokenCountersUpdater,
 
 config :indexer, Indexer.Fetcher.OnDemand.TokenBalance,
   threshold: ConfigHelper.parse_time_env_var("TOKEN_BALANCE_ON_DEMAND_FETCHER_THRESHOLD", "1h"),
-  fallback_threshold_in_blocks: 500
+  fallback_threshold_in_blocks: 500,
+  batch_size: ConfigHelper.parse_integer_env_var("TOKEN_BALANCE_ON_DEMAND_FETCHER_BATCH_SIZE", 500),
+  concurrency: ConfigHelper.parse_integer_env_var("TOKEN_BALANCE_ON_DEMAND_FETCHER_CONCURRENCY", 4),
+  address_queue_batch_size:
+    ConfigHelper.parse_integer_env_var("TOKEN_BALANCE_ON_DEMAND_FETCHER_ADDRESS_QUEUE_BATCH_SIZE", 50),
+  address_queue_flush_interval:
+    ConfigHelper.parse_time_env_var("TOKEN_BALANCE_ON_DEMAND_FETCHER_ADDRESS_QUEUE_FLUSH_INTERVAL", "1s")
 
 config :indexer, Indexer.Fetcher.OnDemand.CoinBalance,
   threshold: ConfigHelper.parse_time_env_var("COIN_BALANCE_ON_DEMAND_FETCHER_THRESHOLD", "1h"),
@@ -1129,6 +1141,9 @@ config :indexer, Indexer.Fetcher.BlockReward.Supervisor,
 
 config :indexer, Indexer.Fetcher.InternalTransaction.Supervisor,
   disabled?: trace_url_missing? or ConfigHelper.parse_bool_env_var("INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER")
+
+config :indexer, Indexer.Fetcher.OnDemand.InternalTransaction,
+  disabled?: ConfigHelper.parse_bool_env_var("INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER")
 
 disable_coin_balances_fetcher? = ConfigHelper.parse_bool_env_var("INDEXER_DISABLE_ADDRESS_COIN_BALANCE_FETCHER")
 

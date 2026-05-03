@@ -1,5 +1,48 @@
 # Changelog
 
+## 11.0.1
+
+### 🐛 Bug Fixes
+
+- Update OnDemand.InternalTransaction etherscan fields ([#14297](https://github.com/blockscout/blockscout/pull/14297))
+- Use inner join for verified contract addresses instead of lateral join ([#14294](https://github.com/blockscout/blockscout/pull/14294))
+- Disable on-demand internal tx fetch when corresponding flag is provided ([#14289](https://github.com/blockscout/blockscout/pull/14289))
+- Add fill IT addresses dependency into drop index migrations ([#14280](https://github.com/blockscout/blockscout/issues/14280))
+- Fix incorrect batch size in Indexer.Fetcher.OnDemand.TokenBalance ([#14265](https://github.com/blockscout/blockscout/issues/14265))
+- Prevent ETS crash in ContractCreator on GenServer restart ([#14221](https://github.com/blockscout/blockscout/issues/14221))
+- Fix internal transactions address dynamic condition ([#14278](https://github.com/blockscout/blockscout/issues/14278))
+- Remove addresses preload in celo parse_internal_transactions ([#14272](https://github.com/blockscout/blockscout/issues/14272))
+- Parse celo reward cursor params for address pagination ([#14275](https://github.com/blockscout/blockscout/issues/14275))
+- Map optimism-celo to celo OpenAPI folder ([#14274](https://github.com/blockscout/blockscout/issues/14274))
+- Make "sort_param" description endpoint-agnostic in OpenAPI spec ([#14270](https://github.com/blockscout/blockscout/issues/14270))
+- Fix Celo epochs list pagination ([#14269](https://github.com/blockscout/blockscout/issues/14269))
+
+### 🚜 Refactor
+
+- Move preload contract creation internal transaction under runtime toggle ([#14279](https://github.com/blockscout/blockscout/issues/14279), ([#14287](https://github.com/blockscout/blockscout/pull/14287)))
+
+### ⚙️ Miscellaneous Tasks
+
+- Cover all RPC API stats endpoints and stabilize flaky specs ([#14299](https://github.com/blockscout/blockscout/pull/14299))
+- Change "coinsupply" RPC API response to fit JSON RPC requirements ([#14298](https://github.com/blockscout/blockscout/pull/14298))
+- Optimize internal transactions address_match_dynamic ([#14293](https://github.com/blockscout/blockscout/pull/14293))
+- Add window_size for PendingTransactionsSanitizer ([#14292](https://github.com/blockscout/blockscout/pull/14292))
+- Make pending operations helper batching configurable ([#14273](https://github.com/blockscout/blockscout/issues/14273))
+
+### New ENV variables
+
+| Variable                                            | Description                                                                                                                                                                                     | Parameters                                                          |
+|-----------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
+| `INDEXER_PENDING_TRANSACTIONS_WINDOW_SIZE`                    | Time offset for pending transactions sanitizer. Implemented in [#14292](https://github.com/blockscout/blockscout/pull/14292).                                                                                                                                                                                                                                                                                                                                                                                                    | Version: v11.0.1\+ <br />Default: `1d` <br />Applications: Indexer                                          |
+| `TOKEN_BALANCE_ON_DEMAND_FETCHER_BATCH_SIZE`          | Batch size for Indexer.Fetcher.OnDemand.TokenBalance. Introduced in [#14265](https://github.com/poanetwork/blockscout/pull/14265)                                                                                                                                                                                                                             | Version: v11.0.1\+ <br />Default: `500` <br />Applications: API, Indexer     |
+| `TOKEN_BALANCE_ON_DEMAND_FETCHER_CONCURRENCY`         | Concurrency for Indexer.Fetcher.OnDemand.TokenBalance. Introduced in [#14265](https://github.com/poanetwork/blockscout/pull/14265)                                                                                                                                                                                                                            | Version: v11.0.1\+ <br />Default: `4` <br />Applications: API, Indexer       |
+| `TOKEN_BALANCE_ON_DEMAND_FETCHER_ADDRESS_QUEUE_FLUSH_INTERVAL` | How often the on-demand token balance address queue is flushed to processing. Use a shorter interval for lower latency, or a longer interval to accumulate larger batches and reduce query frequency. Introduced in [#14265](https://github.com/poanetwork/blockscout/pull/14265)                                                                    | Version: v11.0.1\+ <br />Default: `1s` <br />Applications: API, Indexer       |
+| `TOKEN_BALANCE_ON_DEMAND_FETCHER_ADDRESS_QUEUE_BATCH_SIZE` | Batch size for on-demand token balance address queue. Introduced in [#14265](https://github.com/poanetwork/blockscout/pull/14265)                                                                                                                                                                                                                        | Version: v11.0.1\+ <br />Default: `50` <br />Applications: API, Indexer       |
+| `PENDING_OPERATIONS_HELPER_TRANSACTIONS_BATCH_SIZE`           | Batch size for transactions when processing pending operations. Implemented in [#14273](https://github.com/blockscout/blockscout/pull/14273).                                                                                                                                                                                                                                                                                                                                                                                    | Version: v11.0.1\+ <br />Default: `1000` <br />Applications: Indexer                                         |
+| `PENDING_OPERATIONS_HELPER_BLOCKS_BATCH_SIZE`                 | Batch size for blocks when processing pending operations. Implemented in [#14273](https://github.com/blockscout/blockscout/pull/14273).                                                                                                                                                                                                                                                                                                                                                                                          | Version: v11.0.1\+ <br />Default: `10` <br />Applications: Indexer                                           |
+
+
+
 ## 11.0.0
 
 ### 🚀 Features
