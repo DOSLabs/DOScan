@@ -1,12 +1,5 @@
 # Changelog
 
-## 10.2.3
-
-### 🐛 Bug Fixes
-
-- Allow fetching of stale token balances ([#14154](https://github.com/blockscout/blockscout/issues/14154))
-
-
 ## 10.2.2
 
 ### 🐛 Bug Fixes
@@ -127,6 +120,7 @@
 
 - Fix /advanced-filters timeout when scam filtering enabled ([#14047](https://github.com/blockscout/blockscout/issues/14047))
 
+
 ## 10.0.0
 
 ### 🚀 Features
@@ -241,13 +235,6 @@
 | Variable                                              | Description                                                                                                                                                                                                                                                                                                                                        | Default                                                                                       | Version  | Deprecated in Version |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | -------------- | --------------------- |
 | `CACHE_PBO_COUNT_PERIOD`  | Time interval to restart the task which calculates the total pending_block_operations count.  | `20m` | v5.2.0+ |  | v10.0.0 |
-
-
-## 9.3.7
-
-### ⚙️ Miscellaneous Tasks
-
-- Allow disabling contract creation internal transaction association ([#14090](https://github.com/blockscout/blockscout/issues/14090), [#14097](https://github.com/blockscout/blockscout/pull/14097))
 
 
 ## 9.3.6
