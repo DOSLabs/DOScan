@@ -37,7 +37,7 @@ defmodule Indexer.Fetcher.OnDemand.InternalTransaction do
          true <- InternalTransaction.present_in_db?(min_block_number) do
       false
     else
-      _ -> true
+      _ -> not InternalTransactionsAddressPlaceholder.empty?()
     end
   end
 
@@ -121,26 +121,28 @@ defmodule Indexer.Fetcher.OnDemand.InternalTransaction do
         |> Enum.map(&serialize/1)
         |> different_from_parent_transaction()
         |> Enum.sort_by(& &1.index)
-        |> add_block_hashes(transaction.block_hash)
         |> join_associations(necessity_by_association)
         |> page_internal_transaction(paging_options)
         |> Enum.take(paging_options.page_size)
         |> Repo.preload(:block)
         |> InternalTransaction.preload_error()
+        |> InternalTransaction.preload_transaction()
+        |> InternalTransaction.preload_addresses(options)
 
       :ignore ->
         [transaction.block_number]
         |> fetch_block_internal_transactions()
         |> Enum.map(&serialize/1)
-        |> Enum.filter(&(&1.transaction_hash == transaction.hash))
+        |> Enum.filter(&(&1.block_number == transaction.block_number and &1.transaction_index == transaction.index))
         |> different_from_parent_transaction()
         |> Enum.sort_by(& &1.index)
-        |> add_block_hashes(transaction.block_hash)
         |> join_associations(necessity_by_association)
         |> page_internal_transaction(paging_options)
         |> Enum.take(paging_options.page_size)
         |> Repo.preload(:block)
         |> InternalTransaction.preload_error()
+        |> InternalTransaction.preload_transaction()
+        |> InternalTransaction.preload_addresses(options)
 
       error ->
         Logger.error(
@@ -191,9 +193,9 @@ defmodule Indexer.Fetcher.OnDemand.InternalTransaction do
     |> page_block_internal_transaction(paging_options)
     |> Enum.sort_by(&{&1.transaction_index, &1.index})
     |> then(&if unlimited?, do: &1, else: Enum.take(&1, paging_options.page_size))
-    |> add_block_hashes(block.hash)
     |> join_associations(necessity_by_association)
     |> InternalTransaction.preload_error()
+    |> InternalTransaction.preload_transaction()
   end
 
   @doc """
@@ -270,10 +272,10 @@ defmodule Indexer.Fetcher.OnDemand.InternalTransaction do
     })
     |> Enum.sort_by(&{&1.block_number, &1.transaction_index, &1.index}, sort_func)
     |> Enum.take(paging_options.page_size)
-    |> add_block_hashes()
     |> join_associations(necessity_by_association)
     |> Repo.preload(:block)
     |> InternalTransaction.preload_error()
+    |> InternalTransaction.preload_transaction()
   end
 
   defp do_fetch_for_address(address_id, to_block, from_block, limit, sum_mode, sort_direction, acc \\ [])
@@ -453,6 +455,21 @@ defmodule Indexer.Fetcher.OnDemand.InternalTransaction do
       |> windows([q], w: [order_by: [{^order, :block_number}]])
       |> select([q], %{
         block_number: q.block_number,
+        value:
+          fragment(
+            """
+            CASE ?
+              WHEN 'froms' THEN ?
+              WHEN 'tos'   THEN ?
+              ELSE ? + ?
+            END
+            """,
+            ^sum_mode,
+            q.count_froms,
+            q.count_tos,
+            q.count_froms,
+            q.count_tos
+          ),
         running_sum:
           fragment(
             """
@@ -476,6 +493,7 @@ defmodule Indexer.Fetcher.OnDemand.InternalTransaction do
       from(r in subquery(ranked_query),
         select: %{
           block_number: r.block_number,
+          value: r.value,
           running_sum: r.running_sum,
           cutoff_block:
             fragment(
@@ -489,8 +507,8 @@ defmodule Indexer.Fetcher.OnDemand.InternalTransaction do
 
     condition =
       case order do
-        :desc -> dynamic([c], is_nil(c.cutoff_block) or c.block_number >= c.cutoff_block)
-        :asc -> dynamic([c], is_nil(c.cutoff_block) or c.block_number <= c.cutoff_block)
+        :desc -> dynamic([c], c.value > 0 and (is_nil(c.cutoff_block) or c.block_number >= c.cutoff_block))
+        :asc -> dynamic([c], c.value > 0 and (is_nil(c.cutoff_block) or c.block_number <= c.cutoff_block))
       end
 
     final_query =
@@ -698,25 +716,6 @@ defmodule Indexer.Fetcher.OnDemand.InternalTransaction do
     end)
   end
 
-  defp add_block_hashes(internal_transactions, block_hash \\ nil) do
-    block_number_to_hash_map =
-      case block_hash do
-        nil ->
-          internal_transactions
-          |> Enum.map(& &1.transaction_hash)
-          |> Enum.uniq()
-          |> Transaction.by_hashes_query()
-          |> select([t], {t.block_number, t.block_hash})
-          |> Repo.all()
-          |> Map.new()
-
-        _ ->
-          %{}
-      end
-
-    Enum.map(internal_transactions, &%{&1 | block_hash: block_hash || block_number_to_hash_map[&1.block_number]})
-  end
-
   defp different_from_parent_transaction(internal_transactions) do
     Enum.reject(internal_transactions, &(&1.type == :call and &1.index == 0))
   end
@@ -725,6 +724,20 @@ defmodule Indexer.Fetcher.OnDemand.InternalTransaction do
     %InternalTransaction{}
     |> InternalTransaction.changeset(internal_transaction_params)
     |> Ecto.Changeset.apply_changes()
+    |> Map.put(:transaction_hash, internal_transaction_params[:transaction_hash])
+    |> Map.put(:from_address_hash, convert_to_address_hash(internal_transaction_params[:from_address_hash]))
+    |> Map.put(:to_address_hash, convert_to_address_hash(internal_transaction_params[:to_address_hash]))
+    |> Map.put(
+      :created_contract_address_hash,
+      convert_to_address_hash(internal_transaction_params[:created_contract_address_hash])
+    )
+  end
+
+  defp convert_to_address_hash(nil), do: nil
+
+  defp convert_to_address_hash(hash_string) do
+    {:ok, hash} = Hash.Address.cast(hash_string)
+    hash
   end
 
   defp etherscan_serialize(internal_transaction) do
