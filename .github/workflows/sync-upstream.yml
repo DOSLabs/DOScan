@@ -230,6 +230,18 @@ jobs:
           git commit -m "WIP: Merge upstream $TAG (has conflicts)" --no-verify || true
           git push origin "$BRANCH" --force
 
+          EXISTING_PR=$(gh pr list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --head "$BRANCH" \
+            --base main \
+            --state open \
+            --json url \
+            --jq '.[0].url // empty')
+          if [ -n "$EXISTING_PR" ]; then
+            echo "::notice::Conflict PR already exists: $EXISTING_PR"
+            exit 0
+          fi
+
           # GitHub's GraphQL createPullRequest replica lags behind the REST
           # branches endpoint. Even after the branch is visible via REST, the
           # GraphQL mutation can return: "No commits between main and BRANCH".
@@ -258,16 +270,15 @@ jobs:
           # longer replication lag against new branches (>30s observed).
           PR_TITLE="Sync upstream $TAG (merge conflicts)"
           for attempt in 1 2 3 4 5 6; do
-            HTTP_CODE=$(jq -n --arg t "$PR_TITLE" --arg b "$PR_BODY" --arg h "$BRANCH" \
+            if PR_URL=$(jq -n --arg t "$PR_TITLE" --arg b "$PR_BODY" --arg h "$BRANCH" \
               '{title:$t, body:$b, head:$h, base:"main"}' | \
               gh api -X POST "repos/${GITHUB_REPOSITORY}/pulls" \
                 --input - \
-                --silent 2>&1)
-            if [ $? -eq 0 ]; then
-              echo "PR created successfully on attempt $attempt"
+                --jq '.html_url' 2>&1); then
+              echo "PR created successfully on attempt $attempt: $PR_URL"
               exit 0
             fi
-            echo "PR creation failed (attempt $attempt): $HTTP_CODE"
+            echo "PR creation failed (attempt $attempt): $PR_URL"
             echo "Retrying in 5s..."
             sleep 5
           done
