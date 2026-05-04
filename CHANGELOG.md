@@ -9,7 +9,7 @@
 - Trim contractaddresses in getcontractcreation ([#14306](https://github.com/blockscout/blockscout/issues/14306))
 - Adapt maybe_reject_zero_value for empty blocks ([#14309](https://github.com/blockscout/blockscout/issues/14309))
 - Add missing internal transactions address preload ([#14308](https://github.com/blockscout/blockscout/issues/14308))
-- Fix some web tests ([#14310][https://github.com/blockscout/blockscout/pull/14310])
+- Fix some web tests ([#14310](https://github.com/blockscout/blockscout/pull/14310))
 
 ### ⚙️ Miscellaneous Tasks
 
