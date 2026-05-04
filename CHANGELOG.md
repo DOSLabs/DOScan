@@ -1,5 +1,19 @@
 # Changelog
 
+## 11.0.2
+
+### 🐛 Bug Fixes
+
+- Add fallback for empty "to" in Geth selfdestruct ([#14256](https://github.com/blockscout/blockscout/issues/14256))
+- Trim contractaddresses in getcontractcreation ([#14306](https://github.com/blockscout/blockscout/issues/14306))
+- Adapt maybe_reject_zero_value for empty blocks ([#14309](https://github.com/blockscout/blockscout/issues/14309))
+- Add missing internal transactions address preload ([#14308](https://github.com/blockscout/blockscout/issues/14308))
+
+### ⚙️ Miscellaneous Tasks
+
+- Add coverage for core API v2 views ([#14254](https://github.com/blockscout/blockscout/issues/14254))
+
+
 ## 11.0.1
 
 ### 🐛 Bug Fixes
