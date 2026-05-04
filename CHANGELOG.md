@@ -4,7 +4,7 @@
 
 ### 🐛 Bug Fixes
 
-- Process empty list of changes on fetching contract codes ((#14312)[https://github.com/blockscout/blockscout/pull/14312])
+- Process empty list of changes on fetching contract codes ([#14312](https://github.com/blockscout/blockscout/pull/14312))
 - Add fallback for empty "to" in Geth selfdestruct ([#14256](https://github.com/blockscout/blockscout/issues/14256))
 - Trim contractaddresses in getcontractcreation ([#14306](https://github.com/blockscout/blockscout/issues/14306))
 - Adapt maybe_reject_zero_value for empty blocks ([#14309](https://github.com/blockscout/blockscout/issues/14309))
