@@ -4,6 +4,7 @@
 
 ### 🐛 Bug Fixes
 
+- Process empty list of changes on fetching contract codes ((#14312)[https://github.com/blockscout/blockscout/pull/14312])
 - Add fallback for empty "to" in Geth selfdestruct ([#14256](https://github.com/blockscout/blockscout/issues/14256))
 - Trim contractaddresses in getcontractcreation ([#14306](https://github.com/blockscout/blockscout/issues/14306))
 - Adapt maybe_reject_zero_value for empty blocks ([#14309](https://github.com/blockscout/blockscout/issues/14309))
@@ -12,6 +13,8 @@
 
 ### ⚙️ Miscellaneous Tasks
 
+- Disable on-demand IT fetcher test for rsk and filecoin ([#14314](https://github.com/blockscout/blockscout/pull/14314))
+- Disable flaky contract code compiler doctest ([#14313](https://github.com/blockscout/blockscout/pull/14313))
 - Add coverage for core API v2 views ([#14254](https://github.com/blockscout/blockscout/issues/14254))
 
 
