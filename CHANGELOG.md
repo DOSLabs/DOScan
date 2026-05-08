@@ -1,5 +1,18 @@
 # Changelog
 
+## 11.0.3
+
+### 🐛 Bug Fixes
+
+- Force search for contract creator if internal transactions module is disabled ([#14324](https://github.com/blockscout/blockscout/issues/14324))
+- Add transactions uniqueness before insert ([#14329](https://github.com/blockscout/blockscout/issues/14329))
+
+### ⚙️ Miscellaneous Tasks
+
+- Don't lock tables if foreign keys are already dropped ([#14321](https://github.com/blockscout/blockscout/issues/14321))
+- Dev branch + CI, remove obsolete GA workflows ([#14317](https://github.com/blockscout/blockscout/issues/14317))
+
+
 ## 11.0.2
 
 ### 🐛 Bug Fixes
