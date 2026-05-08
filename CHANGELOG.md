@@ -4,6 +4,7 @@
 
 ### 🐛 Bug Fixes
 
+- Insert AddressIdToAddressHash via safe_insert_all ([#14333](https://github.com/blockscout/blockscout/pull/14333))
 - Force search for contract creator if internal transactions module is disabled ([#14324](https://github.com/blockscout/blockscout/issues/14324))
 - Add transactions uniqueness before insert ([#14329](https://github.com/blockscout/blockscout/issues/14329))
 
