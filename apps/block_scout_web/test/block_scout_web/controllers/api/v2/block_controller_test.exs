@@ -208,6 +208,20 @@ defmodule BlockScoutWeb.API.V2.BlockControllerTest do
 
       check_paginated_response(response, response_2nd_page, uncles)
     end
+
+    test "return 422 on invalid type", %{conn: conn} do
+      request = get(conn, "/api/v2/blocks", %{"type" => "bogus"})
+
+      assert %{
+               "errors" => [
+                 %{
+                   "source" => %{"pointer" => "/type"},
+                   "title" => "Invalid value"
+                 }
+                 | _
+               ]
+             } = json_response(request, 422)
+    end
   end
 
   describe "/blocks/{block_hash_or_number}" do
