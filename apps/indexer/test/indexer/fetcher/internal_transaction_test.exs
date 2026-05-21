@@ -134,9 +134,18 @@ defmodule Indexer.Fetcher.InternalTransactionTest do
   end
 
   describe "init/2" do
+    setup do
+      initial_env = Application.get_env(:indexer, Indexer.Fetcher.InternalTransaction)
+
+      on_exit(fn ->
+        Application.put_env(:indexer, Indexer.Fetcher.InternalTransaction, initial_env)
+      end)
+    end
+
     test "buffers blocks with unfetched internal transactions", %{
       json_rpc_named_arguments: json_rpc_named_arguments
     } do
+      Application.put_env(:indexer, Indexer.Fetcher.InternalTransaction, disabled?: false)
       block = insert(:block)
       insert(:pending_block_operation, block_hash: block.hash, block_number: block.number)
 
@@ -332,6 +341,7 @@ defmodule Indexer.Fetcher.InternalTransactionTest do
     end
   end
 
+<<<<<<< HEAD
   test "doesn't delete pending block operations after block import if no async process was requested", %{
     json_rpc_named_arguments: json_rpc_named_arguments
   } do
@@ -380,6 +390,8 @@ defmodule Indexer.Fetcher.InternalTransactionTest do
     end
   end
 
+=======
+>>>>>>> v11.0.3
   if Application.compile_env(:explorer, :chain_type) == :arbitrum do
     test "fetches internal transactions from Arbitrum", %{
       json_rpc_named_arguments: json_rpc_named_arguments

@@ -1,15 +1,29 @@
 # Changelog
 
+## 11.0.3
+
+### 🐛 Bug Fixes
+
+- Insert AddressIdToAddressHash via safe_insert_all ([#14333](https://github.com/blockscout/blockscout/pull/14333))
+- Force search for contract creator if internal transactions module is disabled ([#14324](https://github.com/blockscout/blockscout/issues/14324))
+- Add transactions uniqueness before insert ([#14329](https://github.com/blockscout/blockscout/issues/14329))
+
+### ⚙️ Miscellaneous Tasks
+
+- Don't lock tables if foreign keys are already dropped ([#14321](https://github.com/blockscout/blockscout/issues/14321))
+- Dev branch + CI, remove obsolete GA workflows ([#14317](https://github.com/blockscout/blockscout/issues/14317))
+
+
 ## 11.0.2
 
 ### 🐛 Bug Fixes
 
-- Process empty list of changes on fetching contract codes ((#14312)[https://github.com/blockscout/blockscout/pull/14312])
+- Process empty list of changes on fetching contract codes ([#14312](https://github.com/blockscout/blockscout/pull/14312))
 - Add fallback for empty "to" in Geth selfdestruct ([#14256](https://github.com/blockscout/blockscout/issues/14256))
 - Trim contractaddresses in getcontractcreation ([#14306](https://github.com/blockscout/blockscout/issues/14306))
 - Adapt maybe_reject_zero_value for empty blocks ([#14309](https://github.com/blockscout/blockscout/issues/14309))
 - Add missing internal transactions address preload ([#14308](https://github.com/blockscout/blockscout/issues/14308))
-- Fix some web tests ([#14310][https://github.com/blockscout/blockscout/pull/14310])
+- Fix some web tests ([#14310](https://github.com/blockscout/blockscout/pull/14310))
 
 ### ⚙️ Miscellaneous Tasks
 
