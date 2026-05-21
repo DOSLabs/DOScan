@@ -63,7 +63,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Files that MUST match upstream exactly (versions, deps, build config)
+          # Files that MUST match upstream exactly (versions, deps, build config).
+          # Kept in sync with .github/scripts/auto-resolve-merge-conflicts.sh.
           VERSION_FILES=(
             mix.exs
             rel/config.exs
@@ -81,39 +82,24 @@ jobs:
           if git merge "$TAG" --no-edit -m "Merge upstream $TAG"; then
             echo "Clean merge succeeded"
           else
-            # Merge failed — auto-resolve conflicts
+            # Merge failed - auto-resolve conflicts
             echo "::notice::Merge conflict detected, attempting auto-resolve..."
 
-            for f in "${VERSION_FILES[@]}"; do
-              if git diff --name-only --diff-filter=U | grep -qx "$f"; then
-                echo "  Auto-resolve (theirs): $f"
-                git checkout --theirs "$f"
-                git add "$f"
-              fi
-            done
-
-            # Accept upstream for ALL upstream workflow files (version bumps)
-            # Our custom workflows (docker-publish, deploy-config, sync-upstream) won't conflict
-            CONFLICT_WORKFLOWS=$(git diff --name-only --diff-filter=U | grep '^\.github/workflows/' || true)
-            if [ -n "$CONFLICT_WORKFLOWS" ]; then
-              echo "  Auto-resolve (theirs): workflow files"
-              echo "$CONFLICT_WORKFLOWS" | xargs git checkout --theirs
-              echo "$CONFLICT_WORKFLOWS" | xargs git add
-            fi
-
-            # Check if any conflicts remain
-            REMAINING=$(git diff --name-only --diff-filter=U || true)
-            if [ -n "$REMAINING" ]; then
+            if bash .github/scripts/auto-resolve-merge-conflicts.sh; then
+              git commit --no-edit -m "Merge upstream $TAG (auto-resolved conflicts)"
+            else
+              # Conflicts remain - capture list, abort merge, hand off to PR step.
+              REMAINING=$(git diff --name-only --diff-filter=U || true)
               echo "::warning::Unresolvable conflicts in: $REMAINING"
               git merge --abort
               echo "result=conflict" >> $GITHUB_OUTPUT
-              echo "conflict_files<<EOF" >> $GITHUB_OUTPUT
-              echo "$REMAINING" >> $GITHUB_OUTPUT
-              echo "EOF" >> $GITHUB_OUTPUT
+              {
+                echo "conflict_files<<EOF"
+                echo "$REMAINING"
+                echo "EOF"
+              } >> $GITHUB_OUTPUT
               exit 0
             fi
-
-            git commit --no-edit -m "Merge upstream $TAG (auto-resolved conflicts)"
           fi
 
           # Post-merge: ensure version files match upstream EXACTLY
@@ -217,14 +203,10 @@ jobs:
           git checkout -b "$BRANCH"
           git merge "$TAG" --no-edit || true
 
-          # Auto-resolve what we can (same strategy as above)
-          for f in mix.exs rel/config.exs docker/Makefile CHANGELOG.md apps/*/mix.exs; do
-            if git diff --name-only --diff-filter=U | grep -qx "$f" 2>/dev/null; then
-              git checkout --theirs "$f" && git add "$f"
-            fi
-          done
-          CONFLICT_WF=$(git diff --name-only --diff-filter=U | grep '^\.github/workflows/' || true)
-          [ -n "$CONFLICT_WF" ] && echo "$CONFLICT_WF" | xargs git checkout --theirs && echo "$CONFLICT_WF" | xargs git add
+          # Auto-resolve what we can. Script exits 1 when conflicts remain;
+          # that is expected here - we still commit and push the WIP state
+          # so reviewers see only the unresolvable conflicts.
+          bash .github/scripts/auto-resolve-merge-conflicts.sh || true
 
           git add -A
           git commit -m "WIP: Merge upstream $TAG (has conflicts)" --no-verify || true
