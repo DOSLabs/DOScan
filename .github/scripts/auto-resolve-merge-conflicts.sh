@@ -69,6 +69,10 @@ while IFS= read -r line; do
         fi
         continue
         ;;
+      *)
+        echo "::warning::VERSION file $file has unhandled conflict status $status - left for manual review"
+        continue
+        ;;
     esac
   fi
 
@@ -93,7 +97,11 @@ while IFS= read -r line; do
       UU|AU|UA)
         if is_in_array "$file" "${KEEP_WORKFLOWS[@]}"; then
           echo "  Resolve workflow (keep ours; content conflict): $file"
-          git checkout --ours -- "$file" && git add -- "$file"
+          if git checkout --ours -- "$file" 2>/dev/null; then
+            git add -- "$file"
+          else
+            echo "::warning::Cannot checkout --ours for $file ($status)"
+          fi
         else
           echo "  Resolve workflow (theirs; content conflict): $file"
           if git checkout --theirs -- "$file" 2>/dev/null; then
@@ -113,6 +121,10 @@ while IFS= read -r line; do
     esac
     continue
   fi
+
+  # Non-VERSION, non-workflow path with a conflict - left for manual review.
+  # Logged so it's easy to spot in CI output before the final summary.
+  echo "::warning::Conflict in $file ($status) - left for manual review"
 done < <(git status --porcelain | grep -E '^(UU|DU|UD|AA|DD|AU|UA) ' || true)
 
 # Report remaining conflicts; caller decides whether to abort or proceed (e.g. for PR fallback).
