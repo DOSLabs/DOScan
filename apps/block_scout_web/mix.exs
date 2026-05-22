@@ -19,7 +19,7 @@ defmodule BlockScoutWeb.Mixfile do
       lockfile: "../../mix.lock",
       package: package(),
       start_permanent: Mix.env() == :prod,
-      version: "11.0.2",
+      version: "11.0.3",
       xref: [
         exclude: [
           Explorer.Chain.Beacon.Reader,
