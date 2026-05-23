@@ -39,9 +39,20 @@ jobs:
           if [ -n "${{ inputs.tag }}" ]; then
             TAG="${{ inputs.tag }}"
           else
-            # Get latest release tag from upstream (filter only vX.Y.Z pattern)
-            TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+            # Prefer the newest STABLE release (no -alpha/-beta/-rc suffix).
+            # Fall back to the newest non-alpha prerelease (beta/rc) only when no
+            # stable release exists. Never auto-sync -alpha tags.
+            TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -vE -- '-' | head -1)
+            if [ -z "$TAG" ]; then
+              TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -ivE -- '-alpha' | head -1)
+            fi
           fi
+
+          if [ -z "$TAG" ]; then
+            echo "::error::No upstream release tag matched 'v[0-9]*.[0-9]*.[0-9]*'. Aborting."
+            exit 1
+          fi
+
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "Target tag: $TAG"
 
