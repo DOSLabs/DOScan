@@ -1,5 +1,66 @@
 # Changelog
 
+## 11.1.1
+
+### 🐛 Bug Fixes
+
+- Declare missing OpenAPI params for advanced-filters endpoint ([#14401](https://github.com/blockscout/blockscout/pull/14401), [#14399](https://github.com/blockscout/blockscout/issues/14399))
+
+## 11.1.0
+
+### 🚀 Features
+
+- Forward new BENS fields to search ([#14389](https://github.com/blockscout/blockscout/pull/14389))
+- Fetch token circulating supply along with circulating market cap ([#11969](https://github.com/blockscout/blockscout/issues/11969))
+- Support token lists import ([#11801](https://github.com/blockscout/blockscout/issues/11801))
+- transform ECTO_USE_SSL to sslmode param ([#8818](https://github.com/blockscout/blockscout/issues/8818))
+
+### 🐛 Bug Fixes
+
+- Properly start VersionUpgrade on application launch ([#14396](https://github.com/blockscout/blockscout/pull/14396))
+- MissingBalanceOfToken fixes ([#14267](https://github.com/blockscout/blockscout/pull/14267))
+- Improvements of OpenAPI specification for `/v2/blocks` ([#14251](https://github.com/blockscout/blockscout/issues/14251))
+- Normalize Tesla timeout middleware exceptions ([#14059](https://github.com/blockscout/blockscout/issues/14059))
+
+### 🚜 Refactor
+
+- Change multichain_search_db_export_token_info_queue.address_hash field type from :binary to Hash.Address ([#12894](https://github.com/blockscout/blockscout/issues/12894))
+- Refactor json rpc response parsers to ignore unknown fields ([#10334](https://github.com/blockscout/blockscout/issues/10334))
+
+### 📚 Documentation
+
+- Add verification websocket subscription guide ([#14259](https://github.com/blockscout/blockscout/issues/14259))
+
+### ⚙️ Miscellaneous Tasks
+
+- Add SPDX license identifier to Elixir source and test files ([#14393](https://github.com/blockscout/blockscout/pull/14393))
+- Publish OpenAPI specs on dev branch pushes ([#14391](https://github.com/blockscout/blockscout/pull/14391))
+- Add MIGRATION_FILL_INTERNAL_TRANSACTIONS_ADDRESS_IDS_CONCURRENCY ([#14390](https://github.com/blockscout/blockscout/pull/14390))
+- Close linked issues when PRs merge into dev ([#14384](https://github.com/blockscout/blockscout/pull/14384), [#14385](https://github.com/blockscout/blockscout/pull/14385))
+- Add SPDX attribution ([#14360](https://github.com/blockscout/blockscout/issues/14360))
+- Eliminate horizontal scroll in the main LICENSE file ([#14359](https://github.com/blockscout/blockscout/issues/14359))
+- Partial async import ([#14277](https://github.com/blockscout/blockscout/issues/14277))
+- OpenAPI specifications for all `/api/v2/advanced-filters` endpoints ([#14227](https://github.com/blockscout/blockscout/issues/14227))
+- OpenAPI spec for Arbitrum-related endpoints ([#14169](https://github.com/blockscout/blockscout/issues/14169))
+- Audit mode dependent processes ([#13925](https://github.com/blockscout/blockscout/issues/13925), [#14383](https://github.com/blockscout/blockscout/pull/14383))
+- Delete fiat_value for token if it disappears in coingecko ([#8932](https://github.com/blockscout/blockscout/issues/8932))
+
+### New ENV variables
+
+| Variable                                            | Description                                                                                                                                                                                     | Parameters                                                          |
+|-----------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
+| `TOKEN_LIST_URL`                             | URL for token list standard https://tokenlists.org/. Implemented in [#14206](https://github.com/blockscout/blockscout/pull/14206).                                                                                                                                                                                   | Version: v11.1.0\+ <br />Default: (empty) <br />Applications: Indexer                                       |
+| `TOKEN_LIST_REFETCH_INTERVAL`                | Interval to update data from token list. Implemented in [#14206](https://github.com/blockscout/blockscout/pull/14206).                                                                                                                                                                                               | Version: v11.1.0\+ <br />Default: (empty) <br />Applications: Indexer                                       |
+| `ECTO_SSL_MODE`                     | SSL mode for Ecto DB connections. Supported values: `disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`. Resolution order: `ECTO_SSL_MODE` has highest priority, then `sslmode` in `DATABASE_URL`, otherwise defaults to `require`. | Version: v11.1.0\++ <br />Default: `require` <br />Applications: API, Indexer               |
+| `INDEXER_ENABLE_PARTIAL_ASYNC_IMPORT`                         | If `true`, addresses, current token balances, tokens and token instances are imported asynchronously. Implemented in [#14277](https://github.com/blockscout/blockscout/pull/14277).                                                                                                                                                                                                                                                                                                                                              | Version: v11.1.0\+ <br />Default: `false` <br />Applications: Indexer                                         |
+| `MIGRATION_FILL_INTERNAL_TRANSACTIONS_ADDRESS_IDS_CONCURRENCY`     | Number of parallel processes filling internal transactions address ids. Implemented in [#14390](https://github.com/blockscout/blockscout/pull/14390).                                                                                                                                                                                                                 | Version: v11.1.0\+ <br />Default: `10` <br />Applications: Indexer          |
+
+### Deprecated ENV variables
+
+| Variable | Description | Default | Version | Need recompile | Deprecated in Version |
+| -------- | ----------- | ------- | ------- | -------------- | --------------------- |
+| <span style={{color: "red"}}>Deprecated</span> `ECTO_USE_SSL` | Boolean SSL toggle for Ecto DB connections. Replaced with `ECTO_SSL_MODE`. | `TRUE` | All | | v11.1.0+ |
+
 ## 11.0.3
 
 ### 🐛 Bug Fixes
