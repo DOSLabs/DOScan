@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 # This file is responsible for configuring your application
 # and its dependencies with the aid of the Config module.
 #
@@ -112,6 +113,8 @@ config :explorer, Explorer.Migrator.DeleteZeroValueInternalTransactions, enabled
 config :explorer, Explorer.Chain.Mud, enabled: ConfigHelper.parse_bool_env_var("MUD_INDEXER_ENABLED")
 
 config :explorer, Explorer.Utility.VersionConstantsUpdater, enabled: true
+
+config :explorer, Explorer.Utility.VersionUpgrade, enabled: true
 
 for migrator <- [
       # Background migrations
