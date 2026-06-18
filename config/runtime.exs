@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 import Config
 
 [__DIR__ | ~w(config_helper.exs)]
@@ -145,6 +146,9 @@ default_global_api_rate_limit = 25
 default_api_rate_limit_by_key = 10
 api_rate_limit_redis_url = ConfigHelper.safe_get_env("API_RATE_LIMIT_HAMMER_REDIS_URL", nil)
 
+api_rate_limit_redis_sentinel_urls =
+  ConfigHelper.safe_get_env("API_RATE_LIMIT_HAMMER_REDIS_SENTINEL_URLS", "")
+
 config :block_scout_web, :api_rate_limit,
   disabled: ConfigHelper.parse_bool_env_var("API_RATE_LIMIT_DISABLED"),
   static_api_key_value: System.get_env("API_RATE_LIMIT_STATIC_API_KEY"),
@@ -172,8 +176,11 @@ config :block_scout_web, :api_rate_limit,
   api_v2_token_ttl: ConfigHelper.parse_time_env_var("API_RATE_LIMIT_UI_V2_TOKEN_TTL", "30m"),
   eth_json_rpc_max_batch_size: ConfigHelper.parse_integer_env_var("ETH_JSON_RPC_MAX_BATCH_SIZE", 5),
   redis_url: if(api_rate_limit_redis_url == "", do: nil, else: api_rate_limit_redis_url),
+  redis_ssl: ConfigHelper.parse_bool_env_var("API_RATE_LIMIT_HAMMER_REDIS_SSL_ENABLED", "false"),
+  redis_sentinel_urls: if(api_rate_limit_redis_sentinel_urls == "", do: nil, else: api_rate_limit_redis_sentinel_urls),
+  redis_sentinel_master_name: ConfigHelper.safe_get_env("API_RATE_LIMIT_HAMMER_REDIS_SENTINEL_MASTER_NAME", ""),
   rate_limit_backend:
-    if(api_rate_limit_redis_url == "",
+    if(api_rate_limit_redis_url == "" and api_rate_limit_redis_sentinel_urls == "",
       do: BlockScoutWeb.RateLimit.Hammer.ETS,
       else: BlockScoutWeb.RateLimit.Hammer.Redis
     ),
@@ -264,7 +271,8 @@ config :ethereum_jsonrpc, EthereumJSONRPC.HTTP,
     %{"Content-Type" => "application/json"}
     |> Map.merge(ConfigHelper.parse_json_env_var("ETHEREUM_JSONRPC_HTTP_HEADERS", "{}"))
     |> Map.to_list(),
-  gzip_enabled?: ConfigHelper.parse_bool_env_var("ETHEREUM_JSONRPC_HTTP_GZIP_ENABLED", "false")
+  gzip_enabled?: ConfigHelper.parse_bool_env_var("ETHEREUM_JSONRPC_HTTP_GZIP_ENABLED", "false"),
+  batch_size: ConfigHelper.parse_integer_env_var("ETHEREUM_JSONRPC_HTTP_BATCH_SIZE", 500)
 
 config :ethereum_jsonrpc, EthereumJSONRPC.Geth,
   block_traceable?: ConfigHelper.parse_bool_env_var("ETHEREUM_JSONRPC_GETH_TRACE_BY_BLOCK"),
@@ -424,6 +432,12 @@ config :explorer, Explorer.Chain.Cache.Counters.AverageBlockTime,
 config :explorer, Explorer.Market.MarketHistoryCache,
   cache_period: ConfigHelper.parse_time_env_var("CACHE_MARKET_HISTORY_PERIOD", "1h")
 
+config :explorer, Explorer.Stats.HotSmartContractsCache, %{
+  "5m" => ConfigHelper.parse_time_env_var("CACHE_HOT_SMART_CONTRACTS_5M_PERIOD", "30s"),
+  "1h" => ConfigHelper.parse_time_env_var("CACHE_HOT_SMART_CONTRACTS_1H_PERIOD", "6m"),
+  "3h" => ConfigHelper.parse_time_env_var("CACHE_HOT_SMART_CONTRACTS_3H_PERIOD", "18m")
+}
+
 config :explorer, Explorer.Chain.Cache.Counters.AddressTransactionsCount,
   cache_period: ConfigHelper.parse_time_env_var("CACHE_ADDRESS_TRANSACTIONS_COUNTER_PERIOD", "1h")
 
@@ -563,6 +577,13 @@ config :explorer, Explorer.Market.Fetcher.Token,
       "MARKET_TOKENS_MAX_BATCH_SIZE",
       ConfigHelper.parse_integer_env_var("TOKEN_EXCHANGE_RATE_MAX_BATCH_SIZE", 500)
     )
+
+token_list_url = ConfigHelper.parse_url_env_var("TOKEN_LIST_URL")
+
+config :explorer, Explorer.Market.Fetcher.TokenList,
+  enabled: !is_nil(token_list_url),
+  token_list_url: token_list_url,
+  refetch_interval: ConfigHelper.parse_time_env_var("TOKEN_LIST_REFETCH_INTERVAL", "24h")
 
 config :explorer, Explorer.Market.Fetcher.History,
   enabled: !disable_exchange_rates? && ConfigHelper.parse_bool_env_var("MARKET_HISTORY_FETCHER_ENABLED", "true"),
@@ -900,6 +921,7 @@ config :explorer, Explorer.Migrator.DeleteZeroValueInternalTransactions,
 
 config :explorer, Explorer.Migrator.FillInternalTransactionsAddressIds,
   batch_size: ConfigHelper.parse_integer_env_var("MIGRATION_FILL_INTERNAL_TRANSACTIONS_ADDRESS_IDS_BATCH_SIZE", 30),
+  concurrency: ConfigHelper.parse_integer_env_var("MIGRATION_FILL_INTERNAL_TRANSACTIONS_ADDRESS_IDS_CONCURRENCY", 10),
   timeout: ConfigHelper.parse_time_env_var("MIGRATION_FILL_INTERNAL_TRANSACTIONS_ADDRESS_IDS_TIMEOUT", "5s")
 
 config :explorer, Explorer.Chain.BridgedToken,
@@ -935,10 +957,14 @@ config :explorer, Explorer.Chain.Fetcher.AddressesBlacklist,
   provider: ConfigHelper.parse_catalog_value("ADDRESSES_BLACKLIST_PROVIDER", ["blockaid"], false, "blockaid")
 
 rate_limiter_redis_url = ConfigHelper.parse_url_env_var("RATE_LIMITER_REDIS_URL")
+rate_limiter_redis_sentinel_urls = ConfigHelper.safe_get_env("RATE_LIMITER_REDIS_SENTINEL_URLS", "")
 
 config :explorer, Explorer.Utility.RateLimiter,
-  storage: (rate_limiter_redis_url && :redis) || :ets,
+  storage: if(rate_limiter_redis_url || rate_limiter_redis_sentinel_urls != "", do: :redis, else: :ets),
   redis_url: rate_limiter_redis_url,
+  redis_ssl: ConfigHelper.parse_bool_env_var("RATE_LIMITER_REDIS_SSL_ENABLED", "false"),
+  redis_sentinel_urls: rate_limiter_redis_sentinel_urls,
+  redis_sentinel_master_name: ConfigHelper.safe_get_env("RATE_LIMITER_REDIS_SENTINEL_MASTER_NAME", ""),
   on_demand: [
     time_interval_limit: ConfigHelper.parse_time_env_var("RATE_LIMITER_ON_DEMAND_TIME_INTERVAL", "5s"),
     limit_by_ip: ConfigHelper.parse_integer_env_var("RATE_LIMITER_ON_DEMAND_LIMIT_BY_IP", 50),
@@ -947,7 +973,10 @@ config :explorer, Explorer.Utility.RateLimiter,
     limitation_period: ConfigHelper.parse_time_env_var("RATE_LIMITER_ON_DEMAND_LIMITATION_PERIOD", "1h")
   ],
   hammer_backend_module:
-    if(rate_limiter_redis_url, do: Explorer.Utility.Hammer.Redis, else: Explorer.Utility.Hammer.ETS)
+    if(rate_limiter_redis_url || rate_limiter_redis_sentinel_urls != "",
+      do: Explorer.Utility.Hammer.Redis,
+      else: Explorer.Utility.Hammer.ETS
+    )
 
 universal_proxy_config_url =
   ConfigHelper.parse_url_env_var(
@@ -1050,6 +1079,7 @@ config :indexer,
   trace_block_ranges: trace_block_ranges,
   trace_first_block: trace_first_block,
   trace_last_block: trace_last_block,
+  enable_partial_async_import?: ConfigHelper.parse_bool_env_var("INDEXER_ENABLE_PARTIAL_ASYNC_IMPORT", "false"),
   fetch_rewards_way: System.get_env("FETCH_REWARDS_WAY", "trace_block"),
   memory_limit: ConfigHelper.indexer_memory_limit(),
   system_memory_percentage: ConfigHelper.parse_integer_env_var("INDEXER_SYSTEM_MEMORY_PERCENTAGE", 60),

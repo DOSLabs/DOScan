@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Indexer.MixProject do
   use Mix.Project
 
@@ -14,7 +15,7 @@ defmodule Indexer.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       lockfile: "../../mix.lock",
       start_permanent: Mix.env() == :prod,
-      version: "11.0.3",
+      version: "11.2.0",
       xref: [
         exclude: [
           Explorer.Chain.Optimism.Deposit,
