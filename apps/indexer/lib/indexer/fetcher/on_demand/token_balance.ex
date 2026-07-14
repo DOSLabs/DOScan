@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Indexer.Fetcher.OnDemand.TokenBalance do
   @moduledoc """
   Ensures that we have a reasonably up to date address tokens balance.
@@ -115,7 +116,7 @@ defmodule Indexer.Fetcher.OnDemand.TokenBalance do
       updated_tokens =
         Map.put_new(
           acc[:tokens],
-          ctb.token.contract_address_hash.bytes,
+          ctb.token_contract_address_hash.bytes,
           ctb.token
         )
 
