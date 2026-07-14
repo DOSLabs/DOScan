@@ -82,7 +82,7 @@ services:
       - db
       - redis-db
       - avago
-    image: ghcr.io/dos/doscan:11.0.2.commit.9538bf98
+    image: ghcr.io/dos/doscan:11.2.2.commit.549e92c0
     pull_policy: always
     restart: always
     stop_grace_period: 5m
