@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.API.V2.SearchControllerTest do
   use BlockScoutWeb.ConnCase
   use Utils.CompileTimeEnvHelper, chain_type: [:explorer, :chain_type]
@@ -736,7 +737,9 @@ defmodule BlockScoutWeb.API.V2.SearchControllerTest do
                   ],
                   "icon_url": "https://i.imgur.com/GOfUwCb.jpeg",
                   "docs_url": "https://docs.ens.domains/"
-              }
+              },
+              "protocol_dapp_url": "https://app.ens.domains/",
+              "protocol_dapp_logo": "https://i.imgur.com/ens-logo.png"
           }
       ],
       "next_page_params": null
@@ -846,6 +849,8 @@ defmodule BlockScoutWeb.API.V2.SearchControllerTest do
       ens = Enum.at(response["items"], 0)
       assert ens["address_hash"] == to_string(ens_address)
       assert ens["ens_info"]["name"] == name
+      assert ens["ens_info"]["protocol_dapp_url"] == "https://app.ens.domains/"
+      assert ens["ens_info"]["protocol_dapp_logo"] == "https://i.imgur.com/ens-logo.png"
     end
 
     test "check pagination #4 (ens and metadata tags (complex case) added)", %{conn: conn} do
@@ -1090,7 +1095,9 @@ defmodule BlockScoutWeb.API.V2.SearchControllerTest do
                   ],
                   "icon_url": "https://i.imgur.com/GOfUwCb.jpeg",
                   "docs_url": "https://docs.ens.domains/"
-              }
+              },
+              "protocol_dapp_url": "https://app.ens.domains/",
+              "protocol_dapp_logo": "https://i.imgur.com/ens-logo.png"
           }
       ],
       "next_page_params": null
@@ -1200,6 +1207,8 @@ defmodule BlockScoutWeb.API.V2.SearchControllerTest do
       ens = Enum.at(response["items"], 0)
       assert ens["address_hash"] == to_string(ens_address)
       assert ens["ens_info"]["name"] == name
+      assert ens["ens_info"]["protocol_dapp_url"] == "https://app.ens.domains/"
+      assert ens["ens_info"]["protocol_dapp_logo"] == "https://i.imgur.com/ens-logo.png"
     end
 
     if @chain_type == :default do
@@ -2152,7 +2161,9 @@ defmodule BlockScoutWeb.API.V2.SearchControllerTest do
                   ],
                   "icon_url": "https://i.imgur.com/GOfUwCb.jpeg",
                   "docs_url": "https://docs.ens.domains/"
-              }
+              },
+              "protocol_dapp_url": "https://app.ens.domains/",
+              "protocol_dapp_logo": "https://i.imgur.com/ens-logo.png"
           }
       ],
       "next_page_params": null
