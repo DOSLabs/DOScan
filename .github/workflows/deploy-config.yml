@@ -34,6 +34,7 @@ jobs:
           host: ${{ vars.MAINNET_HOST }}
           username: ${{ vars.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
           source: >-
             docker-compose/docker-compose-mainnet.yml,
             docker-compose/Caddyfile-mainnet,
@@ -49,6 +50,7 @@ jobs:
           host: ${{ vars.MAINNET_HOST }}
           username: ${{ vars.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
           script: |
             set -e
             DEPLOY_PATH=~/doscan
@@ -89,6 +91,7 @@ jobs:
           host: ${{ vars.TESTNET_HOST }}
           username: ${{ vars.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
           source: >-
             docker-compose/docker-compose-testnet.yml,
             docker-compose/envs/common-blockscout-testnet.env,
@@ -105,6 +108,7 @@ jobs:
           host: ${{ vars.TESTNET_HOST }}
           username: ${{ vars.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
           script: |
             set -e
             DEPLOY_PATH=$HOME/services/DOScan/docker-compose
