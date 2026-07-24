@@ -17,7 +17,14 @@ config :logger, :default_handler,
          format: "$dateT$time $metadata[$level] $message\n",
          metadata: ConfigHelper.logger_backend_metadata()
        )
-     end)
+     end),
+  config: %{
+    sync_mode_qlen: 1_000,
+    drop_mode_qlen: 5_000,
+    flush_qlen: 10_000,
+    burst_limit_max_count: 5_000,
+    burst_limit_window_time: 1_000
+  }
 
 config :logger, :api,
   format: "$dateT$time $metadata[$level] $message\n",
@@ -1097,7 +1104,9 @@ config :indexer,
     ConfigHelper.parse_integer_env_var("INDEXER_COIN_BALANCES_FETCHER_INIT_QUERY_LIMIT", 2_000),
   graceful_shutdown_period: ConfigHelper.parse_time_env_var("INDEXER_GRACEFUL_SHUTDOWN_PERIOD", "5m"),
   internal_transactions_fetch_order:
-    ConfigHelper.parse_catalog_value("INDEXER_INTERNAL_TRANSACTIONS_FETCH_ORDER", ["asc", "desc"], true, "asc")
+    ConfigHelper.parse_catalog_value("INDEXER_INTERNAL_TRANSACTIONS_FETCH_ORDER", ["asc", "desc"], true, "asc"),
+  handle_partially_imported_block_interval:
+    ConfigHelper.parse_time_env_var("INDEXER_HANDLE_PARTIALLY_IMPORTED_BLOCK_INTERVAL", "1s")
 
 config :indexer, :ipfs,
   gateway_url: ConfigHelper.parse_url_env_var("IPFS_GATEWAY_URL", "https://ipfs.io/ipfs"),
