@@ -153,7 +153,7 @@
     <p>Chỉ container <code>doscan-l1-frontend-1</code> được recreate với <code>--no-deps</code>. Backend, database, validator và DOS Chain không bị restart. Container trở lại trạng thái <code>healthy</code>.</p>
     <p>Kiểm tra live: homepage HTTP 200 trong 5 lần liên tiếp; Playwright xác nhận homepage, <code>/hot-contracts</code>, <code>/ops</code> và một transaction thật đều HTTP 200. Menu DeFi, DOS Faucet, Hot Contracts, User Operations, Gas fee và Fee per gas đều hiển thị.</p>
   </div>
-  <div class="callout"><strong>Lưu ý vận hành còn tồn tại:</strong> Console trình duyệt vẫn ghi lỗi Reown allowlist và CORS của Blockscout Metadata Service. Hai lỗi này không do gói env mới và không chặn các tính năng vừa deploy, nhưng nên xử lý riêng.</div>
+  <div class="verdict"><strong class="good">Reown và Metadata đã được xử lý:</strong> Reown Dashboard đã allowlist <code>https://doscan.io</code>. Metadata Service được proxy an toàn qua <code>https://doscan.io/metadata-api</code>; Caddy loại bỏ <code>Cookie</code> và <code>Authorization</code> trước khi chuyển request tới dịch vụ bên ngoài. Kiểm tra Playwright ngày 25/07/2026 không còn lỗi Reown allowlist hoặc Metadata CORS.</div>
 
   <h2>1. DOS Chain có phù hợp với các env EVM không?</h2>
   <p><strong>Có.</strong> DOS Chain là Avalanche L1 chạy Subnet-EVM, nên địa chỉ, giao dịch, token ERC, smart contract, EIP-1559 gas và wallet interaction đều dùng mô hình EVM. Avalanche ghi rõ Avalanche L1 có thể dùng Subnet-EVM và chọn EVM-style Chain ID. Địa chỉ EVM vẫn là dạng <code>0x...</code>; Bech32 chỉ dành cho X-Chain/P-Chain.</p>
