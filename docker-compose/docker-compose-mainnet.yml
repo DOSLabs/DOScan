@@ -59,7 +59,8 @@ services:
     extra_hosts:
       - host.docker.internal:host-gateway
     env_file:
-      - ${DOSCAN_BASE_ENV_DIR:-/opt/doscan/envs}/common-blockscout.env
+      - ./envs/common-blockscout.env
+      - ${DOSCAN_BLOCKSCOUT_SECRETS_ENV:-./envs/common-blockscout.env}
       - ./envs/common-blockscout-mainnet.env
     links:
       - db:database
