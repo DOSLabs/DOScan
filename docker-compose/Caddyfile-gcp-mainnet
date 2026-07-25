@@ -33,6 +33,11 @@
 	handle /auth/* {
 		reverse_proxy backend:4000
 	}
+	handle_path /metadata-api/* {
+		reverse_proxy https://metadata.services.blockscout.com {
+			header_up Host metadata.services.blockscout.com
+		}
+	}
 	handle /metrics {
 		reverse_proxy backend:4000
 	}
