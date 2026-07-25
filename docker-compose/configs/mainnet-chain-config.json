@@ -1,0 +1,19 @@
+{
+  "pruning-enabled": false,
+  "metrics-expensive-enabled": false,
+  "skip-tx-indexing": false,
+  "txpool_content": true,
+  "txpool_status": true,
+  "eth-apis": [
+    "eth",
+    "eth-filter",
+    "net",
+    "web3",
+    "internal-eth",
+    "internal-blockchain",
+    "internal-public-transaction-pool",
+    "internal-tx-pool",
+    "debug-tracer",
+    "debug"
+  ]
+}
