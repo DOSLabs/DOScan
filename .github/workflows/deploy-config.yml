@@ -125,6 +125,7 @@ jobs:
               DEPLOYMENT_STARTED=0
               TOUCHED_SERVICES=""
               EDGE_TOUCHED=0
+              L1_CADDY_CONFIG_CHANGED=0
 
               cleanup() {
                 rm -rf "${SRC}" "${ARCHIVE}"
@@ -199,7 +200,7 @@ jobs:
                   sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
                     docker compose up -d --no-deps "${service}" || l1_rc=1
                 done
-                if grep -qw caddy <<<"${TOUCHED_SERVICES}"; then
+                if grep -qw caddy <<<"${TOUCHED_SERVICES}" || [ "${L1_CADDY_CONFIG_CHANGED}" -eq 1 ]; then
                   sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
                     docker compose up -d --force-recreate --no-deps caddy || l1_rc=1
                 fi
@@ -278,6 +279,9 @@ jobs:
                 docker compose config --hash="*" > "${SRC}/old-service-hashes"
 
               EDGE_CONFIG_CHANGED=0
+              if ! sudo cmp -s "${SRC}/docker-compose/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet"; then
+                L1_CADDY_CONFIG_CHANGED=1
+              fi
               if ! sudo cmp -s "${SRC}/docker-compose/docker-compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml" ||
                  ! sudo cmp -s "${SRC}/docker-compose/Caddyfile-gcp-edge" "${EDGE_PATH}/Caddyfile" ||
                  ! sudo cmp -s "${SRC}/docker-compose/docker-compose-gcp-edge.override.yml" "${EDGE_PATH}/compose.override.yml"; then
@@ -324,7 +328,7 @@ jobs:
                   docker compose up -d --no-deps "${service}"
               done
 
-              if grep -qw caddy <<<"${TOUCHED_SERVICES}"; then
+              if grep -qw caddy <<<"${TOUCHED_SERVICES}" || [ "${L1_CADDY_CONFIG_CHANGED}" -eq 1 ]; then
                 sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
                   docker compose up -d --force-recreate --no-deps caddy
               fi

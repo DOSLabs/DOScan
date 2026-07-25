@@ -14,7 +14,7 @@
 
 	# Turbopack chunk names may remain stable across builds, so they must be revalidated.
 	@frontend_runtime_assets path /assets/envs.js /_next/static/chunks/*
-	header @frontend_runtime_assets Cache-Control "public, max-age=0, must-revalidate"
+	header @frontend_runtime_assets >Cache-Control "public, max-age=0, must-revalidate"
 
 	handle /api/v1/counters {
 		reverse_proxy stats:8050
