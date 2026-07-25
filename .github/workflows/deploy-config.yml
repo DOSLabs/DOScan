@@ -173,19 +173,25 @@ jobs:
               rollback() {
                 echo "Deployment failed; restoring configuration from ${BACKUP}" >&2
                 set +e
+                restore_rc=0
 
-                sudo cp -a "${BACKUP}/compose.yml" "${L1_PATH}/compose.yml"
-                sudo cp -a "${BACKUP}/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet"
-                sudo cp -a "${BACKUP}/compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml"
-                sudo cp -a "${BACKUP}/Caddyfile-gcp-edge" "${EDGE_PATH}/Caddyfile"
-                sudo cp -a "${BACKUP}/compose.override.yml" "${EDGE_PATH}/compose.override.yml"
+                sudo cp -a "${BACKUP}/compose.yml" "${L1_PATH}/compose.yml" || restore_rc=1
+                sudo cp -a "${BACKUP}/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet" || restore_rc=1
+                sudo cp -a "${BACKUP}/compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml" || restore_rc=1
+                sudo cp -a "${BACKUP}/Caddyfile-gcp-edge" "${EDGE_PATH}/Caddyfile" || restore_rc=1
+                sudo cp -a "${BACKUP}/compose.override.yml" "${EDGE_PATH}/compose.override.yml" || restore_rc=1
                 if sudo test -f "${BACKUP}/compose.rpc-override.yml"; then
-                  sudo cp -a "${BACKUP}/compose.rpc-override.yml" "${EDGE_PATH}/compose.rpc-override.yml"
+                  sudo cp -a "${BACKUP}/compose.rpc-override.yml" "${EDGE_PATH}/compose.rpc-override.yml" || restore_rc=1
                 else
-                  sudo rm -f "${EDGE_PATH}/compose.rpc-override.yml"
+                  sudo rm -f "${EDGE_PATH}/compose.rpc-override.yml" || restore_rc=1
                 fi
-                sudo cp -a "${BACKUP}/envs/." "${L1_PATH}/envs/"
-                sudo cp -a "${BACKUP}/shared-envs/." "${SHARED_ENV_PATH}/"
+                sudo cp -a "${BACKUP}/envs/." "${L1_PATH}/envs/" || restore_rc=1
+                sudo cp -a "${BACKUP}/shared-envs/." "${SHARED_ENV_PATH}/" || restore_rc=1
+
+                if [ "${restore_rc}" -ne 0 ]; then
+                  echo "ROLLBACK FAILED; one or more configuration files could not be restored from ${BACKUP}" >&2
+                  return 1
+                fi
 
                 cd "${L1_PATH}"
                 l1_rc=0
