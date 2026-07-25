@@ -4,151 +4,189 @@ on:
   push:
     branches: [main]
     paths:
-      - 'docker-compose/**'
+      - "docker-compose/**"
+      - ".github/workflows/deploy-config.yml"
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Deploy target'
+        description: Deploy target
         required: true
         type: choice
         options:
           - mainnet
-          - testnet
           - beta
-          - both
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-config-${{ inputs.environment || 'mainnet' }}
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: dos--ai
+  GCP_PROJECT_NUMBER: "535583621422"
+  GCP_ZONE: asia-southeast1-b
+  GCP_INSTANCE: doscan-mainnet
+  GCP_SERVICE_ACCOUNT: doscan-deploy@dos--ai.iam.gserviceaccount.com
+  GCP_WORKLOAD_IDENTITY_PROVIDER: projects/535583621422/locations/global/workloadIdentityPools/github/providers/doscan-provider
 
 jobs:
   deploy-mainnet:
     if: >
       github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' &&
-       (inputs.environment == 'mainnet' || inputs.environment == 'both'))
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'mainnet')
     runs-on: ubuntu-latest
     environment: mainnet
     steps:
       - uses: actions/checkout@v4
 
-      - name: Copy configs to archive VM
-        uses: appleboy/scp-action@v0.1.7
+      - name: Validate Mainnet and Testnet environment parity
+        run: python scripts/validate-blockscout-env-parity.py
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
         with:
-          host: ${{ vars.MAINNET_HOST }}
-          username: ${{ vars.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          source: >-
-            docker-compose/docker-compose-mainnet.yml,
-            docker-compose/Caddyfile-mainnet,
-            docker-compose/envs/common-frontend.env,
-            docker-compose/envs/common-smart-contract-verifier.env,
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Package deployment configuration
+        run: |
+          set -euo pipefail
+          tar -czf /tmp/doscan-config.tgz \
+            docker-compose/docker-compose-mainnet.yml \
+            docker-compose/Caddyfile-gcp-mainnet \
+            docker-compose/configs/mainnet-chain-config.json \
+            docker-compose/envs/common-blockscout-mainnet.env \
+            docker-compose/envs/common-frontend.env \
+            docker-compose/envs/common-frontend-scan.env \
+            docker-compose/envs/common-smart-contract-verifier.env \
             docker-compose/envs/common-visualizer.env
-          target: /tmp/doscan-deploy
-          strip_components: 1
 
-      - name: Apply configs and restart services
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ vars.MAINNET_HOST }}
-          username: ${{ vars.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          script: |
-            set -e
-            DEPLOY_PATH=~/doscan
-            SRC=/tmp/doscan-deploy
+      - name: Upload configuration through IAP
+        run: |
+          set -euo pipefail
+          gcloud compute scp \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${GCP_ZONE}" \
+            --tunnel-through-iap \
+            /tmp/doscan-config.tgz \
+            "${GCP_INSTANCE}:/tmp/doscan-config-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
 
-            # Backup current compose
-            cp $DEPLOY_PATH/compose.yml $DEPLOY_PATH/compose.yml.bak 2>/dev/null || true
+      - name: Apply configuration and verify services
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "${GCP_INSTANCE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${GCP_ZONE}" \
+            --tunnel-through-iap \
+            --command='
+              set -euo pipefail
 
-            # Copy new configs (common-blockscout.env stays on VM with real secrets)
-            cp $SRC/docker-compose-mainnet.yml $DEPLOY_PATH/compose.yml
-            cp $SRC/Caddyfile-mainnet $DEPLOY_PATH/Caddyfile
-            cp $SRC/envs/common-frontend.env $DEPLOY_PATH/envs/common-frontend.env
-            cp $SRC/envs/common-smart-contract-verifier.env $DEPLOY_PATH/envs/common-smart-contract-verifier.env
-            cp $SRC/envs/common-visualizer.env $DEPLOY_PATH/envs/common-visualizer.env
+              ARCHIVE="/tmp/doscan-config-${{ github.run_id }}-${{ github.run_attempt }}.tgz"
+              SRC="$(mktemp -d /tmp/doscan-deploy.XXXXXX)"
+              BACKUP="/opt/doscan-l1/backups/github-${{ github.run_id }}-${{ github.run_attempt }}"
+              L1_PATH="/opt/doscan-l1"
+              SHARED_ENV_PATH="/opt/doscan/envs"
+              CHAIN_CONFIG="/opt/avago/configs/chains/2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk/config.json"
 
-            # Recreate only services with config changes (no downtime)
-            cd $DEPLOY_PATH
-            sudo docker compose up -d --remove-orphans
+              cleanup() {
+                rm -rf "${SRC}" "${ARCHIVE}"
+              }
+              trap cleanup EXIT
 
-            # Cleanup
-            rm -rf $SRC
+              tar -xzf "${ARCHIVE}" -C "${SRC}"
+              sudo mkdir -p "${BACKUP}" "${L1_PATH}/envs" "${SHARED_ENV_PATH}" "$(dirname "${CHAIN_CONFIG}")"
 
-            echo "Deploy complete!"
+              sudo cp -a "${L1_PATH}/compose.yml" "${BACKUP}/compose.yml" 2>/dev/null || true
+              sudo cp -a "${L1_PATH}/Caddyfile-gcp-mainnet" "${BACKUP}/Caddyfile-gcp-mainnet" 2>/dev/null || true
+              sudo cp -a "${L1_PATH}/envs" "${BACKUP}/envs" 2>/dev/null || true
+              sudo cp -a "${CHAIN_CONFIG}" "${BACKUP}/chain-config.json" 2>/dev/null || true
 
-  deploy-testnet:
-    if: >
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' &&
-       (inputs.environment == 'testnet' || inputs.environment == 'both'))
-    runs-on: ubuntu-latest
-    environment: testnet
-    steps:
-      - uses: actions/checkout@v4
+              CHAIN_CONFIG_CHANGED=0
+              if ! sudo cmp -s "${SRC}/docker-compose/configs/mainnet-chain-config.json" "${CHAIN_CONFIG}"; then
+                CHAIN_CONFIG_CHANGED=1
+              fi
 
-      - name: Copy configs to dev VM
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ vars.TESTNET_HOST }}
-          username: ${{ vars.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          source: >-
-            docker-compose/docker-compose-testnet.yml,
-            docker-compose/envs/common-blockscout-testnet.env,
-            docker-compose/envs/common-frontend.env,
-            docker-compose/envs/common-frontend-testnet.env,
-            docker-compose/envs/common-smart-contract-verifier.env,
-            docker-compose/envs/common-visualizer.env
-          target: /tmp/doscan-deploy
-          strip_components: 1
+              sudo install -m 0644 "${SRC}/docker-compose/docker-compose-mainnet.yml" "${L1_PATH}/compose.yml"
+              sudo install -m 0644 "${SRC}/docker-compose/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-blockscout-mainnet.env" "${L1_PATH}/envs/common-blockscout-mainnet.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend-scan.env" "${L1_PATH}/envs/common-frontend-scan.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend.env" "${SHARED_ENV_PATH}/common-frontend.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-smart-contract-verifier.env" "${SHARED_ENV_PATH}/common-smart-contract-verifier.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-visualizer.env" "${SHARED_ENV_PATH}/common-visualizer.env"
+              sudo install -m 0644 "${SRC}/docker-compose/configs/mainnet-chain-config.json" "${CHAIN_CONFIG}"
 
-      - name: Apply configs and restart services
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ vars.TESTNET_HOST }}
-          username: ${{ vars.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          script: |
-            set -e
-            DEPLOY_PATH=$HOME/services/DOScan/docker-compose
-            SRC=/tmp/doscan-deploy
+              if [ "${CHAIN_CONFIG_CHANGED}" -eq 1 ]; then
+                cd /opt/avago/compose
+                sudo docker compose restart avago
+                for attempt in $(seq 1 24); do
+                  if curl -fsS http://127.0.0.1:9650/ext/health >/dev/null; then
+                    break
+                  fi
+                  if [ "${attempt}" -eq 24 ]; then
+                    echo "AvalancheGo did not become healthy in time" >&2
+                    exit 1
+                  fi
+                  sleep 5
+                done
+              fi
 
-            cp $SRC/docker-compose-testnet.yml $DEPLOY_PATH/docker-compose.yml
-            cp $SRC/envs/common-blockscout-testnet.env $DEPLOY_PATH/envs/common-blockscout-testnet.env
-            cp $SRC/envs/common-frontend.env $DEPLOY_PATH/envs/common-frontend.env
-            cp $SRC/envs/common-frontend-testnet.env $DEPLOY_PATH/envs/common-frontend-testnet.env
-            cp $SRC/envs/common-smart-contract-verifier.env $DEPLOY_PATH/envs/common-smart-contract-verifier.env
-            cp $SRC/envs/common-visualizer.env $DEPLOY_PATH/envs/common-visualizer.env
+              cd "${L1_PATH}"
+              sudo env DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose config -q
+              sudo env DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose pull
+              sudo env DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose up -d --remove-orphans
 
-            cd $DEPLOY_PATH
-            sudo docker compose up -d --remove-orphans
+              for attempt in $(seq 1 24); do
+                if curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null &&
+                   curl -fsS http://127.0.0.1:13080/api/v2/proxy/account-abstraction/status >/dev/null &&
+                   curl -fsS http://127.0.0.1:13080/public-metrics >/dev/null; then
+                  break
+                fi
+                if [ "${attempt}" -eq 24 ]; then
+                  echo "DOScan did not become healthy in time" >&2
+                  sudo docker compose ps
+                  exit 1
+                fi
+                sleep 5
+              done
 
-            rm -rf $SRC
+              sudo docker compose ps
+              echo "GCP mainnet deployment completed"
+            '
 
-            echo "Testnet deploy complete!"
+      - name: Verify public explorer
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/stats >/dev/null
+          curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/proxy/account-abstraction/status >/dev/null
+          curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/public-metrics >/dev/null
 
   deploy-beta:
     if: >
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' &&
-       (inputs.environment == 'beta' || inputs.environment == 'both'))
+      github.event_name == 'workflow_dispatch' && inputs.environment == 'beta'
     runs-on: [self-hosted, beta]
     environment: beta
+    permissions:
+      contents: read
     steps:
       - name: Pull latest and restart services
         run: |
-          set -e
-          REPO=$HOME/Projects/DOScan
-          DEPLOY=$REPO/docker-compose
+          set -euo pipefail
+          REPO="$HOME/Projects/DOScan"
+          DEPLOY="$REPO/docker-compose"
 
-          # Pull latest changes
-          cd $REPO
-          git pull origin main
+          cd "$REPO"
+          git pull --ff-only origin main
 
-          # Restart beta compose
-          cd $DEPLOY
+          cd "$DEPLOY"
           docker compose -f docker-compose-beta.yml -p doscan pull
           docker compose -f docker-compose-beta.yml -p doscan up -d --remove-orphans
 
-          echo "Beta deploy complete!"
+          echo "Beta deployment completed"
