@@ -168,16 +168,13 @@ jobs:
                 sleep 5
               done
 
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/stats >/dev/null
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/proxy/account-abstraction/status >/dev/null
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/public-metrics >/dev/null
+
               sudo docker compose ps
               echo "GCP mainnet deployment completed"
             '
-
-      - name: Verify public explorer
-        run: |
-          set -euo pipefail
-          curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/stats >/dev/null
-          curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/proxy/account-abstraction/status >/dev/null
-          curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/public-metrics >/dev/null
 
   deploy-beta:
     if: >
