@@ -149,9 +149,9 @@
   <h2>0. Trạng thái triển khai</h2>
   <div class="verdict">
     <strong class="good">Đã deploy thành công lên production GCP.</strong>
-    <p>PR <a href="https://github.com/DOS/DOScan/pull/79">DOS/DOScan #79</a> đã merge tại commit <code>b5b876c68c62b7d2b6caaf88369b6b742d590487</code>. Override của stack GCP được cập nhật trên <a href="https://github.com/DOS/DOScan/pull/78">PR #78</a> tại commit <code>960a1fa36eed842acf5da5f0fe0c952edd02b978</code>.</p>
-    <p>Chỉ container <code>doscan-l1-frontend-1</code> được recreate với <code>--no-deps</code>. Backend, database, validator và DOS Chain không bị restart. Container trở lại trạng thái <code>healthy</code>.</p>
-    <p>Kiểm tra live: homepage HTTP 200 trong 5 lần liên tiếp; Playwright xác nhận homepage, <code>/hot-contracts</code>, <code>/ops</code> và một transaction thật đều HTTP 200. Menu DeFi, DOS Faucet, Hot Contracts, User Operations, Gas fee và Fee per gas đều hiển thị.</p>
+    <p>PR <a href="https://github.com/DOS/DOScan/pull/79">DOS/DOScan #79</a> đã merge tại commit <code>b5b876c68c62b7d2b6caaf88369b6b742d590487</code>. Cấu hình GCP hoàn chỉnh trên <a href="https://github.com/DOS/DOScan/pull/78">PR #78</a> đã merge tại commit <code>97dd9129c72e0276997d0020661e2369b3e2caa4</code>. Workflow <a href="https://github.com/DOS/DOScan/actions/runs/30162709398">Deploy Config #30162709398</a> hoàn tất thành công.</p>
+    <p>Đợt deploy frontend ban đầu chỉ recreate <code>doscan-l1-frontend-1</code> với <code>--no-deps</code>. Đợt deploy cấu hình tự động cuối không recreate container nào. Backend, database, AvalancheGo và DOS Chain không bị restart; các container chính giữ <code>RestartCount=0</code>.</p>
+    <p>Kiểm tra live bằng Playwright sau merge: homepage, <code>/hot-contracts</code>, <code>/ops</code> và <code>/apps</code> đều tải đúng; console không còn lỗi Reown allowlist hoặc Metadata CORS. Menu DeFi, DOS Faucet, Hot Contracts, User Operations, Gas fee và Fee per gas đều hiển thị.</p>
   </div>
   <div class="verdict"><strong class="good">Reown và Metadata đã được xử lý:</strong> Reown Dashboard đã allowlist <code>https://doscan.io</code>. Metadata Service được proxy an toàn qua <code>https://doscan.io/metadata-api</code>; Caddy loại bỏ <code>Cookie</code> và <code>Authorization</code> trước khi chuyển request tới dịch vụ bên ngoài. Kiểm tra Playwright ngày 25/07/2026 không còn lỗi Reown allowlist hoặc Metadata CORS.</div>
 
