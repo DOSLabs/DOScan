@@ -123,6 +123,8 @@ jobs:
               SHARED_ENV_PATH="/opt/doscan/envs"
               BLOCKSCOUT_SECRETS="${SHARED_ENV_PATH}/common-blockscout-secrets.env"
               DEPLOYMENT_STARTED=0
+              TOUCHED_SERVICES=""
+              EDGE_TOUCHED=0
 
               cleanup() {
                 rm -rf "${SRC}" "${ARCHIVE}"
@@ -146,19 +148,41 @@ jobs:
                 sudo cp -a "${BACKUP}/shared-envs/." "${SHARED_ENV_PATH}/"
 
                 cd "${L1_PATH}"
-                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
-                  docker compose up -d
-                l1_rc=$?
+                l1_rc=0
+                for service in ${TOUCHED_SERVICES}; do
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                    docker compose up -d --no-deps "${service}" || l1_rc=1
+                done
+                if grep -qw caddy <<<"${TOUCHED_SERVICES}"; then
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                    docker compose up -d --force-recreate --no-deps caddy || l1_rc=1
+                fi
 
                 cd "${EDGE_PATH}"
-                sudo docker compose up -d --force-recreate --no-deps caddy
-                edge_rc=$?
+                edge_rc=0
+                if [ "${EDGE_TOUCHED}" -eq 1 ]; then
+                  sudo docker compose up -d --force-recreate --no-deps caddy || edge_rc=1
+                fi
 
                 if [ "${l1_rc}" -ne 0 ] || [ "${edge_rc}" -ne 0 ] ||
-                   ! curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null; then
+                   ! curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null ||
+                   ! curl -fsS http://127.0.0.1:13080/public-metrics >/dev/null; then
                   echo "ROLLBACK FAILED; manual recovery is required from ${BACKUP}" >&2
                   return 1
                 fi
+
+                rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_chainId\",\"params\":[]}"
+                for rpc_check in \
+                  "https://main.doschain.com|icm-r0" \
+                  "https://main2.doschain.com|archive-doscan-mainnet" \
+                  "https://main3.doschain.com|archive-doscan-mainnet"; do
+                  rpc_url="${rpc_check%%|*}"
+                  expected_origin="${rpc_check##*|}"
+                  rpc_response="$(curl --fail --silent --show-error --retry 3 --retry-delay 5 \
+                    -D - -H "Content-Type: application/json" --data "${rpc_body}" "${rpc_url}")" || return 1
+                  grep -q "\"result\":\"0x1f2b\"" <<<"${rpc_response}" || return 1
+                  grep -qi "X-DOS-RPC-Origin: ${expected_origin}" <<<"${rpc_response}" || return 1
+                done
 
                 echo "Rollback completed successfully from ${BACKUP}" >&2
                 return 0
@@ -196,6 +220,10 @@ jobs:
                 sudo chmod 0600 "${BLOCKSCOUT_SECRETS}"
               fi
 
+              cd "${L1_PATH}"
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                docker compose config --hash="*" > "${SRC}/old-service-hashes"
+
               EDGE_CONFIG_CHANGED=0
               if ! sudo cmp -s "${SRC}/docker-compose/docker-compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml" ||
                  ! sudo cmp -s "${SRC}/docker-compose/Caddyfile-gcp-edge" "${EDGE_PATH}/Caddyfile" ||
@@ -217,9 +245,36 @@ jobs:
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-visualizer.env" "${SHARED_ENV_PATH}/common-visualizer.env"
               cd "${L1_PATH}"
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose config -q
-              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose up -d
-              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose up -d \
-                --force-recreate --no-deps caddy
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                docker compose config --hash="*" > "${SRC}/new-service-hashes"
+
+              TOUCHED_SERVICES="$(
+                awk '"'"'
+                  NR == FNR { old[$1] = $2; next }
+                  !($1 in old) || old[$1] != $2 { print $1 }
+                '"'"' "${SRC}/old-service-hashes" "${SRC}/new-service-hashes"
+              )"
+
+              for service in ${TOUCHED_SERVICES}; do
+                case "${service}" in
+                  db|db-init|redis-db)
+                    echo "Refusing automatic stateful service change: ${service}" >&2
+                    exit 1
+                    ;;
+                  caddy)
+                    continue
+                    ;;
+                esac
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                  docker compose pull "${service}"
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                  docker compose up -d --no-deps "${service}"
+              done
+
+              if grep -qw caddy <<<"${TOUCHED_SERVICES}"; then
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                  docker compose up -d --force-recreate --no-deps caddy
+              fi
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose exec -T caddy \
                 caddy validate --config /etc/caddy/Caddyfile
 
@@ -239,9 +294,8 @@ jobs:
               cd "${EDGE_PATH}"
               sudo docker compose config -q
               if [ "${EDGE_CONFIG_CHANGED}" -eq 1 ]; then
+                EDGE_TOUCHED=1
                 sudo docker compose up -d --force-recreate --no-deps caddy
-              else
-                sudo docker compose up -d --no-deps caddy
               fi
               sudo docker compose exec -T caddy \
                 caddy validate --config /etc/caddy/Caddyfile
