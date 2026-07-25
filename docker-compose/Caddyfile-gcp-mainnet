@@ -3,6 +3,15 @@
 
 	header >Cross-Origin-Opener-Policy "same-origin-allow-popups"
 
+	# Invalidate browser HTTP caches once after the intentional July 2026 chain reset.
+	@pre_relaunch_cache {
+		not header_regexp Cookie "(^|;\s*)dos_chain_epoch=20260708(;|$)"
+	}
+	header @pre_relaunch_cache {
+		Clear-Site-Data "\"cache\""
+		+Set-Cookie "dos_chain_epoch=20260708; Path=/; Max-Age=31536000; Secure; SameSite=Lax"
+	}
+
 	handle /api/v1/counters {
 		reverse_proxy stats:8050
 	}

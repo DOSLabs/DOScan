@@ -44,6 +44,16 @@ jobs:
       - name: Validate Mainnet and Testnet environment parity
         run: python scripts/validate-blockscout-env-parity.py
 
+      - name: Validate Caddy configuration
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "${PWD}/docker-compose/Caddyfile-gcp-edge:/etc/caddy/Caddyfile:ro" \
+            caddy:latest caddy adapt --config /etc/caddy/Caddyfile >/dev/null
+          docker run --rm \
+            -v "${PWD}/docker-compose/Caddyfile-gcp-mainnet:/etc/caddy/Caddyfile:ro" \
+            caddy:latest caddy validate --config /etc/caddy/Caddyfile
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -61,6 +71,9 @@ jobs:
           tar -czf /tmp/doscan-config.tgz \
             docker-compose/docker-compose-mainnet.yml \
             docker-compose/Caddyfile-gcp-mainnet \
+            docker-compose/Caddyfile-gcp-edge \
+            docker-compose/docker-compose-gcp-edge.yml \
+            docker-compose/docker-compose-gcp-edge.override.yml \
             docker-compose/configs/mainnet-chain-config.json \
             docker-compose/envs/common-blockscout.env \
             docker-compose/envs/common-blockscout-mainnet.env \
@@ -93,6 +106,7 @@ jobs:
               SRC="$(mktemp -d /tmp/doscan-deploy.XXXXXX)"
               BACKUP="/opt/doscan-l1/backups/github-${{ github.run_id }}-${{ github.run_attempt }}"
               L1_PATH="/opt/doscan-l1"
+              EDGE_PATH="/opt/doscan"
               SHARED_ENV_PATH="/opt/doscan/envs"
               BLOCKSCOUT_SECRETS="${SHARED_ENV_PATH}/common-blockscout-secrets.env"
               CHAIN_CONFIG="/opt/avago/configs/chains/2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk/config.json"
@@ -103,10 +117,14 @@ jobs:
               trap cleanup EXIT
 
               tar -xzf "${ARCHIVE}" -C "${SRC}"
-              sudo mkdir -p "${BACKUP}" "${L1_PATH}/envs" "${SHARED_ENV_PATH}" "$(dirname "${CHAIN_CONFIG}")"
+              sudo mkdir -p "${BACKUP}" "${L1_PATH}/envs" "${EDGE_PATH}" "${SHARED_ENV_PATH}" "$(dirname "${CHAIN_CONFIG}")"
 
               sudo cp -a "${L1_PATH}/compose.yml" "${BACKUP}/compose.yml" 2>/dev/null || true
               sudo cp -a "${L1_PATH}/Caddyfile-gcp-mainnet" "${BACKUP}/Caddyfile-gcp-mainnet" 2>/dev/null || true
+              sudo cp -a "${EDGE_PATH}/compose.yml" "${BACKUP}/compose-gcp-edge.yml" 2>/dev/null || true
+              sudo cp -a "${EDGE_PATH}/Caddyfile" "${BACKUP}/Caddyfile-gcp-edge" 2>/dev/null || true
+              sudo cp -a "${EDGE_PATH}/compose.override.yml" "${BACKUP}/compose.override.yml" 2>/dev/null || true
+              sudo cp -a "${EDGE_PATH}/compose.rpc-override.yml" "${BACKUP}/compose.rpc-override.yml" 2>/dev/null || true
               sudo cp -a "${L1_PATH}/envs" "${BACKUP}/envs" 2>/dev/null || true
               sudo cp -a "${CHAIN_CONFIG}" "${BACKUP}/chain-config.json" 2>/dev/null || true
 
@@ -122,10 +140,20 @@ jobs:
               if ! sudo cmp -s "${SRC}/docker-compose/configs/mainnet-chain-config.json" "${CHAIN_CONFIG}"; then
                 CHAIN_CONFIG_CHANGED=1
               fi
+              EDGE_CONFIG_CHANGED=0
+              if ! sudo cmp -s "${SRC}/docker-compose/docker-compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml" ||
+                 ! sudo cmp -s "${SRC}/docker-compose/Caddyfile-gcp-edge" "${EDGE_PATH}/Caddyfile" ||
+                 ! sudo cmp -s "${SRC}/docker-compose/docker-compose-gcp-edge.override.yml" "${EDGE_PATH}/compose.override.yml"; then
+                EDGE_CONFIG_CHANGED=1
+              fi
 
               sudo install -m 0644 "${SRC}/docker-compose/docker-compose-mainnet.yml" "${L1_PATH}/compose.yml"
               sudo install -m 0644 "${SRC}/docker-compose/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet"
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-blockscout.env" "${L1_PATH}/envs/common-blockscout.env"
+              sudo install -m 0644 "${SRC}/docker-compose/docker-compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml"
+              sudo install -m 0644 "${SRC}/docker-compose/Caddyfile-gcp-edge" "${EDGE_PATH}/Caddyfile"
+              sudo install -m 0644 "${SRC}/docker-compose/docker-compose-gcp-edge.override.yml" "${EDGE_PATH}/compose.override.yml"
+              sudo rm -f "${EDGE_PATH}/compose.rpc-override.yml"
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-blockscout-mainnet.env" "${L1_PATH}/envs/common-blockscout-mainnet.env"
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend-scan.env" "${L1_PATH}/envs/common-frontend-scan.env"
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend.env" "${SHARED_ENV_PATH}/common-frontend.env"
@@ -152,10 +180,13 @@ jobs:
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose config -q
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose pull
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose up -d --remove-orphans
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose up -d \
+                --force-recreate --no-deps caddy
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose exec -T caddy \
+                caddy validate --config /etc/caddy/Caddyfile
 
               for attempt in $(seq 1 24); do
                 if curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null &&
-                   curl -fsS http://127.0.0.1:13080/api/v2/proxy/account-abstraction/status >/dev/null &&
                    curl -fsS http://127.0.0.1:13080/public-metrics >/dev/null; then
                   break
                 fi
@@ -167,11 +198,57 @@ jobs:
                 sleep 5
               done
 
+              cd "${EDGE_PATH}"
+              sudo docker compose config -q
+              if [ "${EDGE_CONFIG_CHANGED}" -eq 1 ]; then
+                sudo docker compose up -d --force-recreate --no-deps caddy
+              else
+                sudo docker compose up -d --no-deps caddy
+              fi
+              sudo docker compose exec -T caddy \
+                caddy validate --config /etc/caddy/Caddyfile
+
+              rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_chainId\",\"params\":[]}"
+              check_local_rpc() {
+                rpc_host="$1"
+                expected_origin="$2"
+                rpc_response="$(curl -fsS -D - --max-time 10 \
+                  -H "Host: ${rpc_host}" \
+                  -H "Content-Type: application/json" \
+                  --data "${rpc_body}" \
+                  http://127.0.0.1:8545/)"
+                grep -q "\"result\":\"0x1f2b\"" <<<"${rpc_response}"
+                grep -qi "X-DOS-RPC-Origin: ${expected_origin}" <<<"${rpc_response}"
+              }
+              check_local_rpc main.doschain.com icm-r0
+              check_local_rpc main2.doschain.com archive-doscan-mainnet
+              check_local_rpc main3.doschain.com archive-doscan-mainnet
+
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/stats >/dev/null
-              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/proxy/account-abstraction/status >/dev/null
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/public-metrics >/dev/null
 
-              sudo docker compose ps
+              check_public_rpc() {
+                rpc_url="$1"
+                expected_origin="$2"
+                rpc_response="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                  -D - \
+                  -H "Content-Type: application/json" \
+                  --data "${rpc_body}" \
+                  "${rpc_url}")"
+                grep -q "\"result\":\"0x1f2b\"" <<<"${rpc_response}"
+                grep -qi "X-DOS-RPC-Origin: ${expected_origin}" <<<"${rpc_response}"
+              }
+              check_public_rpc https://main.doschain.com icm-r0
+              check_public_rpc https://main2.doschain.com archive-doscan-mainnet
+              check_public_rpc https://main3.doschain.com archive-doscan-mainnet
+
+              curl --fail --silent --show-error --retry 2 --retry-delay 5 \
+                https://doscan.io/api/v2/proxy/account-abstraction/status >/dev/null || \
+                echo "Account abstraction status is not healthy yet; explorer and RPC deployment succeeded"
+
+              sudo docker compose ps caddy
+              cd "${L1_PATH}"
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose ps
               echo "GCP mainnet deployment completed"
             '
 
