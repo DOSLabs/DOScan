@@ -36,6 +36,8 @@
 	handle_path /metadata-api/* {
 		reverse_proxy https://metadata.services.blockscout.com {
 			header_up Host metadata.services.blockscout.com
+			header_up -Cookie
+			header_up -Authorization
 		}
 	}
 	handle /metrics {
