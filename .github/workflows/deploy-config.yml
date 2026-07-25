@@ -4,151 +4,419 @@ on:
   push:
     branches: [main]
     paths:
-      - 'docker-compose/**'
+      - "docker-compose/docker-compose-mainnet.yml"
+      - "docker-compose/docker-compose-gcp-edge.yml"
+      - "docker-compose/docker-compose-gcp-edge.override.yml"
+      - "docker-compose/Caddyfile-gcp-mainnet"
+      - "docker-compose/Caddyfile-gcp-edge"
+      - "docker-compose/envs/common-blockscout.env"
+      - "docker-compose/envs/common-blockscout-mainnet.env"
+      - "docker-compose/envs/common-frontend.env"
+      - "docker-compose/envs/common-frontend-scan.env"
+      - "docker-compose/envs/common-smart-contract-verifier.env"
+      - "docker-compose/envs/common-visualizer.env"
+      - "scripts/validate-blockscout-env-parity.py"
+      - ".github/workflows/deploy-config.yml"
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Deploy target'
+        description: Deploy target
         required: true
         type: choice
         options:
           - mainnet
-          - testnet
           - beta
-          - both
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-config-${{ inputs.environment || 'mainnet' }}
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: dos--ai
+  GCP_ZONE: asia-southeast1-b
+  GCP_INSTANCE: doscan-mainnet
+  GCP_SERVICE_ACCOUNT: doscan-deploy@dos--ai.iam.gserviceaccount.com
+  GCP_WORKLOAD_IDENTITY_PROVIDER: projects/535583621422/locations/global/workloadIdentityPools/github/providers/doscan-provider
 
 jobs:
   deploy-mainnet:
     if: >
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' &&
-       (inputs.environment == 'mainnet' || inputs.environment == 'both'))
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'mainnet'))
     runs-on: ubuntu-latest
     environment: mainnet
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Copy configs to archive VM
-        uses: appleboy/scp-action@v0.1.7
+      - name: Validate Mainnet and Testnet environment parity
+        run: python scripts/validate-blockscout-env-parity.py
+
+      - name: Validate Caddy configuration
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "${PWD}/docker-compose/Caddyfile-gcp-edge:/etc/caddy/Caddyfile:ro" \
+            caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9 \
+            caddy adapt --config /etc/caddy/Caddyfile >/dev/null
+          docker run --rm \
+            -v "${PWD}/docker-compose/Caddyfile-gcp-mainnet:/etc/caddy/Caddyfile:ro" \
+            caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9 \
+            caddy validate --config /etc/caddy/Caddyfile
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
-          host: ${{ vars.MAINNET_HOST }}
-          username: ${{ vars.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          source: >-
-            docker-compose/docker-compose-mainnet.yml,
-            docker-compose/Caddyfile-mainnet,
-            docker-compose/envs/common-frontend.env,
-            docker-compose/envs/common-smart-contract-verifier.env,
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Package deployment configuration
+        run: |
+          set -euo pipefail
+          tar -czf /tmp/doscan-config.tgz \
+            docker-compose/docker-compose-mainnet.yml \
+            docker-compose/Caddyfile-gcp-mainnet \
+            docker-compose/Caddyfile-gcp-edge \
+            docker-compose/docker-compose-gcp-edge.yml \
+            docker-compose/docker-compose-gcp-edge.override.yml \
+            docker-compose/envs/common-blockscout.env \
+            docker-compose/envs/common-blockscout-mainnet.env \
+            docker-compose/envs/common-frontend.env \
+            docker-compose/envs/common-frontend-scan.env \
+            docker-compose/envs/common-smart-contract-verifier.env \
             docker-compose/envs/common-visualizer.env
-          target: /tmp/doscan-deploy
-          strip_components: 1
 
-      - name: Apply configs and restart services
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ vars.MAINNET_HOST }}
-          username: ${{ vars.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          script: |
-            set -e
-            DEPLOY_PATH=~/doscan
-            SRC=/tmp/doscan-deploy
+      - name: Upload configuration through IAP
+        run: |
+          set -euo pipefail
+          gcloud compute scp \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${GCP_ZONE}" \
+            --tunnel-through-iap \
+            /tmp/doscan-config.tgz \
+            "${GCP_INSTANCE}:/tmp/doscan-config-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
 
-            # Backup current compose
-            cp $DEPLOY_PATH/compose.yml $DEPLOY_PATH/compose.yml.bak 2>/dev/null || true
+      - name: Apply configuration and verify services
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "${GCP_INSTANCE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${GCP_ZONE}" \
+            --tunnel-through-iap \
+            --command='
+              set -euo pipefail
 
-            # Copy new configs (common-blockscout.env stays on VM with real secrets)
-            cp $SRC/docker-compose-mainnet.yml $DEPLOY_PATH/compose.yml
-            cp $SRC/Caddyfile-mainnet $DEPLOY_PATH/Caddyfile
-            cp $SRC/envs/common-frontend.env $DEPLOY_PATH/envs/common-frontend.env
-            cp $SRC/envs/common-smart-contract-verifier.env $DEPLOY_PATH/envs/common-smart-contract-verifier.env
-            cp $SRC/envs/common-visualizer.env $DEPLOY_PATH/envs/common-visualizer.env
+              ARCHIVE="/tmp/doscan-config-${{ github.run_id }}-${{ github.run_attempt }}.tgz"
+              SRC="$(mktemp -d /tmp/doscan-deploy.XXXXXX)"
+              BACKUP="/opt/doscan-l1/backups/github-${{ github.run_id }}-${{ github.run_attempt }}"
+              L1_PATH="/opt/doscan-l1"
+              EDGE_PATH="/opt/doscan"
+              SHARED_ENV_PATH="/opt/doscan/envs"
+              BLOCKSCOUT_SECRETS="${SHARED_ENV_PATH}/common-blockscout-secrets.env"
+              DEPLOYMENT_STARTED=0
+              TOUCHED_SERVICES=""
+              EDGE_TOUCHED=0
 
-            # Recreate only services with config changes (no downtime)
-            cd $DEPLOY_PATH
-            sudo docker compose up -d --remove-orphans
+              cleanup() {
+                rm -rf "${SRC}" "${ARCHIVE}"
+              }
 
-            # Cleanup
-            rm -rf $SRC
+              verify_touched_services() {
+                cd "${L1_PATH}"
+                for service in ${TOUCHED_SERVICES}; do
+                  healthy=0
+                  for attempt in $(seq 1 24); do
+                    container_id="$(
+                      sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                        docker compose ps -q "${service}"
+                    )"
+                    if [ -n "${container_id}" ] &&
+                       [ "$(sudo docker inspect -f '"'"'{{.State.Running}}'"'"' "${container_id}")" = "true" ]; then
+                      health_status="$(sudo docker inspect -f '"'"'{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}'"'"' "${container_id}")"
+                      if [ "${health_status}" = "none" ] || [ "${health_status}" = "healthy" ]; then
+                        healthy=1
+                        break
+                      fi
+                    fi
+                    sleep 5
+                  done
+                  if [ "${healthy}" -ne 1 ]; then
+                    echo "Service did not become healthy: ${service}" >&2
+                    return 1
+                  fi
 
-            echo "Deploy complete!"
+                  case "${service}" in
+                    frontend)
+                      sudo docker compose exec -T caddy wget -qO- http://frontend:3000 >/dev/null || return 1
+                      ;;
+                    smart-contract-verifier|visualizer|sig-provider|user-ops-indexer|stats)
+                      sudo docker compose exec -T caddy wget -qO- "http://${service}:8050/health" >/dev/null || return 1
+                      ;;
+                  esac
+                done
 
-  deploy-testnet:
-    if: >
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' &&
-       (inputs.environment == 'testnet' || inputs.environment == 'both'))
-    runs-on: ubuntu-latest
-    environment: testnet
-    steps:
-      - uses: actions/checkout@v4
+                if grep -Eqw '"'"'backend|user-ops-indexer'"'"' <<<"${TOUCHED_SERVICES}"; then
+                  curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                    https://doscan.io/api/v2/proxy/account-abstraction/status >/dev/null || return 1
+                fi
+              }
 
-      - name: Copy configs to dev VM
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ vars.TESTNET_HOST }}
-          username: ${{ vars.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          source: >-
-            docker-compose/docker-compose-testnet.yml,
-            docker-compose/envs/common-blockscout-testnet.env,
-            docker-compose/envs/common-frontend.env,
-            docker-compose/envs/common-frontend-testnet.env,
-            docker-compose/envs/common-smart-contract-verifier.env,
-            docker-compose/envs/common-visualizer.env
-          target: /tmp/doscan-deploy
-          strip_components: 1
+              rollback() {
+                echo "Deployment failed; restoring configuration from ${BACKUP}" >&2
+                set +e
+                restore_rc=0
 
-      - name: Apply configs and restart services
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ vars.TESTNET_HOST }}
-          username: ${{ vars.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          script: |
-            set -e
-            DEPLOY_PATH=$HOME/services/DOScan/docker-compose
-            SRC=/tmp/doscan-deploy
+                sudo cp -a "${BACKUP}/compose.yml" "${L1_PATH}/compose.yml" || restore_rc=1
+                sudo cp -a "${BACKUP}/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet" || restore_rc=1
+                sudo cp -a "${BACKUP}/compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml" || restore_rc=1
+                sudo cp -a "${BACKUP}/Caddyfile-gcp-edge" "${EDGE_PATH}/Caddyfile" || restore_rc=1
+                sudo cp -a "${BACKUP}/compose.override.yml" "${EDGE_PATH}/compose.override.yml" || restore_rc=1
+                if sudo test -f "${BACKUP}/compose.rpc-override.yml"; then
+                  sudo cp -a "${BACKUP}/compose.rpc-override.yml" "${EDGE_PATH}/compose.rpc-override.yml" || restore_rc=1
+                else
+                  sudo rm -f "${EDGE_PATH}/compose.rpc-override.yml" || restore_rc=1
+                fi
+                sudo cp -a "${BACKUP}/envs/." "${L1_PATH}/envs/" || restore_rc=1
+                sudo cp -a "${BACKUP}/shared-envs/." "${SHARED_ENV_PATH}/" || restore_rc=1
 
-            cp $SRC/docker-compose-testnet.yml $DEPLOY_PATH/docker-compose.yml
-            cp $SRC/envs/common-blockscout-testnet.env $DEPLOY_PATH/envs/common-blockscout-testnet.env
-            cp $SRC/envs/common-frontend.env $DEPLOY_PATH/envs/common-frontend.env
-            cp $SRC/envs/common-frontend-testnet.env $DEPLOY_PATH/envs/common-frontend-testnet.env
-            cp $SRC/envs/common-smart-contract-verifier.env $DEPLOY_PATH/envs/common-smart-contract-verifier.env
-            cp $SRC/envs/common-visualizer.env $DEPLOY_PATH/envs/common-visualizer.env
+                if [ "${restore_rc}" -ne 0 ]; then
+                  echo "ROLLBACK FAILED; one or more configuration files could not be restored from ${BACKUP}" >&2
+                  return 1
+                fi
 
-            cd $DEPLOY_PATH
-            sudo docker compose up -d --remove-orphans
+                cd "${L1_PATH}"
+                l1_rc=0
+                for service in ${TOUCHED_SERVICES}; do
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                    docker compose up -d --no-deps "${service}" || l1_rc=1
+                done
+                if grep -qw caddy <<<"${TOUCHED_SERVICES}"; then
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                    docker compose up -d --force-recreate --no-deps caddy || l1_rc=1
+                fi
 
-            rm -rf $SRC
+                cd "${EDGE_PATH}"
+                edge_rc=0
+                if [ "${EDGE_TOUCHED}" -eq 1 ]; then
+                  sudo docker compose up -d --force-recreate --no-deps caddy || edge_rc=1
+                fi
 
-            echo "Testnet deploy complete!"
+                if [ "${l1_rc}" -ne 0 ] || [ "${edge_rc}" -ne 0 ] ||
+                   ! curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null ||
+                   ! curl -fsS http://127.0.0.1:13080/public-metrics >/dev/null ||
+                   ! curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                     https://doscan.io/api/v2/stats >/dev/null ||
+                   ! curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                     https://doscan.io/public-metrics >/dev/null ||
+                   ! verify_touched_services; then
+                  echo "ROLLBACK FAILED; manual recovery is required from ${BACKUP}" >&2
+                  return 1
+                fi
+
+                rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_chainId\",\"params\":[]}"
+                for rpc_check in \
+                  "https://main.doschain.com|icm-r0" \
+                  "https://main2.doschain.com|archive-doscan-mainnet" \
+                  "https://main3.doschain.com|archive-doscan-mainnet"; do
+                  rpc_url="${rpc_check%%|*}"
+                  expected_origin="${rpc_check##*|}"
+                  rpc_response="$(curl --fail --silent --show-error --retry 3 --retry-delay 5 \
+                    -D - -H "Content-Type: application/json" --data "${rpc_body}" "${rpc_url}")" || return 1
+                  grep -q "\"result\":\"0x1f2b\"" <<<"${rpc_response}" || return 1
+                  grep -qi "X-DOS-RPC-Origin: ${expected_origin}" <<<"${rpc_response}" || return 1
+                done
+
+                echo "Rollback completed successfully from ${BACKUP}" >&2
+                return 0
+              }
+
+              finish() {
+                rc=$?
+                trap - EXIT
+                if [ "${rc}" -ne 0 ] && [ "${DEPLOYMENT_STARTED}" -eq 1 ]; then
+                  rollback || rc=2
+                fi
+                cleanup
+                exit "${rc}"
+              }
+              trap finish EXIT
+
+              tar -xzf "${ARCHIVE}" -C "${SRC}"
+              sudo mkdir -p "${BACKUP}" "${L1_PATH}/envs" "${EDGE_PATH}" "${SHARED_ENV_PATH}"
+
+              sudo cp -a "${L1_PATH}/compose.yml" "${BACKUP}/compose.yml"
+              sudo cp -a "${L1_PATH}/Caddyfile-gcp-mainnet" "${BACKUP}/Caddyfile-gcp-mainnet"
+              sudo cp -a "${EDGE_PATH}/compose.yml" "${BACKUP}/compose-gcp-edge.yml"
+              sudo cp -a "${EDGE_PATH}/Caddyfile" "${BACKUP}/Caddyfile-gcp-edge"
+              sudo cp -a "${EDGE_PATH}/compose.override.yml" "${BACKUP}/compose.override.yml"
+              if sudo test -f "${EDGE_PATH}/compose.rpc-override.yml"; then
+                sudo cp -a "${EDGE_PATH}/compose.rpc-override.yml" "${BACKUP}/compose.rpc-override.yml"
+              fi
+              sudo cp -a "${L1_PATH}/envs" "${BACKUP}/envs"
+              sudo cp -a "${SHARED_ENV_PATH}" "${BACKUP}/shared-envs"
+              DEPLOYMENT_STARTED=1
+
+              if ! sudo test -s "${BLOCKSCOUT_SECRETS}"; then
+                sudo awk -F= \
+                  '"'"'$1 ~ /^(ACCOUNT_CLOAK_KEY|DATABASE_URL|RELEASE_COOKIE|SECRET_KEY_BASE)$/ {print}'"'"' \
+                  "${SHARED_ENV_PATH}/common-blockscout.env" |
+                  sudo tee "${BLOCKSCOUT_SECRETS}" >/dev/null
+                sudo chmod 0600 "${BLOCKSCOUT_SECRETS}"
+              fi
+
+              cd "${L1_PATH}"
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                docker compose config --hash="*" > "${SRC}/old-service-hashes"
+
+              EDGE_CONFIG_CHANGED=0
+              if ! sudo cmp -s "${SRC}/docker-compose/docker-compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml" ||
+                 ! sudo cmp -s "${SRC}/docker-compose/Caddyfile-gcp-edge" "${EDGE_PATH}/Caddyfile" ||
+                 ! sudo cmp -s "${SRC}/docker-compose/docker-compose-gcp-edge.override.yml" "${EDGE_PATH}/compose.override.yml"; then
+                EDGE_CONFIG_CHANGED=1
+              fi
+
+              sudo install -m 0644 "${SRC}/docker-compose/docker-compose-mainnet.yml" "${L1_PATH}/compose.yml"
+              sudo install -m 0644 "${SRC}/docker-compose/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-blockscout.env" "${L1_PATH}/envs/common-blockscout.env"
+              sudo install -m 0644 "${SRC}/docker-compose/docker-compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml"
+              sudo install -m 0644 "${SRC}/docker-compose/Caddyfile-gcp-edge" "${EDGE_PATH}/Caddyfile"
+              sudo install -m 0644 "${SRC}/docker-compose/docker-compose-gcp-edge.override.yml" "${EDGE_PATH}/compose.override.yml"
+              sudo rm -f "${EDGE_PATH}/compose.rpc-override.yml"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-blockscout-mainnet.env" "${L1_PATH}/envs/common-blockscout-mainnet.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend-scan.env" "${L1_PATH}/envs/common-frontend-scan.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend.env" "${SHARED_ENV_PATH}/common-frontend.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-smart-contract-verifier.env" "${SHARED_ENV_PATH}/common-smart-contract-verifier.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-visualizer.env" "${SHARED_ENV_PATH}/common-visualizer.env"
+              cd "${L1_PATH}"
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose config -q
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                docker compose config --hash="*" > "${SRC}/new-service-hashes"
+
+              TOUCHED_SERVICES="$(
+                awk '"'"'
+                  NR == FNR { old[$1] = $2; next }
+                  !($1 in old) || old[$1] != $2 { print $1 }
+                '"'"' "${SRC}/old-service-hashes" "${SRC}/new-service-hashes"
+              )"
+
+              for service in ${TOUCHED_SERVICES}; do
+                case "${service}" in
+                  db|db-init|redis-db)
+                    echo "Refusing automatic stateful service change: ${service}" >&2
+                    exit 1
+                    ;;
+                  caddy)
+                    continue
+                    ;;
+                esac
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                  docker compose pull "${service}"
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                  docker compose up -d --no-deps "${service}"
+              done
+
+              if grep -qw caddy <<<"${TOUCHED_SERVICES}"; then
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                  docker compose up -d --force-recreate --no-deps caddy
+              fi
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose exec -T caddy \
+                caddy validate --config /etc/caddy/Caddyfile
+              verify_touched_services
+
+              for attempt in $(seq 1 24); do
+                if curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null &&
+                   curl -fsS http://127.0.0.1:13080/public-metrics >/dev/null; then
+                  break
+                fi
+                if [ "${attempt}" -eq 24 ]; then
+                  echo "DOScan did not become healthy in time" >&2
+                  sudo docker compose ps
+                  exit 1
+                fi
+                sleep 5
+              done
+
+              cd "${EDGE_PATH}"
+              sudo docker compose config -q
+              if [ "${EDGE_CONFIG_CHANGED}" -eq 1 ]; then
+                EDGE_TOUCHED=1
+                sudo docker compose up -d --force-recreate --no-deps caddy
+              fi
+              sudo docker compose exec -T caddy \
+                caddy validate --config /etc/caddy/Caddyfile
+
+              rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_chainId\",\"params\":[]}"
+              check_local_rpc() {
+                rpc_host="$1"
+                expected_origin="$2"
+                rpc_response="$(curl -fsS -D - --max-time 10 \
+                  -H "Host: ${rpc_host}" \
+                  -H "Content-Type: application/json" \
+                  --data "${rpc_body}" \
+                  http://127.0.0.1:8545/)"
+                grep -q "\"result\":\"0x1f2b\"" <<<"${rpc_response}"
+                grep -qi "X-DOS-RPC-Origin: ${expected_origin}" <<<"${rpc_response}"
+              }
+              check_local_rpc main.doschain.com icm-r0
+              check_local_rpc main2.doschain.com archive-doscan-mainnet
+              check_local_rpc main3.doschain.com archive-doscan-mainnet
+
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/stats >/dev/null
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/public-metrics >/dev/null
+
+              check_public_rpc() {
+                rpc_url="$1"
+                expected_origin="$2"
+                rpc_response="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                  -D - \
+                  -H "Content-Type: application/json" \
+                  --data "${rpc_body}" \
+                  "${rpc_url}")"
+                grep -q "\"result\":\"0x1f2b\"" <<<"${rpc_response}"
+                grep -qi "X-DOS-RPC-Origin: ${expected_origin}" <<<"${rpc_response}"
+              }
+              check_public_rpc https://main.doschain.com icm-r0
+              check_public_rpc https://main2.doschain.com archive-doscan-mainnet
+              check_public_rpc https://main3.doschain.com archive-doscan-mainnet
+
+              curl --fail --silent --show-error --retry 2 --retry-delay 5 \
+                https://doscan.io/api/v2/proxy/account-abstraction/status >/dev/null || \
+                echo "Account abstraction status is not healthy yet; explorer and RPC deployment succeeded"
+
+              sudo docker compose ps caddy
+              cd "${L1_PATH}"
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose ps
+              echo "GCP mainnet deployment completed"
+            '
 
   deploy-beta:
     if: >
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' &&
-       (inputs.environment == 'beta' || inputs.environment == 'both'))
+      github.event_name == 'workflow_dispatch' && inputs.environment == 'beta'
     runs-on: [self-hosted, beta]
     environment: beta
+    permissions:
+      contents: read
     steps:
       - name: Pull latest and restart services
         run: |
-          set -e
-          REPO=$HOME/Projects/DOScan
-          DEPLOY=$REPO/docker-compose
+          set -euo pipefail
+          REPO="$HOME/Projects/DOScan"
+          DEPLOY="$REPO/docker-compose"
 
-          # Pull latest changes
-          cd $REPO
-          git pull origin main
+          cd "$REPO"
+          git pull --ff-only origin main
 
-          # Restart beta compose
-          cd $DEPLOY
+          cd "$DEPLOY"
           docker compose -f docker-compose-beta.yml -p doscan pull
           docker compose -f docker-compose-beta.yml -p doscan up -d --remove-orphans
 
-          echo "Beta deploy complete!"
+          echo "Beta deployment completed"
