@@ -4,7 +4,18 @@ on:
   push:
     branches: [main]
     paths:
-      - "docker-compose/**"
+      - "docker-compose/docker-compose-mainnet.yml"
+      - "docker-compose/docker-compose-gcp-edge.yml"
+      - "docker-compose/docker-compose-gcp-edge.override.yml"
+      - "docker-compose/Caddyfile-gcp-mainnet"
+      - "docker-compose/Caddyfile-gcp-edge"
+      - "docker-compose/envs/common-blockscout.env"
+      - "docker-compose/envs/common-blockscout-mainnet.env"
+      - "docker-compose/envs/common-frontend.env"
+      - "docker-compose/envs/common-frontend-scan.env"
+      - "docker-compose/envs/common-smart-contract-verifier.env"
+      - "docker-compose/envs/common-visualizer.env"
+      - "scripts/validate-blockscout-env-parity.py"
       - ".github/workflows/deploy-config.yml"
   workflow_dispatch:
     inputs:
@@ -34,12 +45,13 @@ env:
 jobs:
   deploy-mainnet:
     if: >
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && inputs.environment == 'mainnet')
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'mainnet'))
     runs-on: ubuntu-latest
     environment: mainnet
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Validate Mainnet and Testnet environment parity
         run: python scripts/validate-blockscout-env-parity.py
@@ -49,19 +61,21 @@ jobs:
           set -euo pipefail
           docker run --rm \
             -v "${PWD}/docker-compose/Caddyfile-gcp-edge:/etc/caddy/Caddyfile:ro" \
-            caddy:latest caddy adapt --config /etc/caddy/Caddyfile >/dev/null
+            caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9 \
+            caddy adapt --config /etc/caddy/Caddyfile >/dev/null
           docker run --rm \
             -v "${PWD}/docker-compose/Caddyfile-gcp-mainnet:/etc/caddy/Caddyfile:ro" \
-            caddy:latest caddy validate --config /etc/caddy/Caddyfile
+            caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9 \
+            caddy validate --config /etc/caddy/Caddyfile
 
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
           workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
 
       - name: Set up Google Cloud CLI
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
 
@@ -74,7 +88,6 @@ jobs:
             docker-compose/Caddyfile-gcp-edge \
             docker-compose/docker-compose-gcp-edge.yml \
             docker-compose/docker-compose-gcp-edge.override.yml \
-            docker-compose/configs/mainnet-chain-config.json \
             docker-compose/envs/common-blockscout.env \
             docker-compose/envs/common-blockscout-mainnet.env \
             docker-compose/envs/common-frontend.env \
@@ -109,15 +122,61 @@ jobs:
               EDGE_PATH="/opt/doscan"
               SHARED_ENV_PATH="/opt/doscan/envs"
               BLOCKSCOUT_SECRETS="${SHARED_ENV_PATH}/common-blockscout-secrets.env"
-              CHAIN_CONFIG="/opt/avago/configs/chains/2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk/config.json"
+              DEPLOYMENT_STARTED=0
 
               cleanup() {
                 rm -rf "${SRC}" "${ARCHIVE}"
               }
-              trap cleanup EXIT
+
+              rollback() {
+                echo "Deployment failed; restoring configuration from ${BACKUP}" >&2
+                set +e
+
+                sudo cp -a "${BACKUP}/compose.yml" "${L1_PATH}/compose.yml"
+                sudo cp -a "${BACKUP}/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet"
+                sudo cp -a "${BACKUP}/compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml"
+                sudo cp -a "${BACKUP}/Caddyfile-gcp-edge" "${EDGE_PATH}/Caddyfile"
+                sudo cp -a "${BACKUP}/compose.override.yml" "${EDGE_PATH}/compose.override.yml"
+                if sudo test -f "${BACKUP}/compose.rpc-override.yml"; then
+                  sudo cp -a "${BACKUP}/compose.rpc-override.yml" "${EDGE_PATH}/compose.rpc-override.yml"
+                else
+                  sudo rm -f "${EDGE_PATH}/compose.rpc-override.yml"
+                fi
+                sudo cp -a "${BACKUP}/envs/." "${L1_PATH}/envs/"
+                sudo cp -a "${BACKUP}/shared-envs/." "${SHARED_ENV_PATH}/"
+
+                cd "${L1_PATH}"
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                  docker compose up -d
+                l1_rc=$?
+
+                cd "${EDGE_PATH}"
+                sudo docker compose up -d --force-recreate --no-deps caddy
+                edge_rc=$?
+
+                if [ "${l1_rc}" -ne 0 ] || [ "${edge_rc}" -ne 0 ] ||
+                   ! curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null; then
+                  echo "ROLLBACK FAILED; manual recovery is required from ${BACKUP}" >&2
+                  return 1
+                fi
+
+                echo "Rollback completed successfully from ${BACKUP}" >&2
+                return 0
+              }
+
+              finish() {
+                rc=$?
+                trap - EXIT
+                if [ "${rc}" -ne 0 ] && [ "${DEPLOYMENT_STARTED}" -eq 1 ]; then
+                  rollback || rc=2
+                fi
+                cleanup
+                exit "${rc}"
+              }
+              trap finish EXIT
 
               tar -xzf "${ARCHIVE}" -C "${SRC}"
-              sudo mkdir -p "${BACKUP}" "${L1_PATH}/envs" "${EDGE_PATH}" "${SHARED_ENV_PATH}" "$(dirname "${CHAIN_CONFIG}")"
+              sudo mkdir -p "${BACKUP}" "${L1_PATH}/envs" "${EDGE_PATH}" "${SHARED_ENV_PATH}"
 
               sudo cp -a "${L1_PATH}/compose.yml" "${BACKUP}/compose.yml" 2>/dev/null || true
               sudo cp -a "${L1_PATH}/Caddyfile-gcp-mainnet" "${BACKUP}/Caddyfile-gcp-mainnet" 2>/dev/null || true
@@ -126,7 +185,8 @@ jobs:
               sudo cp -a "${EDGE_PATH}/compose.override.yml" "${BACKUP}/compose.override.yml" 2>/dev/null || true
               sudo cp -a "${EDGE_PATH}/compose.rpc-override.yml" "${BACKUP}/compose.rpc-override.yml" 2>/dev/null || true
               sudo cp -a "${L1_PATH}/envs" "${BACKUP}/envs" 2>/dev/null || true
-              sudo cp -a "${CHAIN_CONFIG}" "${BACKUP}/chain-config.json" 2>/dev/null || true
+              sudo cp -a "${SHARED_ENV_PATH}" "${BACKUP}/shared-envs" 2>/dev/null || true
+              DEPLOYMENT_STARTED=1
 
               if ! sudo test -s "${BLOCKSCOUT_SECRETS}"; then
                 sudo awk -F= \
@@ -136,10 +196,6 @@ jobs:
                 sudo chmod 0600 "${BLOCKSCOUT_SECRETS}"
               fi
 
-              CHAIN_CONFIG_CHANGED=0
-              if ! sudo cmp -s "${SRC}/docker-compose/configs/mainnet-chain-config.json" "${CHAIN_CONFIG}"; then
-                CHAIN_CONFIG_CHANGED=1
-              fi
               EDGE_CONFIG_CHANGED=0
               if ! sudo cmp -s "${SRC}/docker-compose/docker-compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml" ||
                  ! sudo cmp -s "${SRC}/docker-compose/Caddyfile-gcp-edge" "${EDGE_PATH}/Caddyfile" ||
@@ -159,27 +215,9 @@ jobs:
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend.env" "${SHARED_ENV_PATH}/common-frontend.env"
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-smart-contract-verifier.env" "${SHARED_ENV_PATH}/common-smart-contract-verifier.env"
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-visualizer.env" "${SHARED_ENV_PATH}/common-visualizer.env"
-              sudo install -m 0644 "${SRC}/docker-compose/configs/mainnet-chain-config.json" "${CHAIN_CONFIG}"
-
-              if [ "${CHAIN_CONFIG_CHANGED}" -eq 1 ]; then
-                cd /opt/avago/compose
-                sudo docker compose restart avago
-                for attempt in $(seq 1 24); do
-                  if curl -fsS http://127.0.0.1:9650/ext/health >/dev/null; then
-                    break
-                  fi
-                  if [ "${attempt}" -eq 24 ]; then
-                    echo "AvalancheGo did not become healthy in time" >&2
-                    exit 1
-                  fi
-                  sleep 5
-                done
-              fi
-
               cd "${L1_PATH}"
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose config -q
-              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose pull
-              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose up -d --remove-orphans
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose up -d
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose up -d \
                 --force-recreate --no-deps caddy
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose exec -T caddy \

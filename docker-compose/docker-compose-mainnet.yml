@@ -5,7 +5,7 @@ name: doscan-l1
 
 services:
   redis-db:
-    image: redis:alpine
+    image: redis@sha256:8096655e437712b07503796fb64d81359256cfcff0ab29d95a7da72863786efb
     pull_policy: always
     restart: unless-stopped
     command: redis-server
@@ -18,14 +18,14 @@ services:
       retries: 3
 
   db-init:
-    image: postgres:15
+    image: postgres@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
     pull_policy: always
     volumes:
       - postgres_data:/var/lib/postgresql/data
     entrypoint: ["sh", "-c", "chown -R 2000:2000 /var/lib/postgresql/data"]
 
   db:
-    image: postgres:15
+    image: postgres@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
     pull_policy: always
     restart: unless-stopped
     depends_on:
@@ -91,7 +91,7 @@ services:
       start_period: 60s
 
   smart-contract-verifier:
-    image: ghcr.io/blockscout/smart-contract-verifier:latest
+    image: ghcr.io/blockscout/smart-contract-verifier@sha256:57185ba6554577d7521c88d4b6c3ccc556bcd74c5459226b06328a1fdc8cb539
     pull_policy: always
     platform: linux/amd64
     restart: unless-stopped
@@ -99,7 +99,7 @@ services:
       - ${DOSCAN_BASE_ENV_DIR:-/opt/doscan/envs}/common-smart-contract-verifier.env
 
   visualizer:
-    image: ghcr.io/blockscout/visualizer:latest
+    image: ghcr.io/blockscout/visualizer@sha256:ffce88a765b0466824175cc8fed6e6b31d682310a96933b98451aefdfffecdc7
     pull_policy: always
     platform: linux/amd64
     restart: unless-stopped
@@ -107,13 +107,13 @@ services:
       - ${DOSCAN_BASE_ENV_DIR:-/opt/doscan/envs}/common-visualizer.env
 
   sig-provider:
-    image: ghcr.io/blockscout/sig-provider:latest
+    image: ghcr.io/blockscout/sig-provider@sha256:450062a602257817bd38309ba4ad048039d244cdd0ce3e1e1d4103e069db66ab
     pull_policy: always
     platform: linux/amd64
     restart: unless-stopped
 
   user-ops-indexer:
-    image: ghcr.io/blockscout/user-ops-indexer:latest
+    image: ghcr.io/blockscout/user-ops-indexer@sha256:d0ffe9c672d9c5cf1e035b2dd8e4baf9e9b28d3382822ea2d07e69a924562932
     pull_policy: always
     platform: linux/amd64
     restart: unless-stopped
@@ -146,7 +146,7 @@ services:
       USER_OPS_INDEXER__SERVER__HTTP__ADDR: "0.0.0.0:8050"
 
   stats:
-    image: ghcr.io/blockscout/stats:latest
+    image: ghcr.io/blockscout/stats@sha256:1091cacba9287b6930575fac2aa3512dec3a8e81de58316ca63a6c20e1ddc457
     pull_policy: always
     platform: linux/amd64
     restart: unless-stopped
@@ -163,7 +163,7 @@ services:
       STATS__IGNORE_BLOCKSCOUT_API_ABSENCE: "true"
 
   caddy:
-    image: caddy:latest
+    image: caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
     pull_policy: always
     restart: unless-stopped
     depends_on:
