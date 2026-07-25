@@ -130,6 +130,46 @@ jobs:
                 rm -rf "${SRC}" "${ARCHIVE}"
               }
 
+              verify_touched_services() {
+                cd "${L1_PATH}"
+                for service in ${TOUCHED_SERVICES}; do
+                  healthy=0
+                  for attempt in $(seq 1 24); do
+                    container_id="$(
+                      sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                        docker compose ps -q "${service}"
+                    )"
+                    if [ -n "${container_id}" ] &&
+                       [ "$(sudo docker inspect -f '"'"'{{.State.Running}}'"'"' "${container_id}")" = "true" ]; then
+                      health_status="$(sudo docker inspect -f '"'"'{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}'"'"' "${container_id}")"
+                      if [ "${health_status}" = "none" ] || [ "${health_status}" = "healthy" ]; then
+                        healthy=1
+                        break
+                      fi
+                    fi
+                    sleep 5
+                  done
+                  if [ "${healthy}" -ne 1 ]; then
+                    echo "Service did not become healthy: ${service}" >&2
+                    return 1
+                  fi
+
+                  case "${service}" in
+                    frontend)
+                      sudo docker compose exec -T caddy wget -qO- http://frontend:3000 >/dev/null || return 1
+                      ;;
+                    smart-contract-verifier|visualizer|sig-provider|user-ops-indexer|stats)
+                      sudo docker compose exec -T caddy wget -qO- "http://${service}:8050/health" >/dev/null || return 1
+                      ;;
+                  esac
+                done
+
+                if grep -Eqw '"'"'backend|user-ops-indexer'"'"' <<<"${TOUCHED_SERVICES}"; then
+                  curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                    https://doscan.io/api/v2/proxy/account-abstraction/status >/dev/null || return 1
+                fi
+              }
+
               rollback() {
                 echo "Deployment failed; restoring configuration from ${BACKUP}" >&2
                 set +e
@@ -166,7 +206,8 @@ jobs:
 
                 if [ "${l1_rc}" -ne 0 ] || [ "${edge_rc}" -ne 0 ] ||
                    ! curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null ||
-                   ! curl -fsS http://127.0.0.1:13080/public-metrics >/dev/null; then
+                   ! curl -fsS http://127.0.0.1:13080/public-metrics >/dev/null ||
+                   ! verify_touched_services; then
                   echo "ROLLBACK FAILED; manual recovery is required from ${BACKUP}" >&2
                   return 1
                 fi
@@ -202,14 +243,16 @@ jobs:
               tar -xzf "${ARCHIVE}" -C "${SRC}"
               sudo mkdir -p "${BACKUP}" "${L1_PATH}/envs" "${EDGE_PATH}" "${SHARED_ENV_PATH}"
 
-              sudo cp -a "${L1_PATH}/compose.yml" "${BACKUP}/compose.yml" 2>/dev/null || true
-              sudo cp -a "${L1_PATH}/Caddyfile-gcp-mainnet" "${BACKUP}/Caddyfile-gcp-mainnet" 2>/dev/null || true
-              sudo cp -a "${EDGE_PATH}/compose.yml" "${BACKUP}/compose-gcp-edge.yml" 2>/dev/null || true
-              sudo cp -a "${EDGE_PATH}/Caddyfile" "${BACKUP}/Caddyfile-gcp-edge" 2>/dev/null || true
-              sudo cp -a "${EDGE_PATH}/compose.override.yml" "${BACKUP}/compose.override.yml" 2>/dev/null || true
-              sudo cp -a "${EDGE_PATH}/compose.rpc-override.yml" "${BACKUP}/compose.rpc-override.yml" 2>/dev/null || true
-              sudo cp -a "${L1_PATH}/envs" "${BACKUP}/envs" 2>/dev/null || true
-              sudo cp -a "${SHARED_ENV_PATH}" "${BACKUP}/shared-envs" 2>/dev/null || true
+              sudo cp -a "${L1_PATH}/compose.yml" "${BACKUP}/compose.yml"
+              sudo cp -a "${L1_PATH}/Caddyfile-gcp-mainnet" "${BACKUP}/Caddyfile-gcp-mainnet"
+              sudo cp -a "${EDGE_PATH}/compose.yml" "${BACKUP}/compose-gcp-edge.yml"
+              sudo cp -a "${EDGE_PATH}/Caddyfile" "${BACKUP}/Caddyfile-gcp-edge"
+              sudo cp -a "${EDGE_PATH}/compose.override.yml" "${BACKUP}/compose.override.yml"
+              if sudo test -f "${EDGE_PATH}/compose.rpc-override.yml"; then
+                sudo cp -a "${EDGE_PATH}/compose.rpc-override.yml" "${BACKUP}/compose.rpc-override.yml"
+              fi
+              sudo cp -a "${L1_PATH}/envs" "${BACKUP}/envs"
+              sudo cp -a "${SHARED_ENV_PATH}" "${BACKUP}/shared-envs"
               DEPLOYMENT_STARTED=1
 
               if ! sudo test -s "${BLOCKSCOUT_SECRETS}"; then
@@ -277,6 +320,7 @@ jobs:
               fi
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose exec -T caddy \
                 caddy validate --config /etc/caddy/Caddyfile
+              verify_touched_services
 
               for attempt in $(seq 1 24); do
                 if curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null &&
