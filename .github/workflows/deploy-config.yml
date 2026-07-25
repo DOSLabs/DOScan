@@ -63,6 +63,7 @@ jobs:
             docker-compose/docker-compose-mainnet.yml \
             docker-compose/Caddyfile-gcp-mainnet \
             docker-compose/configs/mainnet-chain-config.json \
+            docker-compose/envs/common-blockscout.env \
             docker-compose/envs/common-blockscout-mainnet.env \
             docker-compose/envs/common-frontend.env \
             docker-compose/envs/common-frontend-scan.env \
@@ -94,6 +95,7 @@ jobs:
               BACKUP="/opt/doscan-l1/backups/github-${{ github.run_id }}-${{ github.run_attempt }}"
               L1_PATH="/opt/doscan-l1"
               SHARED_ENV_PATH="/opt/doscan/envs"
+              BLOCKSCOUT_SECRETS="${SHARED_ENV_PATH}/common-blockscout-secrets.env"
               CHAIN_CONFIG="/opt/avago/configs/chains/2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk/config.json"
 
               cleanup() {
@@ -109,6 +111,14 @@ jobs:
               sudo cp -a "${L1_PATH}/envs" "${BACKUP}/envs" 2>/dev/null || true
               sudo cp -a "${CHAIN_CONFIG}" "${BACKUP}/chain-config.json" 2>/dev/null || true
 
+              if ! sudo test -s "${BLOCKSCOUT_SECRETS}"; then
+                sudo awk -F= \
+                  '"'"'$1 ~ /^(ACCOUNT_CLOAK_KEY|DATABASE_URL|RELEASE_COOKIE|SECRET_KEY_BASE)$/ {print}'"'"' \
+                  "${SHARED_ENV_PATH}/common-blockscout.env" |
+                  sudo tee "${BLOCKSCOUT_SECRETS}" >/dev/null
+                sudo chmod 0600 "${BLOCKSCOUT_SECRETS}"
+              fi
+
               CHAIN_CONFIG_CHANGED=0
               if ! sudo cmp -s "${SRC}/docker-compose/configs/mainnet-chain-config.json" "${CHAIN_CONFIG}"; then
                 CHAIN_CONFIG_CHANGED=1
@@ -116,6 +126,7 @@ jobs:
 
               sudo install -m 0644 "${SRC}/docker-compose/docker-compose-mainnet.yml" "${L1_PATH}/compose.yml"
               sudo install -m 0644 "${SRC}/docker-compose/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-blockscout.env" "${L1_PATH}/envs/common-blockscout.env"
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-blockscout-mainnet.env" "${L1_PATH}/envs/common-blockscout-mainnet.env"
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend-scan.env" "${L1_PATH}/envs/common-frontend-scan.env"
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend.env" "${SHARED_ENV_PATH}/common-frontend.env"
@@ -139,9 +150,9 @@ jobs:
               fi
 
               cd "${L1_PATH}"
-              sudo env DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose config -q
-              sudo env DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose pull
-              sudo env DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose up -d --remove-orphans
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose config -q
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose pull
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose up -d --remove-orphans
 
               for attempt in $(seq 1 24); do
                 if curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null &&
