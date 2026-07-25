@@ -104,7 +104,7 @@ services:
   frontend:
     depends_on:
       - backend
-    image: metados/blockscout-frontend:2.9.4@sha256:7f54ef0293bbd9e86ca37daffe7cdec9b9ce22f6d96eb06148a35deea7c9442a
+    image: metados/blockscout-frontend:2.9.5@sha256:c36dcdc5cbab8ae9fa7556245c31b93f25fb093e4a5643f4e908347d2ee45d6a
     pull_policy: always
     platform: linux/amd64
     restart: always
