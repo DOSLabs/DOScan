@@ -3,14 +3,18 @@
 
 	header >Cross-Origin-Opener-Policy "same-origin-allow-popups"
 
-	# Invalidate browser HTTP caches once after the intentional July 2026 chain reset.
+	# Invalidate browser HTTP caches once for the v2.9.5 frontend rollout.
 	@pre_relaunch_cache {
-		not header_regexp Cookie "(^|;\s*)dos_chain_epoch=20260708(;|$)"
+		not header_regexp Cookie "(^|;\s*)dos_chain_epoch=20260725(;|$)"
 	}
 	header @pre_relaunch_cache {
 		Clear-Site-Data "\"cache\""
-		+Set-Cookie "dos_chain_epoch=20260708; Path=/; Max-Age=31536000; Secure; SameSite=Lax"
+		+Set-Cookie "dos_chain_epoch=20260725; Path=/; Max-Age=31536000; Secure; SameSite=Lax"
 	}
+
+	# Turbopack chunk names may remain stable across builds, so they must be revalidated.
+	@frontend_runtime_assets path /assets/envs.js /_next/static/chunks/*
+	header @frontend_runtime_assets Cache-Control "public, max-age=0, must-revalidate"
 
 	handle /api/v1/counters {
 		reverse_proxy stats:8050
