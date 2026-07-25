@@ -213,6 +213,10 @@ jobs:
                 if [ "${l1_rc}" -ne 0 ] || [ "${edge_rc}" -ne 0 ] ||
                    ! curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null ||
                    ! curl -fsS http://127.0.0.1:13080/public-metrics >/dev/null ||
+                   ! curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                     https://doscan.io/api/v2/stats >/dev/null ||
+                   ! curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                     https://doscan.io/public-metrics >/dev/null ||
                    ! verify_touched_services; then
                   echo "ROLLBACK FAILED; manual recovery is required from ${BACKUP}" >&2
                   return 1
