@@ -16,7 +16,7 @@ env:
   ELIXIR_VERSION: '1.19.4'
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -52,6 +52,7 @@ jobs:
           docker-remote-multi-platform: false
 
       - name: Build and push Docker image (indexer + API)
+        id: backend_image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -72,6 +73,7 @@ jobs:
             RELEASE_VERSION=${{ steps.version.outputs.release_version }}
 
       - name: Build and push Docker image (indexer)
+        id: indexer_image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -89,3 +91,34 @@ jobs:
             AMPLITUDE_API_KEY=
             BLOCKSCOUT_VERSION=v${{ steps.version.outputs.release_version }}.+commit.${{ env.SHORT_SHA }}
             RELEASE_VERSION=${{ steps.version.outputs.release_version }}
+
+      - name: Update deployment image pins
+        env:
+          BACKEND_DIGEST: ${{ steps.backend_image.outputs.digest }}
+          RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+
+          IMAGE="ghcr.io/dos/doscan:${RELEASE_VERSION}.commit.${SHORT_SHA}@${BACKEND_DIGEST}"
+          sed -i -E \
+            "s#ghcr.io/dos/doscan:[^[:space:]]+#${IMAGE}#" \
+            docker-compose/docker-compose-mainnet.yml \
+            docker-compose/docker-compose-testnet.yml \
+            docker-compose/docker-compose-beta.yml
+
+          if git diff --quiet -- docker-compose/; then
+            echo "Deployment image pins are already current"
+            exit 0
+          fi
+
+          git add \
+            docker-compose/docker-compose-mainnet.yml \
+            docker-compose/docker-compose-testnet.yml \
+            docker-compose/docker-compose-beta.yml
+          git commit -m "chore: deploy DOScan ${RELEASE_VERSION}"
+          git push origin main
