@@ -26,7 +26,6 @@ concurrency:
 
 env:
   GCP_PROJECT_ID: dos--ai
-  GCP_PROJECT_NUMBER: "535583621422"
   GCP_ZONE: asia-southeast1-b
   GCP_INSTANCE: doscan-mainnet
   GCP_SERVICE_ACCOUNT: doscan-deploy@dos--ai.iam.gserviceaccount.com
