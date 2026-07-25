@@ -24,7 +24,7 @@ jobs:
     name: Push Docker image to GitHub Container Registry
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Determine release version
         id: version
@@ -53,7 +53,7 @@ jobs:
 
       - name: Build and push Docker image (indexer + API)
         id: backend_image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: ./docker/Dockerfile
@@ -74,7 +74,7 @@ jobs:
 
       - name: Build and push Docker image (indexer)
         id: indexer_image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: ./docker/Dockerfile
