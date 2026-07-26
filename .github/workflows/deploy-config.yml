@@ -409,6 +409,10 @@ jobs:
     environment: beta
     permissions:
       contents: read
+    env:
+      BETA_BLOCKSCOUT_DATABASE_URL: ${{ secrets.BETA_BLOCKSCOUT_DATABASE_URL }}
+      BETA_STATS_DATABASE_URL: ${{ secrets.BETA_STATS_DATABASE_URL }}
+      BETA_USER_OPS_DATABASE_URL: ${{ secrets.BETA_USER_OPS_DATABASE_URL }}
     steps:
       - name: Pull latest and restart services
         run: |

@@ -129,7 +129,7 @@ services:
       USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V08_ENTRY_POINT: "0x433709009B8330FDa32311DF1C2AFA402eD8D009"
       USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V06: "false"
       USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V07: "false"
-      USER_OPS_INDEXER__DATABASE__CONNECT__URL: "postgresql://JOY:J8p!x2wqZs7vQ4rL@host.docker.internal:5432/doscan"
+      USER_OPS_INDEXER__DATABASE__CONNECT__URL: "${BETA_USER_OPS_DATABASE_URL:?}"
       USER_OPS_INDEXER__DATABASE__CREATE_DATABASE: "false"
       USER_OPS_INDEXER__DATABASE__RUN_MIGRATIONS: "true"
       USER_OPS_INDEXER__SERVER__HTTP__ADDR: "0.0.0.0:8050"
@@ -148,8 +148,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      STATS__DB_URL: "postgresql://JOY:J8p!x2wqZs7vQ4rL@host.docker.internal:5432/doscan_stats"
-      STATS__BLOCKSCOUT_DB_URL: "postgresql://JOY:J8p!x2wqZs7vQ4rL@host.docker.internal:5432/doscan"
+      STATS__DB_URL: "${BETA_STATS_DATABASE_URL:?}"
+      STATS__BLOCKSCOUT_DB_URL: "${BETA_BLOCKSCOUT_DATABASE_URL:?}"
       STATS__CREATE_DATABASE: "true"
       STATS__RUN_MIGRATIONS: "true"
       STATS__SERVER__HTTP__ADDR: "0.0.0.0:8050"
