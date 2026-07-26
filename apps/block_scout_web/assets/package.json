@@ -112,9 +112,16 @@
     "@walletconnect/socket-transport": {
       "ws": "7.5.11"
     },
+    "@walletconnect/utils": {
+      "bn.js": "4.12.5"
+    },
     "form-data": "2.5.6",
     "levelup": {
       "semver": "5.7.2"
+    },
+    "request": {
+      "qs": "6.14.1",
+      "tough-cookie": "4.1.4"
     }
   },
   "jest": {
