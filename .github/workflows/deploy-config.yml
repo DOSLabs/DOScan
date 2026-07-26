@@ -5,14 +5,18 @@ on:
     branches: [main]
     paths:
       - "docker-compose/docker-compose-mainnet.yml"
+      - "docker-compose/docker-compose-testnet.yml"
       - "docker-compose/docker-compose-gcp-edge.yml"
       - "docker-compose/docker-compose-gcp-edge.override.yml"
       - "docker-compose/Caddyfile-gcp-mainnet"
+      - "docker-compose/Caddyfile-gcp-testnet"
       - "docker-compose/Caddyfile-gcp-edge"
       - "docker-compose/envs/common-blockscout.env"
       - "docker-compose/envs/common-blockscout-mainnet.env"
+      - "docker-compose/envs/common-blockscout-testnet.env"
       - "docker-compose/envs/common-frontend.env"
       - "docker-compose/envs/common-frontend-scan.env"
+      - "docker-compose/envs/common-frontend-testnet.env"
       - "docker-compose/envs/common-smart-contract-verifier.env"
       - "docker-compose/envs/common-visualizer.env"
       - "scripts/validate-blockscout-env-parity.py"
@@ -25,6 +29,7 @@ on:
         type: choice
         options:
           - mainnet
+          - testnet
           - beta
 
 permissions:
@@ -41,6 +46,8 @@ env:
   GCP_INSTANCE: doscan-mainnet
   GCP_SERVICE_ACCOUNT: doscan-deploy@dos--ai.iam.gserviceaccount.com
   GCP_WORKLOAD_IDENTITY_PROVIDER: projects/535583621422/locations/global/workloadIdentityPools/github/providers/doscan-provider
+  GCP_TESTNET_ZONE: asia-southeast1-a
+  GCP_TESTNET_INSTANCE: dos-testnet-r0
 
 jobs:
   deploy-mainnet:
@@ -400,6 +407,221 @@ jobs:
               cd "${L1_PATH}"
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose ps
               echo "GCP mainnet deployment completed"
+            '
+
+  deploy-testnet:
+    if: >
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'testnet')
+      )
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate Mainnet and Testnet environment parity
+        run: python scripts/validate-blockscout-env-parity.py
+
+      - name: Validate testnet Caddy configuration
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "${PWD}/docker-compose/Caddyfile-gcp-testnet:/etc/caddy/Caddyfile:ro" \
+            caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9 \
+            caddy validate --config /etc/caddy/Caddyfile
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Package testnet deployment configuration
+        run: |
+          set -euo pipefail
+          tar -czf /tmp/doscan-testnet-config.tgz \
+            docker-compose/docker-compose-testnet.yml \
+            docker-compose/Caddyfile-gcp-testnet \
+            docker-compose/envs/common-blockscout.env \
+            docker-compose/envs/common-blockscout-testnet.env \
+            docker-compose/envs/common-frontend.env \
+            docker-compose/envs/common-frontend-testnet.env \
+            docker-compose/envs/common-smart-contract-verifier.env \
+            docker-compose/envs/common-visualizer.env
+
+      - name: Upload testnet configuration through IAP
+        run: |
+          set -euo pipefail
+          gcloud compute scp \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${GCP_TESTNET_ZONE}" \
+            --tunnel-through-iap \
+            /tmp/doscan-testnet-config.tgz \
+            "${GCP_TESTNET_INSTANCE}:/tmp/doscan-testnet-config-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
+
+      - name: Apply testnet configuration and verify services
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "${GCP_TESTNET_INSTANCE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${GCP_TESTNET_ZONE}" \
+            --tunnel-through-iap \
+            --command='
+              set -euo pipefail
+
+              ARCHIVE="/tmp/doscan-testnet-config-${{ github.run_id }}-${{ github.run_attempt }}.tgz"
+              SRC="$(mktemp -d /tmp/doscan-testnet-deploy.XXXXXX)"
+              DEPLOY_PATH="/opt/doscan-testnet"
+              BACKUP="${DEPLOY_PATH}/backups/github-${{ github.run_id }}-${{ github.run_attempt }}"
+              SECRETS_ENV="${DEPLOY_PATH}/envs/common-blockscout-secrets.env"
+              DEPLOYMENT_STARTED=0
+
+              cleanup() {
+                rm -rf "${SRC}" "${ARCHIVE}"
+              }
+
+              rollback() {
+                echo "Testnet deployment failed; restoring ${BACKUP}" >&2
+                set +e
+                restore_rc=0
+
+                cd "${DEPLOY_PATH}"
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose stop backend stats
+                sudo docker compose exec -T db dropdb --force -U postgres blockscout || restore_rc=1
+                sudo docker compose exec -T db createdb -U postgres blockscout || restore_rc=1
+                sudo cat "${BACKUP}/blockscout.dump" |
+                  sudo docker compose exec -T db pg_restore -U postgres -d blockscout --no-owner --no-privileges ||
+                  restore_rc=1
+                sudo docker compose exec -T db dropdb --force -U postgres stats || restore_rc=1
+                sudo docker compose exec -T db createdb -U postgres stats || restore_rc=1
+                sudo cat "${BACKUP}/stats.dump" |
+                  sudo docker compose exec -T db pg_restore -U postgres -d stats --no-owner --no-privileges ||
+                  restore_rc=1
+
+                sudo cp -a "${BACKUP}/docker-compose.yml" "${DEPLOY_PATH}/docker-compose.yml" || restore_rc=1
+                sudo cp -a "${BACKUP}/Caddyfile" "${DEPLOY_PATH}/Caddyfile" || restore_rc=1
+                if sudo test -f "${BACKUP}/Caddyfile-gcp-testnet"; then
+                  sudo cp -a "${BACKUP}/Caddyfile-gcp-testnet" "${DEPLOY_PATH}/Caddyfile-gcp-testnet" ||
+                    restore_rc=1
+                else
+                  sudo rm -f "${DEPLOY_PATH}/Caddyfile-gcp-testnet" || restore_rc=1
+                fi
+                sudo cp -a "${BACKUP}/envs/." "${DEPLOY_PATH}/envs/" || restore_rc=1
+
+                if [ "${restore_rc}" -ne 0 ]; then
+                  echo "TESTNET ROLLBACK FAILED; manual recovery is required from ${BACKUP}" >&2
+                  return 1
+                fi
+
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose up -d
+                for attempt in $(seq 1 30); do
+                  if curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null; then
+                    echo "Testnet rollback completed successfully" >&2
+                    return 0
+                  fi
+                  sleep 5
+                done
+                echo "TESTNET ROLLBACK FAILED; restored stack is not healthy" >&2
+                return 1
+              }
+
+              finish() {
+                rc=$?
+                trap - EXIT
+                if [ "${rc}" -ne 0 ] && [ "${DEPLOYMENT_STARTED}" -eq 1 ]; then
+                  rollback || rc=2
+                fi
+                cleanup
+                exit "${rc}"
+              }
+              trap finish EXIT
+
+              tar -xzf "${ARCHIVE}" -C "${SRC}"
+              sudo mkdir -p "${BACKUP}" "${DEPLOY_PATH}/envs"
+
+              sudo cp -a "${DEPLOY_PATH}/docker-compose.yml" "${BACKUP}/docker-compose.yml" 2>/dev/null || true
+              sudo cp -a "${DEPLOY_PATH}/Caddyfile" "${BACKUP}/Caddyfile" 2>/dev/null || true
+              sudo cp -a "${DEPLOY_PATH}/Caddyfile-gcp-testnet" "${BACKUP}/Caddyfile-gcp-testnet" 2>/dev/null || true
+              sudo cp -a "${DEPLOY_PATH}/envs" "${BACKUP}/envs" 2>/dev/null || true
+
+              if ! sudo test -s "${SECRETS_ENV}"; then
+                sudo awk -F= \
+                  '"'"'$1 ~ /^(ACCOUNT_CLOAK_KEY|DATABASE_URL|RELEASE_COOKIE|SECRET_KEY_BASE)$/ {print}'"'"' \
+                  "${DEPLOY_PATH}/envs/common-blockscout-testnet.env" |
+                  sudo tee "${SECRETS_ENV}" >/dev/null
+                sudo chmod 0600 "${SECRETS_ENV}"
+              fi
+
+              if ! sudo grep -Eq "^SECRET_KEY_BASE=.+" "${SECRETS_ENV}"; then
+                echo "Existing Testnet SECRET_KEY_BASE is missing; refusing deployment" >&2
+                exit 1
+              fi
+
+              current_volume="$(
+                sudo docker inspect doscan-testnet-db-1 \
+                  --format '"'"'{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}'"'"'
+              )"
+              if [ "${current_volume}" != "doscan-testnet_postgres_data" ]; then
+                echo "Unexpected Testnet Postgres volume: ${current_volume}" >&2
+                exit 1
+              fi
+
+              cd "${DEPLOY_PATH}"
+              sudo docker compose exec -T db pg_dump -U postgres -Fc blockscout |
+                sudo tee "${BACKUP}/blockscout.dump" >/dev/null
+              sudo docker compose exec -T db pg_dump -U postgres -Fc stats |
+                sudo tee "${BACKUP}/stats.dump" >/dev/null
+              sudo test -s "${BACKUP}/blockscout.dump"
+              sudo test -s "${BACKUP}/stats.dump"
+              DEPLOYMENT_STARTED=1
+
+              sudo install -m 0644 "${SRC}/docker-compose/docker-compose-testnet.yml" "${DEPLOY_PATH}/docker-compose.yml"
+              sudo install -m 0644 "${SRC}/docker-compose/Caddyfile-gcp-testnet" "${DEPLOY_PATH}/Caddyfile-gcp-testnet"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-blockscout.env" "${DEPLOY_PATH}/envs/common-blockscout.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-blockscout-testnet.env" "${DEPLOY_PATH}/envs/common-blockscout-testnet.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend.env" "${DEPLOY_PATH}/envs/common-frontend.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend-testnet.env" "${DEPLOY_PATH}/envs/common-frontend-testnet.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-smart-contract-verifier.env" "${DEPLOY_PATH}/envs/common-smart-contract-verifier.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-visualizer.env" "${DEPLOY_PATH}/envs/common-visualizer.env"
+
+              cd "${DEPLOY_PATH}"
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose config -q
+              STATELESS_SERVICES="backend frontend smart-contract-verifier visualizer sig-provider stats caddy"
+              for service in ${STATELESS_SERVICES}; do
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose pull "${service}"
+                if [ "${service}" = "caddy" ]; then
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    docker compose up -d --force-recreate --no-deps "${service}"
+                else
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    docker compose up -d --no-deps "${service}"
+                fi
+              done
+
+              for attempt in $(seq 1 30); do
+                if curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null &&
+                   curl -fsS http://127.0.0.1:13080/public-metrics >/dev/null; then
+                  break
+                fi
+                if [ "${attempt}" -eq 30 ]; then
+                  echo "DOScan Testnet did not become healthy in time" >&2
+                  sudo docker compose ps
+                  exit 1
+                fi
+                sleep 5
+              done
+
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://test.doscan.io/api/v2/stats >/dev/null
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://test.doscan.io/public-metrics >/dev/null
+
+              sudo docker compose ps
+              echo "GCP testnet deployment completed"
             '
 
   deploy-beta:

@@ -1,0 +1,53 @@
+:80 {
+	encode zstd gzip
+
+	header >Cross-Origin-Opener-Policy "same-origin-allow-popups"
+
+	@frontend_runtime_assets path /assets/envs.js /_next/static/chunks/*
+	header @frontend_runtime_assets >Cache-Control "public, max-age=0, must-revalidate"
+
+	handle /api/v1/counters {
+		reverse_proxy stats:8050
+	}
+	handle /api/v1/lines {
+		reverse_proxy stats:8050
+	}
+	handle /api/v1/pages/main {
+		reverse_proxy stats:8050
+	}
+	handle /api/* {
+		reverse_proxy backend:4000
+	}
+	handle /socket/* {
+		reverse_proxy backend:4000
+	}
+	handle /sitemap.xml {
+		reverse_proxy backend:4000
+	}
+	handle /auth/* {
+		reverse_proxy backend:4000
+	}
+	handle_path /metadata-api/* {
+		reverse_proxy https://metadata.services.blockscout.com {
+			header_up Host metadata.services.blockscout.com
+			header_up -Cookie
+			header_up -Authorization
+		}
+	}
+	handle /metrics {
+		reverse_proxy backend:4000
+	}
+	handle /public-metrics {
+		reverse_proxy backend:4000
+	}
+	handle /stats-api/* {
+		uri strip_prefix /stats-api
+		reverse_proxy stats:8050
+	}
+	handle_path /visualize/* {
+		reverse_proxy visualizer:8050
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
