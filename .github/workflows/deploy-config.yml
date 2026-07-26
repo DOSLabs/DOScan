@@ -404,7 +404,9 @@ jobs:
 
   deploy-beta:
     if: >
-      github.event_name == 'workflow_dispatch' && inputs.environment == 'beta'
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.environment == 'beta'
     runs-on: [self-hosted, beta]
     environment: beta
     permissions:
