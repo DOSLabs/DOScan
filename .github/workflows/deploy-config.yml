@@ -404,11 +404,17 @@ jobs:
 
   deploy-beta:
     if: >
-      github.event_name == 'workflow_dispatch' && inputs.environment == 'beta'
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.environment == 'beta'
     runs-on: [self-hosted, beta]
     environment: beta
     permissions:
       contents: read
+    env:
+      BETA_BLOCKSCOUT_DATABASE_URL: ${{ secrets.BETA_BLOCKSCOUT_DATABASE_URL }}
+      BETA_STATS_DATABASE_URL: ${{ secrets.BETA_STATS_DATABASE_URL }}
+      BETA_USER_OPS_DATABASE_URL: ${{ secrets.BETA_USER_OPS_DATABASE_URL }}
     steps:
       - name: Pull latest and restart services
         run: |
