@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Explorer.ThirdPartyIntegrations.Sourcify do
   @moduledoc """
   Adapter for contracts verification with https://sourcify.dev/
@@ -151,7 +152,7 @@ defmodule Explorer.ThirdPartyIntegrations.Sourcify do
     end
   end
 
-  def http_get_request(url, params) do
+  defp http_get_request(url, params) do
     request = HttpClient.get(url, [], params: params)
 
     case request do
@@ -175,7 +176,7 @@ defmodule Explorer.ThirdPartyIntegrations.Sourcify do
     end
   end
 
-  def http_post_request(url, body) do
+  defp http_post_request(url, body) do
     request = Tesla.post(url, body)
 
     case request do

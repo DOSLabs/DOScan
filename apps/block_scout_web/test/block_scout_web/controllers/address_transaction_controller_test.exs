@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.AddressTransactionControllerTest do
   use BlockScoutWeb.ConnCase, async: true
   use ExUnit.Case, async: false
@@ -138,7 +139,6 @@ defmodule BlockScoutWeb.AddressTransactionControllerTest do
         to_address: nil,
         transaction: transaction,
         transaction_index: transaction.index,
-        block_hash: block.hash,
         block_number: transaction.block_number
       )
 

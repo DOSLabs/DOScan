@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.AddressWriteProxyControllerTest do
   use BlockScoutWeb.ConnCase, async: true
   use ExUnit.Case, async: false
@@ -38,7 +39,6 @@ defmodule BlockScoutWeb.AddressWriteProxyControllerTest do
         transaction: transaction,
         transaction_index: transaction.index,
         created_contract_address: contract_address,
-        block_hash: transaction.block_hash,
         block_number: transaction.block_number
       )
 
@@ -66,7 +66,6 @@ defmodule BlockScoutWeb.AddressWriteProxyControllerTest do
         transaction: transaction,
         transaction_index: transaction.index,
         created_contract_address: contract_address,
-        block_hash: transaction.block_hash,
         block_number: transaction.block_number
       )
 

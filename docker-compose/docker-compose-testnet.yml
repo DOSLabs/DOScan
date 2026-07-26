@@ -1,203 +1,151 @@
-# DOS Chain Testnet Explorer - v2
-# Combines Builder workflow with custom build
-# Domain: test.doscan.io
+name: doscan-testnet
+
+# DOS Chain Avalanche L1 testnet explorer on GCP.
+# The archive AvalancheGo node runs separately on the same VM.
 
 services:
-  # ==========================================================================
-  # AvalancheGo Node - syncs L1 chain
-  # ==========================================================================
-  avago:
-    image: avaplatform/subnet-evm_avalanchego:v0.8.0-fuji_v1.14.0-fuji
-    container_name: avago
-    restart: always
-    ports:
-      - "127.0.0.1:9650:9650"
-      - "9651:9651"
-    volumes:
-      - avago_data:/root/.avalanchego
-    environment:
-      AVAGO_PARTIAL_SYNC_PRIMARY_NETWORK: "true"
-      AVAGO_PUBLIC_IP_RESOLUTION_SERVICE: "opendns"
-      AVAGO_NETWORK_ID: fuji
-      AVAGO_HTTP_HOST: "0.0.0.0"
-      AVAGO_TRACK_SUBNETS: "ydvj9cWpa5jM7VsHcdzk16KDBqc9us6zuhmTwc7Px6b42ACVN"
-      AVAGO_HTTP_ALLOWED_HOSTS: "*"
-      # Chain config for DOS Testnet L1
-      AVAGO_CHAIN_CONFIG_CONTENT: "eyJlNFBIdGg4dXRCQVBvcmc0c0ZSVGFXbURmVVdmOVg4bkFFQ2N6R3gxQkpWbVlCdjNBIjp7IkNvbmZpZyI6ImV5SndjblZ1YVc1bkxXVnVZV0pzWldRaU9tWmhiSE5sTENKc2IyY3RiR1YyWld3aU9pSmtaV0oxWnlJc0luZGhjbkF0WVhCcExXVnVZV0pzWldRaU9uUnlkV1VzSW1WMGFDMWhjR2x6SWpwYkltVjBhQ0lzSW1WMGFDMW1hV3gwWlhJaUxDSnVaWFFpTENKaFpHMXBiaUlzSW5kbFlqTWlMQ0pwYm5SbGNtNWhiQzFsZEdnaUxDSnBiblJsY201aGJDMWliRzlqYTJOb1lXbHVJaXdpYVc1MFpYSnVZV3d0ZEhKaGJuTmhZM1JwYjI0aUxDSnBiblJsY201aGJDMWtaV0oxWnlJc0ltbHVkR1Z5Ym1Gc0xXRmpZMjkxYm5RaUxDSnBiblJsY201aGJDMXdaWEp6YjI1aGJDSXNJbVJsWW5Wbklpd2laR1ZpZFdjdGRISmhZMlZ5SWl3aVpHVmlkV2N0Wm1sc1pTMTBjbUZqWlhJaUxDSmtaV0oxWnkxb1lXNWtiR1Z5SWwxOSIsIlVwZ3JhZGUiOm51bGx9fQ=="
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "3"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9650/ext/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  # ==========================================================================
-  # Database
-  # ==========================================================================
   redis-db:
     image: redis:alpine
-    container_name: redis-db
-    restart: always
+    pull_policy: always
+    restart: unless-stopped
     command: redis-server
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   db-init:
     image: postgres:15
-    entrypoint:
-      - sh
-      - -c
-      - |
-        chown -R 999:999 /var/lib/postgresql/data
+    pull_policy: always
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    entrypoint: ["sh", "-c", "chown -R 2000:2000 /var/lib/postgresql/data"]
 
   db:
+    image: postgres:15
+    pull_policy: always
+    restart: unless-stopped
     depends_on:
       db-init:
         condition: service_completed_successfully
-    image: postgres:15
+    user: 2000:2000
     shm_size: 256m
-    restart: always
-    container_name: db
-    command: postgres -c 'max_connections=200' -c 'client_connection_check_interval=60000'
+    command: postgres -c 'max_connections=160' -c 'client_connection_check_interval=60000'
     environment:
-      POSTGRES_PASSWORD: ""
-      POSTGRES_USER: "postgres"
-      POSTGRES_HOST_AUTH_METHOD: "trust"
-    ports:
-      - "7432:5432"
+      POSTGRES_USER: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
-  # ==========================================================================
-  # Backend - Blockscout Latest
-  # ==========================================================================
   backend:
-    depends_on:
-      - db
-      - redis-db
-      - avago
-    image: metados/blockscout:latest
+    image: ghcr.io/dos/doscan:11.2.3.commit.f64bbacb@sha256:8bc624b4762341587d8be1e9a4293f26e256a1112ee5667bfa7bc46882a70bea
     pull_policy: always
-    restart: always
+    restart: unless-stopped
     stop_grace_period: 5m
-    container_name: backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-db:
+        condition: service_healthy
     command: sh -c 'bin/blockscout eval "Elixir.Explorer.ReleaseTasks.create_and_migrate()" && bin/blockscout start'
-    extra_hosts:
-      - 'host.docker.internal:host-gateway'
     env_file:
       - ./envs/common-blockscout.env
+      - ${DOSCAN_BLOCKSCOUT_SECRETS_ENV:-./envs/common-blockscout.env}
       - ./envs/common-blockscout-testnet.env
     links:
       - db:database
-    ports:
-      - "4000:4000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/v2/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
-  # ==========================================================================
-  # Frontend
-  # ==========================================================================
   frontend:
+    image: metados/blockscout-frontend:2.9.5@sha256:c36dcdc5cbab8ae9fa7556245c31b93f25fb093e4a5643f4e908347d2ee45d6a
+    pull_policy: always
+    restart: unless-stopped
     depends_on:
-      - backend
-    image: metados/blockscout-frontend:latest
-    pull_policy: always
-    platform: linux/amd64
-    restart: always
-    container_name: frontend
-    environment:
-      - HOSTNAME=0.0.0.0
+      backend:
+        condition: service_healthy
     env_file:
-      - ./envs/common-frontend.env
+      - ${DOSCAN_BASE_ENV_DIR:-./envs}/common-frontend.env
       - ./envs/common-frontend-testnet.env
-    ports:
-      - "3000:3000"
+    environment:
+      HOSTNAME: 0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
-  # ==========================================================================
-  # Microservices
-  # ==========================================================================
   smart-contract-verifier:
-    image: ghcr.io/blockscout/smart-contract-verifier:latest
+    image: ghcr.io/blockscout/smart-contract-verifier@sha256:57185ba6554577d7521c88d4b6c3ccc556bcd74c5459226b06328a1fdc8cb539
     pull_policy: always
     platform: linux/amd64
-    restart: always
-    container_name: smart-contract-verifier
+    restart: unless-stopped
     env_file:
-      - ./envs/common-smart-contract-verifier.env
-    ports:
-      - "8043:8050"
+      - ${DOSCAN_BASE_ENV_DIR:-./envs}/common-smart-contract-verifier.env
 
   visualizer:
-    image: ghcr.io/blockscout/visualizer:latest
+    image: ghcr.io/blockscout/visualizer@sha256:ffce88a765b0466824175cc8fed6e6b31d682310a96933b98451aefdfffecdc7
     pull_policy: always
     platform: linux/amd64
-    restart: always
-    container_name: visualizer
+    restart: unless-stopped
     env_file:
-      - ./envs/common-visualizer.env
-    ports:
-      - "8044:8050"
+      - ${DOSCAN_BASE_ENV_DIR:-./envs}/common-visualizer.env
 
   sig-provider:
-    image: ghcr.io/blockscout/sig-provider:latest
+    image: ghcr.io/blockscout/sig-provider@sha256:450062a602257817bd38309ba4ad048039d244cdd0ce3e1e1d4103e069db66ab
     pull_policy: always
     platform: linux/amd64
-    restart: always
-    container_name: sig-provider
-    ports:
-      - "8045:8050"
+    restart: unless-stopped
 
-  user-ops-indexer:
-    depends_on:
-      - db
-      - avago
-    image: ghcr.io/blockscout/user-ops-indexer:latest
-    pull_policy: always
-    platform: linux/amd64
-    restart: always
-    container_name: user-ops-indexer
-    environment:
-      USER_OPS_INDEXER__INDEXER__RPC_URL: http://avago:9650/ext/bc/e4PHth8utBAPorg4sFRTaWmDfUWf9X8nAECczGx1BJVmYBv3A/rpc
-      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V08: "true"
-      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V08_ENTRY_POINT: "0x433709009B8330FDa32311DF1C2AFA402eD8D009"
-      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V06: "false"
-      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V07: "false"
-      USER_OPS_INDEXER__DATABASE__CONNECT__URL: postgresql://postgres:@db:5432/blockscout
-      USER_OPS_INDEXER__DATABASE__CREATE_DATABASE: "false"
-      USER_OPS_INDEXER__DATABASE__RUN_MIGRATIONS: "true"
-      USER_OPS_INDEXER__SERVER__HTTP__ADDR: "0.0.0.0:8050"
-    ports:
-      - "8090:8050"
-
-  # ==========================================================================
-  # Stats Service
-  # ==========================================================================
   stats:
-    depends_on:
-      - db
-    image: ghcr.io/blockscout/stats:latest
+    image: ghcr.io/blockscout/stats@sha256:1091cacba9287b6930575fac2aa3512dec3a8e81de58316ca63a6c20e1ddc457
     pull_policy: always
     platform: linux/amd64
-    restart: always
-    container_name: stats
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
-      STATS__DB_URL: "postgresql://postgres:@db:5432/stats"
-      STATS__BLOCKSCOUT_DB_URL: "postgresql://postgres:@db:5432/blockscout"
+      STATS__DB_URL: postgresql://postgres:@db:5432/stats
+      STATS__BLOCKSCOUT_DB_URL: postgresql://postgres:@db:5432/blockscout
       STATS__CREATE_DATABASE: "true"
       STATS__RUN_MIGRATIONS: "true"
-      STATS__SERVER__HTTP__ADDR: "0.0.0.0:8050"
-      STATS__SERVER__HTTP__CORS__ALLOWED_ORIGIN: "https://test.doscan.io"
+      STATS__SERVER__HTTP__ADDR: 0.0.0.0:8050
+      STATS__SERVER__HTTP__CORS__ALLOWED_ORIGIN: https://test.doscan.io
       STATS__IGNORE_BLOCKSCOUT_API_ABSENCE: "true"
-    ports:
-      - "127.0.0.1:8052:8050"
 
-  # Note: Caddy removed - dev VM uses nginx as reverse proxy
+  caddy:
+    image: caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    volumes:
+      - ./Caddyfile-gcp-testnet:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - 127.0.0.1:13080:80
+      - 127.0.0.1:8545:8545
 
 volumes:
   postgres_data:
   redis_data:
-  avago_data:
+  caddy_data:
+  caddy_config:

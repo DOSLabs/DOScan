@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Explorer.MicroserviceInterfaces.BENS do
   @moduledoc """
     Interface to interact with Blockscout ENS microservice
@@ -6,7 +7,7 @@ defmodule Explorer.MicroserviceInterfaces.BENS do
   alias Explorer.{Chain, HttpClient}
   alias Explorer.Chain.Address.MetadataPreloader
 
-  alias Explorer.Chain.{Address, Transaction}
+  alias Explorer.Chain.{Address, Block, Transaction}
 
   alias Explorer.Utility.Microservice
 
@@ -98,7 +99,15 @@ defmodule Explorer.MicroserviceInterfaces.BENS do
   """
   @spec ens_domain_name_lookup(binary()) ::
           nil
-          | %{address_hash: binary() | nil, expiry_date: any(), name: any(), names_count: integer(), protocol: any()}
+          | %{
+              address_hash: binary() | nil,
+              expiry_date: any(),
+              name: any(),
+              names_count: integer(),
+              protocol: any(),
+              protocol_dapp_url: binary() | nil,
+              protocol_dapp_logo: binary() | nil
+            }
   def ens_domain_name_lookup(domain) do
     domain |> ens_domain_lookup() |> parse_lookup_response()
   end
@@ -111,17 +120,20 @@ defmodule Explorer.MicroserviceInterfaces.BENS do
         Jason.decode(body)
 
       {_, error} ->
-        old_truncate = Application.get_env(:logger, :truncate)
-        Logger.configure(truncate: :infinity)
-
         Logger.error(fn ->
           [
-            "Error while sending request to BENS microservice url: #{url}, body: #{inspect(body, limit: :infinity, printable_limit: :infinity)}: ",
-            inspect(error, limit: :infinity, printable_limit: :infinity)
+            "Error while sending request to BENS microservice url: #{url} ",
+            inspect(error)
           ]
         end)
 
-        Logger.configure(truncate: old_truncate)
+        Logger.debug(fn ->
+          [
+            "Error while sending request to BENS microservice url: #{url}, body: #{inspect(body, limit: :infinity, printable_limit: :infinity)}: ",
+            inspect(error)
+          ]
+        end)
+
         {:error, @request_error_msg}
     end
   end
@@ -132,17 +144,13 @@ defmodule Explorer.MicroserviceInterfaces.BENS do
         Jason.decode(body)
 
       {_, error} ->
-        old_truncate = Application.get_env(:logger, :truncate)
-        Logger.configure(truncate: :infinity)
-
         Logger.error(fn ->
           [
             "Error while sending request to BENS microservice url: #{url}: ",
-            inspect(error, limit: :infinity, printable_limit: :infinity)
+            inspect(error)
           ]
         end)
 
-        Logger.configure(truncate: old_truncate)
         {:error, @request_error_msg}
     end
   end
@@ -244,7 +252,7 @@ defmodule Explorer.MicroserviceInterfaces.BENS do
                   "expiry_date" => expiry_date,
                   "resolved_address" => resolved_address,
                   "protocol" => protocol
-                }
+                } = first_item
                 | _other
               ] = items
           }}
@@ -257,7 +265,9 @@ defmodule Explorer.MicroserviceInterfaces.BENS do
       expiry_date: expiry_date,
       names_count: Enum.count(items),
       address_hash: address_hash,
-      protocol: protocol
+      protocol: protocol,
+      protocol_dapp_url: first_item["protocol_dapp_url"],
+      protocol_dapp_logo: first_item["protocol_dapp_logo"]
     }
   end
 
@@ -266,11 +276,12 @@ defmodule Explorer.MicroserviceInterfaces.BENS do
   defp parse_get_address_response(
          {:ok,
           %{
-            "domain" => %{
-              "name" => name,
-              "expiry_date" => expiry_date,
-              "resolved_address" => %{"hash" => address_hash_string}
-            },
+            "domain" =>
+              %{
+                "name" => name,
+                "expiry_date" => expiry_date,
+                "resolved_address" => %{"hash" => address_hash_string}
+              } = domain,
             "resolved_domains_count" => resolved_domains_count
           }}
        ) do
@@ -280,7 +291,9 @@ defmodule Explorer.MicroserviceInterfaces.BENS do
       name: name,
       expiry_date: expiry_date,
       names_count: resolved_domains_count,
-      address_hash: Address.checksum(hash)
+      address_hash: Address.checksum(hash),
+      protocol_dapp_url: domain["protocol_dapp_url"],
+      protocol_dapp_logo: domain["protocol_dapp_logo"]
     }
   end
 
@@ -316,5 +329,68 @@ defmodule Explorer.MicroserviceInterfaces.BENS do
   @spec maybe_preload_ens_to_address(Address.t()) :: Address.t()
   def maybe_preload_ens_to_address(address) do
     maybe_preload_meta(address, __MODULE__, &MetadataPreloader.preload_ens_to_address/1)
+  end
+
+  @doc """
+  Preloads ENS data to the block if BENS is enabled
+  """
+  @spec maybe_preload_ens_to_block(Block.t()) :: Block.t()
+  def maybe_preload_ens_to_block(block) do
+    maybe_preload_meta(block, __MODULE__, &MetadataPreloader.preload_ens_to_block/1)
+  end
+
+  @doc """
+  Preloads ENS data to the list of blocks unless disabled via DISABLE_BLOCKS_BENS_PRELOAD.
+
+  Checks `Application.get_env(:explorer, __MODULE__, [])[:disable_blocks_bens_preload]`;
+  if the flag is set, the input is returned unchanged, otherwise `maybe_preload_ens/1`
+  is called to enrich the list with ENS names from the BENS microservice.
+
+  ## Parameters
+
+  - `blocks` (`MetadataPreloader.supported_input()`) — a list of block structs
+    (or any value accepted by `MetadataPreloader.supported_input()`) whose miner
+    and other address fields should be enriched with ENS domain names.
+
+  ## Returns
+
+  - `MetadataPreloader.supported_input()` — the original `blocks` value unchanged
+    when `DISABLE_BLOCKS_BENS_PRELOAD` is `true`; otherwise the same collection
+    with ENS names preloaded via `maybe_preload_ens/1`.
+  """
+  @spec maybe_preload_ens_for_blocks(MetadataPreloader.supported_input()) ::
+          MetadataPreloader.supported_input()
+  def maybe_preload_ens_for_blocks(blocks) do
+    if Application.get_env(:explorer, __MODULE__, [])[:disable_blocks_bens_preload] do
+      blocks
+    else
+      maybe_preload_ens(blocks)
+    end
+  end
+
+  @doc """
+  Preloads ENS data to the list of token transfers unless disabled via DISABLE_TOKEN_TRANSFERS_BENS_PRELOAD
+  """
+  @spec maybe_preload_ens_for_token_transfers(MetadataPreloader.supported_input()) ::
+          MetadataPreloader.supported_input()
+  def maybe_preload_ens_for_token_transfers(token_transfers) do
+    if Application.get_env(:explorer, __MODULE__, [])[:disable_token_transfers_bens_preload] do
+      token_transfers
+    else
+      maybe_preload_ens(token_transfers)
+    end
+  end
+
+  @doc """
+  Preloads ENS data to the list of transactions unless disabled via DISABLE_TRANSACTIONS_BENS_PRELOAD
+  """
+  @spec maybe_preload_ens_for_transactions(MetadataPreloader.supported_input()) ::
+          MetadataPreloader.supported_input()
+  def maybe_preload_ens_for_transactions(transactions) do
+    if Application.get_env(:explorer, __MODULE__, [])[:disable_transactions_bens_preload] do
+      transactions
+    else
+      maybe_preload_ens(transactions)
+    end
   end
 end

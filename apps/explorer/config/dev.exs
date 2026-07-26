@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 import Config
 
 # Configure your database
@@ -24,7 +25,6 @@ for repo <- [
       Explorer.Repo.Mud,
       Explorer.Repo.Optimism,
       Explorer.Repo.PolygonEdge,
-      Explorer.Repo.PolygonZkevm,
       Explorer.Repo.RSK,
       Explorer.Repo.Scroll,
       Explorer.Repo.Shibarium,

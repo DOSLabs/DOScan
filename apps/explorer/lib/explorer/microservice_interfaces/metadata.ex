@@ -1,10 +1,11 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Explorer.MicroserviceInterfaces.Metadata do
   @moduledoc """
   Module to interact with Metadata microservice
   """
 
   alias Explorer.{Chain, HttpClient}
-  alias Explorer.Chain.{Address.MetadataPreloader, Transaction}
+  alias Explorer.Chain.{Address.MetadataPreloader, Block, Transaction}
   alias Explorer.Utility.Microservice
 
   import Explorer.MicroserviceInterfaces.BENS, only: [maybe_preload_ens: 1]
@@ -124,17 +125,13 @@ defmodule Explorer.MicroserviceInterfaces.Metadata do
         {200, body |> Jason.decode() |> parsing_function.()}
 
       {_, %{body: body, status_code: status_code} = error} ->
-        old_truncate = Application.get_env(:logger, :truncate)
-        Logger.configure(truncate: :infinity)
-
         Logger.error(fn ->
           [
             "Error while sending request to Metadata microservice url: #{url}: ",
-            inspect(error, limit: :infinity, printable_limit: :infinity)
+            inspect(error)
           ]
         end)
 
-        Logger.configure(truncate: old_truncate)
         {:ok, response_json} = Jason.decode(body)
         {status_code, response_json}
 
@@ -180,6 +177,14 @@ defmodule Explorer.MicroserviceInterfaces.Metadata do
   @spec maybe_preload_metadata_to_transaction(Transaction.t()) :: Transaction.t()
   def maybe_preload_metadata_to_transaction(transaction) do
     maybe_preload_meta(transaction, __MODULE__, &MetadataPreloader.preload_metadata_to_transaction/1)
+  end
+
+  @doc """
+  Preloads metadata to block if Metadata microservice is enabled
+  """
+  @spec maybe_preload_metadata_to_block(Block.t()) :: Block.t()
+  def maybe_preload_metadata_to_block(block) do
+    maybe_preload_meta(block, __MODULE__, &MetadataPreloader.preload_metadata_to_block/1)
   end
 
   defp decode_meta({:ok, %{"addresses" => addresses} = result}) do

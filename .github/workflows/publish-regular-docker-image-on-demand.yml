@@ -2,63 +2,86 @@ name: Publish regular Docker image on demand
 
 on:
   workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version (e.g. 10.2.1). If empty and triggered by tag, derived from tag name.'
+        required: false
+        type: string
+  push:
+    tags:
+      - 'v*'
+
 env:
   OTP_VERSION: '27.3.4.6'
   ELIXIR_VERSION: '1.19.4'
-  RELEASE_VERSION: 10.0.1
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
   push_to_registry:
     name: Push Docker image to GitHub Container Registry
-    runs-on: build
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Determine release version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.release_version }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+          elif [ "$REF_TYPE" = "tag" ]; then
+            VERSION="${REF_NAME#v}"
+          else
+            echo "::error::No release_version input and not running on a tag"
+            exit 1
+          fi
+          echo "release_version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building RELEASE_VERSION=$VERSION"
+
       - name: Setup repo
         uses: ./.github/actions/setup-repo
         id: setup
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          docker-remote-multi-platform: true
-          docker-arm-host: ${{ secrets.ARM_RUNNER_HOSTNAME }}
-          docker-arm-host-key: ${{ secrets.ARM_RUNNER_KEY }}
+          docker-remote-multi-platform: false
 
       - name: Build and push Docker image (indexer + API)
-        uses: docker/build-push-action@v6
+        id: backend_image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: ./docker/Dockerfile
           push: true
-          cache-from: type=registry,ref=ghcr.io/blockscout/blockscout:buildcache
-          cache-to: type=registry,ref=ghcr.io/blockscout/blockscout:buildcache,mode=max
-          tags: ghcr.io/blockscout/blockscout:${{ env.RELEASE_VERSION }}.commit.${{ env.SHORT_SHA }}
+          cache-from: type=registry,ref=ghcr.io/dos/doscan:buildcache
+          cache-to: type=registry,ref=ghcr.io/dos/doscan:buildcache,mode=max
+          tags: ghcr.io/dos/doscan:${{ steps.version.outputs.release_version }}.commit.${{ env.SHORT_SHA }}
           labels: ${{ steps.setup.outputs.docker-labels }}
-          platforms: |
-            linux/amd64
-            linux/arm64/v8
+          platforms: linux/amd64
           build-args: |
             DECODE_NOT_A_CONTRACT_CALLS=false
             MIXPANEL_URL=
             MIXPANEL_TOKEN=
             AMPLITUDE_URL=
             AMPLITUDE_API_KEY=
-            BLOCKSCOUT_VERSION=v${{ env.RELEASE_VERSION }}.+commit.${{ env.SHORT_SHA }}
-            RELEASE_VERSION=${{ env.RELEASE_VERSION }}
+            BLOCKSCOUT_VERSION=v${{ steps.version.outputs.release_version }}.+commit.${{ env.SHORT_SHA }}
+            RELEASE_VERSION=${{ steps.version.outputs.release_version }}
 
       - name: Build and push Docker image (indexer)
-        uses: docker/build-push-action@v6
+        id: indexer_image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: ./docker/Dockerfile
           push: true
-          tags: ghcr.io/blockscout/blockscout:${{ env.RELEASE_VERSION }}.commit.${{ env.SHORT_SHA }}-indexer
+          tags: ghcr.io/dos/doscan:${{ steps.version.outputs.release_version }}.commit.${{ env.SHORT_SHA }}-indexer
           labels: ${{ steps.setup.outputs.docker-labels }}
-          platforms: |
-            linux/amd64
-            linux/arm64/v8
+          platforms: linux/amd64
           build-args: |
             DISABLE_API=true
             DECODE_NOT_A_CONTRACT_CALLS=false
@@ -66,5 +89,36 @@ jobs:
             MIXPANEL_TOKEN=
             AMPLITUDE_URL=
             AMPLITUDE_API_KEY=
-            BLOCKSCOUT_VERSION=v${{ env.RELEASE_VERSION }}.+commit.${{ env.SHORT_SHA }}
-            RELEASE_VERSION=${{ env.RELEASE_VERSION }}
+            BLOCKSCOUT_VERSION=v${{ steps.version.outputs.release_version }}.+commit.${{ env.SHORT_SHA }}
+            RELEASE_VERSION=${{ steps.version.outputs.release_version }}
+
+      - name: Update deployment image pins
+        env:
+          BACKEND_DIGEST: ${{ steps.backend_image.outputs.digest }}
+          RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+
+          IMAGE="ghcr.io/dos/doscan:${RELEASE_VERSION}.commit.${SHORT_SHA}@${BACKEND_DIGEST}"
+          sed -i -E \
+            "s#ghcr.io/dos/doscan:[^[:space:]]+#${IMAGE}#" \
+            docker-compose/docker-compose-mainnet.yml \
+            docker-compose/docker-compose-testnet.yml \
+            docker-compose/docker-compose-beta.yml
+
+          if git diff --quiet -- docker-compose/; then
+            echo "Deployment image pins are already current"
+            exit 0
+          fi
+
+          git add \
+            docker-compose/docker-compose-mainnet.yml \
+            docker-compose/docker-compose-testnet.yml \
+            docker-compose/docker-compose-beta.yml
+          git commit -m "chore: deploy DOScan ${RELEASE_VERSION}"
+          git push origin main

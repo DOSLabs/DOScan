@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Indexer.Block.Realtime.FetcherTest do
   use EthereumJSONRPC.Case, async: false
   use Explorer.DataCase
@@ -21,6 +22,7 @@ defmodule Indexer.Block.Realtime.FetcherTest do
   }
 
   alias Indexer.Fetcher.OnDemand.ContractCreator, as: ContractCreatorOnDemand
+  alias Indexer.Fetcher.TokenBalance.Current, as: TokenBalanceCurrent
   alias Indexer.Fetcher.TokenBalance.Historical, as: TokenBalanceHistorical
 
   @moduletag capture_log: true
@@ -52,6 +54,7 @@ defmodule Indexer.Block.Realtime.FetcherTest do
     }
 
     TokenBalanceHistorical.Supervisor.Case.start_supervised!(json_rpc_named_arguments: json_rpc_named_arguments)
+    TokenBalanceCurrent.Supervisor.Case.start_supervised!(json_rpc_named_arguments: json_rpc_named_arguments)
     CoinBalanceRealtime.Supervisor.Case.start_supervised!(json_rpc_named_arguments: json_rpc_named_arguments)
     {:ok, _pid} = ContractCreatorOnDemand.start_link([[], []])
 

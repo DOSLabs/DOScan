@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Indexer.Supervisor do
   @moduledoc """
   Supervisor of all indexer worker supervision trees
@@ -15,7 +16,8 @@ defmodule Indexer.Supervisor do
     BridgedTokens.SetAmbBridgedMetadataForTokens,
     BridgedTokens.SetOmniBridgedMetadataForTokens,
     PendingOpsCleaner,
-    PendingTransactionsSanitizer
+    PendingTransactionsSanitizer,
+    TokenTransferBlockConsensusSanitizer
   }
 
   alias Indexer.Block.Catchup, as: BlockCatchup
@@ -40,9 +42,11 @@ defmodule Indexer.Supervisor do
   alias Indexer.Fetcher.TokenInstance.SanitizeERC721, as: TokenInstanceSanitizeERC721
 
   alias Indexer.Fetcher.{
+    AddressImporter,
     AddressNonceUpdater,
     BlockReward,
     ContractCode,
+    CurrentTokenBalanceImporter,
     EmptyBlocksSanitizer,
     InternalTransaction,
     PendingBlockOperationsSanitizer,
@@ -51,9 +55,9 @@ defmodule Indexer.Supervisor do
     RootstockData,
     Token,
     TokenCountersUpdater,
+    TokenInstanceImporter,
     TokenTotalSupplyUpdater,
     TokenUpdater,
-    TransactionAction,
     UncleBlock,
     Withdrawal
   }
@@ -151,7 +155,6 @@ defmodule Indexer.Supervisor do
         {TokenInstanceSanitize.Supervisor, [[memory_monitor: memory_monitor]]},
         configure(TokenInstanceSanitizeERC721, [[memory_monitor: memory_monitor]]),
         configure(TokenInstanceSanitizeERC1155, [[memory_monitor: memory_monitor]]),
-        configure(TransactionAction.Supervisor, [[memory_monitor: memory_monitor]]),
         {ContractCode.Supervisor,
          [[json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]]},
         {TokenBalanceHistorical.Supervisor,
@@ -224,18 +227,10 @@ defmodule Indexer.Supervisor do
          [
            [memory_monitor: memory_monitor]
          ]},
-        configure(Indexer.Fetcher.PolygonZkevm.BridgeL1.Supervisor, [[memory_monitor: memory_monitor]]),
-        configure(Indexer.Fetcher.PolygonZkevm.BridgeL1Tokens.Supervisor, [[memory_monitor: memory_monitor]]),
-        configure(Indexer.Fetcher.PolygonZkevm.BridgeL2.Supervisor, [
-          [json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]
-        ]),
         configure(ZkSyncTransactionBatch.Supervisor, [
           [json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]
         ]),
         configure(ZkSyncBatchesStatusTracker.Supervisor, [
-          [json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]
-        ]),
-        configure(Indexer.Fetcher.PolygonZkevm.TransactionBatch.Supervisor, [
           [json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]
         ]),
         configure(ArbitrumTrackingMessagesOnL1.Supervisor, [
@@ -311,6 +306,7 @@ defmodule Indexer.Supervisor do
 
     all_fetchers =
       basic_fetchers
+      |> maybe_add_async_importers()
       |> maybe_add_bridged_tokens_fetchers()
       |> add_chain_type_dependent_fetchers()
       |> maybe_add_block_reward_fetcher(
@@ -322,6 +318,14 @@ defmodule Indexer.Supervisor do
       all_fetchers,
       strategy: :one_for_one
     )
+  end
+
+  defp maybe_add_async_importers(basic_fetchers) do
+    if Application.get_env(:indexer, :enable_partial_async_import?) do
+      [AddressImporter, TokenInstanceImporter, CurrentTokenBalanceImporter | basic_fetchers]
+    else
+      basic_fetchers
+    end
   end
 
   defp maybe_add_bridged_tokens_fetchers(basic_fetchers) do
@@ -368,6 +372,9 @@ defmodule Indexer.Supervisor do
 
       :blackfort ->
         [{ValidatorBlackfort, []} | fetchers]
+
+      :rsk ->
+        [TokenTransferBlockConsensusSanitizer | fetchers]
 
       _ ->
         fetchers

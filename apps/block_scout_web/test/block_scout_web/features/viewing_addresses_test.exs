@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.ViewingAddressesTest do
   use BlockScoutWeb.FeatureCase,
     # Because ETS tables is shared for `Explorer.Counters.*`
@@ -96,7 +97,6 @@ defmodule BlockScoutWeb.ViewingAddressesTest do
           transaction: transaction,
           from_address: address,
           created_contract_address: contract,
-          block_hash: transaction.block_hash,
           block_number: transaction.block_number
         )
 
@@ -123,7 +123,6 @@ defmodule BlockScoutWeb.ViewingAddressesTest do
         to_address: contract,
         created_contract_address: contract,
         type: :call,
-        block_hash: transaction.block_hash,
         block_number: transaction.block_number
       )
 
@@ -135,7 +134,6 @@ defmodule BlockScoutWeb.ViewingAddressesTest do
           transaction: transaction,
           from_address: contract,
           created_contract_address: another_contract,
-          block_hash: transaction.block_hash,
           block_number: transaction.block_number
         )
 
@@ -223,8 +221,7 @@ defmodule BlockScoutWeb.ViewingAddressesTest do
           to_address: address,
           transaction_index: transaction.index,
           index: 1,
-          block_number: transaction.block_number,
-          block_hash: transaction.block_hash
+          block_number: transaction.block_number
         )
 
       insert(:internal_transaction,
@@ -232,8 +229,7 @@ defmodule BlockScoutWeb.ViewingAddressesTest do
         from_address: address,
         transaction_index: transaction.index,
         index: 2,
-        block_number: transaction.block_number,
-        block_hash: transaction.block_hash
+        block_number: transaction.block_number
       )
 
       {:ok, %{internal_transaction_lincoln_to_address: internal_transaction_lincoln_to_address}}
@@ -268,8 +264,7 @@ defmodule BlockScoutWeb.ViewingAddressesTest do
           index: 2,
           from_address: addresses.lincoln,
           block_number: transaction.block_number,
-          transaction_index: transaction.index,
-          block_hash: transaction.block_hash
+          transaction_index: transaction.index
         )
 
       Notifier.handle_event({:chain_event, :internal_transactions, :realtime, [internal_transaction]})
@@ -300,8 +295,7 @@ defmodule BlockScoutWeb.ViewingAddressesTest do
         index: 2,
         from_address: addresses.lincoln,
         block_number: from_lincoln.block_number,
-        transaction_index: from_lincoln.index,
-        block_hash: from_lincoln.block_hash
+        transaction_index: from_lincoln.index
       )
 
       session
@@ -332,8 +326,7 @@ defmodule BlockScoutWeb.ViewingAddressesTest do
         index: 2,
         from_address: addresses.lincoln,
         block_number: from_lincoln.block_number,
-        transaction_index: from_lincoln.index,
-        block_hash: from_lincoln.block_hash
+        transaction_index: from_lincoln.index
       )
 
       session

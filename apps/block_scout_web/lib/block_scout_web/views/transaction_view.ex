@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.TransactionView do
   use BlockScoutWeb, :view
 
@@ -62,10 +63,6 @@ defmodule BlockScoutWeb.TransactionView do
 
     type = Chain.transaction_token_transfer_type(transaction)
     if type, do: {type, transaction_with_transfers_filtered}, else: {nil, transaction_with_transfers_filtered}
-  end
-
-  def transaction_actions(transaction) do
-    Repo.preload(transaction, :transaction_actions)
   end
 
   def aggregate_token_transfers(token_transfers) do

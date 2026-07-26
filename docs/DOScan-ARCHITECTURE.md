@@ -431,15 +431,46 @@ az vm run-command invoke --resource-group METADOS --name dev \
 | Database | `db` | 7432 | `postgres:15` (mainnet/testnet) / external PostgreSQL 17 (beta) |
 | Redis | `redis-db` | 6379 | `redis:alpine` |
 
-### Microservices
+### Microservices (from [blockscout-rs](https://github.com/blockscout/blockscout-rs))
+
+All microservices run as official Docker images from `ghcr.io/blockscout/`. No fork needed — pull image, configure via env vars.
+
+#### In Use (6/12)
 
 | Service | Container | Port | Image | Purpose |
 |---------|-----------|------|-------|---------|
 | Smart Contract Verifier | `smart-contract-verifier` | 8043 | `ghcr.io/blockscout/smart-contract-verifier:latest` | Verify Solidity/Vyper contracts |
-| Visualizer | `visualizer` | 8044 (mainnet) / 8051 (testnet) | `ghcr.io/blockscout/visualizer:latest` | Sol2UML diagrams |
-| Sig Provider | `sig-provider` | 8045 | `ghcr.io/blockscout/sig-provider:latest` | Method signatures |
-| User Ops Indexer | `user-ops-indexer` | 8090 | `ghcr.io/blockscout/user-ops-indexer:latest` | ERC-4337 indexing (testnet only) |
-| Stats | `stats` | 8052 | `ghcr.io/blockscout/stats:latest` | Blockchain statistics (mainnet + testnet) |
+| Visualizer | `visualizer` | 8044 (mainnet) / 8051 (testnet) | `ghcr.io/blockscout/visualizer:latest` | Sol2UML contract diagrams |
+| Sig Provider | `sig-provider` | 8045 | `ghcr.io/blockscout/sig-provider:latest` | Function/event signature aggregator |
+| User Ops Indexer | `user-ops-indexer` | 8090 | `ghcr.io/blockscout/user-ops-indexer:latest` | ERC-4337 user operations indexing |
+| Stats | `stats` | 8052 | `ghcr.io/blockscout/stats:latest` | Blockchain statistics & charts |
+| BENS (blockscout-ens) | `dos-names-bens` | 18050 | `ghcr.io/blockscout/bens:latest` | DOS Name Service indexing (on dev VM, see below) |
+
+#### Not In Use (6/12)
+
+| Service | Why Not Used |
+|---------|-------------|
+| **eth-bytecode-db** | Cross-chain bytecode DB for auto-verification — single chain, not needed yet |
+| **interchain-indexer** | Universal Bridge Indexer — could use for ICM/ICTT bridge indexing (future) |
+| **proxy-verifier** | Multi-chain verification backend — already have smart-contract-verifier |
+| **da-indexer** | Celestia/EigenDA blob collection — DOS Chain doesn't use DA layers |
+| **tac-operation-lifecycle** | TON Application Chain specific — not applicable |
+| **multichain-aggregator** | Aggregate multiple Blockscout instances + interop — mainnet/testnet run separately |
+
+#### BENS (blockscout-ens) — DOS Name Service
+
+Runs on dev VM (`20.198.249.62`), separate from the main DOScan stack:
+
+| Container | Image | Purpose |
+|-----------|-------|---------|
+| `dos-names-bens` | `ghcr.io/blockscout/bens:latest` | BENS API server |
+| `dos-names-graph-node` | `graphprotocol/graph-node` | Subgraph indexer |
+| `dos-names-postgres` | `postgres` | Graph Node database |
+| `dos-names-ipfs` | `ipfs/kubo` | IPFS for subgraph data |
+
+- **Config:** `~/services/dos-names/`
+- **Port:** 18050
+- **Purpose:** Index DOS Name Service (ENSv2 fork) deployed on DOS Chain testnet
 
 ---
 

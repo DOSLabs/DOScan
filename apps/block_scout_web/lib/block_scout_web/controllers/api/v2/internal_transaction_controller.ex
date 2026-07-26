@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.API.V2.InternalTransactionController do
   use BlockScoutWeb, :controller
   use OpenApiSpex.ControllerSpecs
@@ -20,7 +21,7 @@ defmodule BlockScoutWeb.API.V2.InternalTransactionController do
 
   plug(OpenApiSpex.Plug.CastAndValidate, json_render_error_v2: true)
 
-  tags(["internal_transactions"])
+  tags(["internal-transactions"])
 
   @api_true [api?: true]
 
