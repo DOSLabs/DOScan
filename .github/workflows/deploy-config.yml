@@ -286,13 +286,19 @@ jobs:
                 docker compose config --hash="*" > "${SRC}/old-service-hashes"
 
               EDGE_CONFIG_CHANGED=0
+              EDGE_CADDY_CONFIG_CHANGED=0
               if ! sudo cmp -s "${SRC}/docker-compose/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet"; then
                 L1_CADDY_CONFIG_CHANGED=1
               fi
               if ! sudo cmp -s "${SRC}/docker-compose/docker-compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml" ||
-                 ! sudo cmp -s "${SRC}/docker-compose/Caddyfile-gcp-edge" "${EDGE_PATH}/Caddyfile" ||
                  ! sudo cmp -s "${SRC}/docker-compose/docker-compose-gcp-edge.override.yml" "${EDGE_PATH}/compose.override.yml"; then
                 EDGE_CONFIG_CHANGED=1
+              fi
+              EDGE_CADDY_SOURCE_HASH="$(sha256sum "${SRC}/docker-compose/Caddyfile-gcp-edge" | cut -d " " -f1)"
+              EDGE_CADDY_RUNNING_HASH="$(sudo docker exec caddy sha256sum /etc/caddy/Caddyfile 2>/dev/null |
+                cut -d " " -f1 || true)"
+              if [ "${EDGE_CADDY_SOURCE_HASH}" != "${EDGE_CADDY_RUNNING_HASH}" ]; then
+                EDGE_CADDY_CONFIG_CHANGED=1
               fi
 
               sudo install -m 0644 "${SRC}/docker-compose/docker-compose-mainnet.yml" "${L1_PATH}/compose.yml"
@@ -358,7 +364,7 @@ jobs:
 
               cd "${EDGE_PATH}"
               sudo docker compose config -q
-              if [ "${EDGE_CONFIG_CHANGED}" -eq 1 ]; then
+              if [ "${EDGE_CONFIG_CHANGED}" -eq 1 ] || [ "${EDGE_CADDY_CONFIG_CHANGED}" -eq 1 ]; then
                 EDGE_TOUCHED=1
                 sudo docker compose up -d --force-recreate --no-deps caddy
               fi
