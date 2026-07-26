@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 import Config
 
 # Lower hashing rounds for faster tests
@@ -75,7 +76,6 @@ for repo <- [
       Explorer.Repo.Mud,
       Explorer.Repo.Optimism,
       Explorer.Repo.PolygonEdge,
-      Explorer.Repo.PolygonZkevm,
       Explorer.Repo.RSK,
       Explorer.Repo.Scroll,
       Explorer.Repo.Shibarium,
@@ -99,20 +99,11 @@ for repo <- [
     pool_size: 1
 end
 
-config :explorer, Explorer.Repo.PolygonZkevm,
-  database: database,
-  hostname: hostname,
-  url: database_url,
-  pool: Ecto.Adapters.SQL.Sandbox,
-  # Default of `5_000` was too low for `BlockFetcher` test
-  ownership_timeout: :timer.minutes(1),
-  timeout: :timer.seconds(60),
-  queue_target: 1000
-
 config :logger, :explorer, path: Path.absname("logs/test/explorer.log")
 
 config :explorer, Explorer.Chain.Fetcher.CheckBytecodeMatchingOnDemand, enabled: false
 config :explorer, Explorer.Chain.Fetcher.FetchValidatorInfoOnDemand, enabled: false
 config :explorer, Explorer.Tags.AddressTag.Cataloger, enabled: false
+config :explorer, Explorer.Utility.VersionUpgrade, enabled: false
 
 config :tesla, adapter: Explorer.Mock.TeslaAdapter

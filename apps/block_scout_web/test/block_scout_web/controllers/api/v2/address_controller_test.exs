@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.API.V2.AddressControllerTest do
   use BlockScoutWeb.ConnCase
   use EthereumJSONRPC.Case, async: false
@@ -327,6 +328,32 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
              } = json_response
     end
 
+    test "get minimal_proxy contract shows is_verified true", %{conn: conn} do
+      implementation_contract = insert(:smart_contract, contract_code_md5: "abc")
+
+      proxy_address = insert(:contract_address)
+
+      insert(:transaction,
+        created_contract_address_hash: proxy_address.hash,
+        input: "0x00"
+      )
+      |> with_block(status: :ok)
+
+      insert(:proxy_implementation,
+        proxy_address_hash: proxy_address.hash,
+        proxy_type: "minimal_proxy",
+        address_hashes: [implementation_contract.address_hash],
+        names: [implementation_contract.name]
+      )
+
+      request = get(conn, "/api/v2/addresses/#{Address.checksum(proxy_address.hash)}")
+
+      json_response = json_response(request, 200)
+
+      assert json_response["is_verified"] == true
+      assert json_response["proxy_type"] == "minimal_proxy"
+    end
+
     test "get EIP-1967 proxy contract info", %{conn: conn} do
       smart_contract = insert(:smart_contract)
 
@@ -382,7 +409,7 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
     end
 
     test "get Resolved Delegate Proxy contract info", %{conn: conn} do
-      proxy_address = insert(:address, contract_code: @resolved_delegate_proxy)
+      proxy_address = insert(:address, contract_code: @resolved_delegate_proxy, verified: true)
       proxy_smart_contract = insert(:smart_contract, address_hash: proxy_address.hash)
 
       transaction =
@@ -2232,9 +2259,9 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
           index: 1,
           block_number: transaction.block_number,
           transaction_index: transaction.index,
-          block_hash: transaction.block_hash,
           from_address: address
         )
+        |> InternalTransaction.preload_addresses()
 
       internal_transaction_to =
         insert(:internal_transaction,
@@ -2242,9 +2269,9 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
           index: 2,
           block_number: transaction.block_number,
           transaction_index: transaction.index,
-          block_hash: transaction.block_hash,
           to_address: address
         )
+        |> InternalTransaction.preload_addresses()
 
       request = get(conn, "/api/v2/addresses/#{address.hash}/internal-transactions")
 
@@ -2285,7 +2312,6 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
           index: 1,
           block_number: transaction.block_number,
           transaction_index: transaction.index,
-          block_hash: transaction.block_hash,
           from_address: address,
           to_address: insert(:address),
           gas: nil,
@@ -2314,10 +2340,10 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
             index: i,
             block_number: transaction.block_number,
             transaction_index: transaction.index,
-            block_hash: transaction.block_hash,
             from_address: address
           )
         end
+        |> InternalTransaction.preload_addresses()
 
       request = get(conn, "/api/v2/addresses/#{address.hash}/internal-transactions")
       assert response = json_response(request, 200)
@@ -2336,10 +2362,10 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
             index: i,
             block_number: transaction.block_number,
             transaction_index: transaction.index,
-            block_hash: transaction.block_hash,
             to_address: address
           )
         end
+        |> InternalTransaction.preload_addresses()
 
       filter = %{"filter" => "to"}
       request = get(conn, "/api/v2/addresses/#{address.hash}/internal-transactions", filter)
@@ -3450,13 +3476,16 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
       old_env = Application.get_env(:indexer, Indexer.Fetcher.OnDemand.TokenBalance)
       configuration = Application.get_env(:indexer, Indexer.Fetcher.OnDemand.TokenBalance.Supervisor)
       Application.put_env(:indexer, Indexer.Fetcher.OnDemand.TokenBalance.Supervisor, disabled?: false)
-      Indexer.Fetcher.OnDemand.TokenBalance.Supervisor.Case.start_supervised!()
 
       Application.put_env(
         :indexer,
         Indexer.Fetcher.OnDemand.TokenBalance,
-        Keyword.put(old_env, :fallback_threshold_in_blocks, 0)
+        old_env
+        |> Keyword.put(:fallback_threshold_in_blocks, 0)
+        |> Keyword.put(:address_queue_flush_interval, 50)
       )
+
+      Indexer.Fetcher.OnDemand.TokenBalance.Supervisor.Case.start_supervised!(max_batch_size: 100)
 
       on_exit(fn ->
         Application.put_env(:indexer, Indexer.Fetcher.OnDemand.TokenBalance.Supervisor, configuration)
@@ -3807,8 +3836,11 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
       compare_item(address, address_json)
     end
 
-    test "check smart contract preload", %{conn: conn} do
-      smart_contract = insert(:smart_contract, address_hash: insert(:contract_address, fetched_coin_balance: 1).hash)
+    test "check smart contract properties", %{conn: conn} do
+      smart_contract =
+        insert(:smart_contract,
+          address_hash: insert(:contract_address, fetched_coin_balance: 1, verified: true).hash
+        )
 
       request = get(conn, "/api/v2/addresses")
       response = json_response(request, 200)
@@ -3982,7 +4014,6 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
           index: x,
           block_number: transaction.block_number,
           transaction_index: transaction.index,
-          block_hash: transaction.block_hash,
           to_address: address
         )
       end
@@ -4025,7 +4056,6 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
           index: x,
           block_number: transaction.block_number,
           transaction_index: transaction.index,
-          block_hash: transaction.block_hash,
           from_address: address
         )
       end
@@ -4078,7 +4108,6 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
           index: x,
           block_number: transaction.block_number,
           transaction_index: transaction.index,
-          block_hash: transaction.block_hash,
           from_address: address
         )
       end
@@ -4125,7 +4154,6 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
           index: x,
           block_number: transaction.block_number,
           transaction_index: transaction.index,
-          block_hash: transaction.block_hash,
           from_address: address
         )
       end
@@ -5622,6 +5650,159 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
     end
   end
 
+  if @chain_identity == {:optimism, :celo} do
+    describe "/addresses/{address_hash}/election-rewards" do
+      setup do
+        celo_token = insert(:token)
+        usd_token = insert(:token)
+
+        original_core_contracts_config =
+          Application.get_env(:explorer, Explorer.Chain.Cache.CeloCoreContracts)
+
+        Application.put_env(:explorer, Explorer.Chain.Cache.CeloCoreContracts,
+          contracts: %{
+            "addresses" => %{
+              "Accounts" => [],
+              "Election" => [],
+              "EpochRewards" => [],
+              "FeeHandler" => [],
+              "GasPriceMinimum" => [],
+              "GoldToken" => [
+                %{"address" => to_string(celo_token.contract_address_hash), "updated_at_block_number" => 0}
+              ],
+              "Governance" => [],
+              "LockedGold" => [],
+              "Reserve" => [],
+              "StableToken" => [
+                %{"address" => to_string(usd_token.contract_address_hash), "updated_at_block_number" => 0}
+              ],
+              "Validators" => []
+            }
+          }
+        )
+
+        original_celo_config = Application.get_env(:explorer, :celo)
+
+        on_exit(fn ->
+          Application.put_env(
+            :explorer,
+            Explorer.Chain.Cache.CeloCoreContracts,
+            original_core_contracts_config
+          )
+
+          Application.put_env(:explorer, :celo, original_celo_config)
+        end)
+
+        {:ok, %{celo_token: celo_token, usd_token: usd_token}}
+      end
+
+      test "get empty list on non-existing address", %{conn: conn} do
+        address = build(:address)
+
+        request = get(conn, "/api/v2/addresses/#{address.hash}/celo/election-rewards")
+        # The endpoint requires the address to exist in the database, returns 404 if not found
+        json_response(request, 404)
+      end
+
+      test "get 422 on invalid address", %{conn: conn} do
+        request = get(conn, "/api/v2/addresses/0x/celo/election-rewards")
+
+        assert %{
+                 "errors" => [
+                   %{
+                     "detail" => "Invalid format. Expected ~r/^0x([A-Fa-f0-9]{40})$/",
+                     "source" => %{"pointer" => "/address_hash_param"},
+                     "title" => "Invalid value"
+                   }
+                 ]
+               } = json_response(request, 422)
+      end
+
+      test "paginates election rewards across two pages", %{conn: conn} do
+        address = insert(:address)
+        end_processing_block = insert(:block)
+
+        epoch =
+          insert(:celo_epoch,
+            number: 1,
+            fetched?: true,
+            start_block_number: 0,
+            end_block_number: 17_279,
+            end_processing_block_hash: end_processing_block.hash
+          )
+
+        # Insert 51 rewards with distinct amounts 1..51 for the same address, epoch, and type.
+        # Default sort is desc:epoch_number, asc:type, desc:amount, so within a single epoch+type
+        # rewards are ordered by descending amount: 51, 50, ..., 1.
+        rewards =
+          1..51
+          |> Enum.map(fn i ->
+            insert(:celo_election_reward,
+              account_address_hash: address.hash,
+              epoch_number: epoch.number,
+              type: :voter,
+              amount: i
+            )
+          end)
+          |> Enum.sort_by(& &1.amount.value, :desc)
+
+        request = get(conn, "/api/v2/addresses/#{address.hash}/celo/election-rewards")
+        assert response = json_response(request, 200)
+
+        assert Enum.count(response["items"]) == 50
+        assert response["next_page_params"] != nil
+
+        assert Enum.at(response["items"], 0)["epoch_number"] == epoch.number
+        assert Enum.at(response["items"], 0)["type"] == "voter"
+
+        # First page: amounts 51 down to 2
+        assert Enum.at(response["items"], 0)["amount"] ==
+                 to_string(Enum.at(rewards, 0).amount.value)
+
+        assert Enum.at(response["items"], 49)["amount"] ==
+                 to_string(Enum.at(rewards, 49).amount.value)
+
+        request_2nd_page =
+          get(conn, "/api/v2/addresses/#{address.hash}/celo/election-rewards", response["next_page_params"])
+
+        assert response_2nd_page = json_response(request_2nd_page, 200)
+
+        assert Enum.count(response_2nd_page["items"]) == 1
+        assert response_2nd_page["next_page_params"] == nil
+
+        # Second page: the one reward with the lowest amount
+        assert Enum.at(response_2nd_page["items"], 0)["amount"] ==
+                 to_string(Enum.at(rewards, 50).amount.value)
+      end
+
+      test "rewards for different addresses do not appear in each other's results", %{conn: conn} do
+        address_a = insert(:address)
+        address_b = insert(:address)
+        end_processing_block = insert(:block)
+
+        epoch =
+          insert(:celo_epoch,
+            number: 1,
+            fetched?: true,
+            start_block_number: 0,
+            end_block_number: 17_279,
+            end_processing_block_hash: end_processing_block.hash
+          )
+
+        insert(:celo_election_reward, account_address_hash: address_a.hash, epoch_number: epoch.number, type: :voter)
+        insert(:celo_election_reward, account_address_hash: address_b.hash, epoch_number: epoch.number, type: :voter)
+
+        request_a = get(conn, "/api/v2/addresses/#{address_a.hash}/celo/election-rewards")
+        assert %{"items" => [item_a], "next_page_params" => nil} = json_response(request_a, 200)
+        assert item_a["account"]["hash"] == Address.checksum(address_a.hash)
+
+        request_b = get(conn, "/api/v2/addresses/#{address_b.hash}/celo/election-rewards")
+        assert %{"items" => [item_b], "next_page_params" => nil} = json_response(request_b, 200)
+        assert item_b["account"]["hash"] == Address.checksum(address_b.hash)
+      end
+    end
+  end
+
   if @chain_type == :ethereum do
     describe "/addresses/{address_hash}/beacon/deposits" do
       test "get empty list on non-existing address", %{conn: conn} do
@@ -5683,7 +5864,7 @@ defmodule BlockScoutWeb.API.V2.AddressControllerTest do
     assert internal_transaction.block_number == json["block_number"]
     assert to_string(internal_transaction.gas) == json["gas_limit"]
     assert internal_transaction.index == json["index"]
-    assert to_string(internal_transaction.transaction_hash) == json["transaction_hash"]
+    assert to_string(internal_transaction.transaction.hash) == json["transaction_hash"]
     assert Address.checksum(internal_transaction.from_address_hash) == json["from"]["hash"]
     assert Address.checksum(internal_transaction.to_address_hash) == json["to"]["hash"]
   end

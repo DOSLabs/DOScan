@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.GraphQL.Schema.Query.NodeTest do
   use BlockScoutWeb.ConnCase
 
@@ -65,7 +66,6 @@ defmodule BlockScoutWeb.GraphQL.Schema.Query.NodeTest do
           transaction: transaction,
           transaction_index: transaction.index,
           index: 0,
-          block_hash: transaction.block_hash,
           block_number: transaction.block_number
         )
 
@@ -110,7 +110,6 @@ defmodule BlockScoutWeb.GraphQL.Schema.Query.NodeTest do
           transaction: transaction,
           transaction_index: transaction.index,
           index: 0,
-          block_hash: transaction.block_hash,
           block_number: transaction.block_number
         )
 

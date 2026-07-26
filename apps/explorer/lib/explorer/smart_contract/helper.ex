@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Explorer.SmartContract.Helper do
   @moduledoc """
   SmartContract helper functions
@@ -229,7 +230,7 @@ defmodule Explorer.SmartContract.Helper do
   defp internal_transaction_to_metadata(internal_transaction, init) do
     %{
       "blockNumber" => to_string(internal_transaction.block_number),
-      "transactionHash" => to_string(internal_transaction.transaction_hash),
+      "transactionHash" => to_string(internal_transaction.transaction.hash),
       "transactionIndex" => to_string(internal_transaction.transaction_index),
       "deployer" => to_string(internal_transaction.from_address_hash),
       "creationCode" => to_string(init)

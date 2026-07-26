@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 # credo:disable-for-this-file
 #
 # When moving the calls to ajax, this controller became very similar to the
@@ -26,8 +27,9 @@ defmodule BlockScoutWeb.AddressReadContractController do
         :names => :optional,
         :smart_contract => :optional,
         :token => :optional,
-        Address.contract_creation_transaction_associations() => :optional
+        Address.contract_creation_transaction_association() => :optional
       },
+      preload_contract_creation_internal_transaction: true,
       ip: ip
     ]
 

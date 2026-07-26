@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Explorer.Mixfile do
   use Mix.Project
 
@@ -20,7 +21,7 @@ defmodule Explorer.Mixfile do
       lockfile: "../../mix.lock",
       package: package(),
       start_permanent: Mix.env() == :prod,
-      version: "10.0.6",
+      version: "11.2.3",
       xref: [exclude: [BlockScoutWeb.Routers.WebRouter.Helpers, Indexer.Helper, Indexer.Fetcher.InternalTransaction]]
     ]
   end
@@ -102,7 +103,7 @@ defmodule Explorer.Mixfile do
       {:prometheus_ex, "~> 5.1.0", override: true},
       # bypass optional dependency
       {:plug_cowboy, "~> 2.2", only: [:dev, :test]},
-      {:que, "~> 0.10.1"},
+      {:que, "~> 0.12.0"},
       {:sobelow, ">= 0.7.0", only: [:dev, :test], runtime: false},
       # Tracing
       {:spandex, "~> 3.0"},
@@ -115,7 +116,7 @@ defmodule Explorer.Mixfile do
       # `Timex.Duration` for `Explorer.Chain.Cache.Counters.AverageBlockTime.average_block_time/0`
       {:timex, "~> 3.7.1"},
       {:con_cache, "~> 1.0"},
-      {:tesla, "~> 1.16.0"},
+      {:tesla, "~> 1.20.0"},
       {:cbor, "~> 1.0"},
       {:cloak_ecto, "~> 1.3.0"},
       {:redix, "~> 1.1"},
@@ -135,7 +136,8 @@ defmodule Explorer.Mixfile do
       {:inet_cidr, "~> 1.0.0"},
       {:hammer, "~> 7.0"},
       {:ton, "~> 0.5.0"},
-      {:mint, "~> 1.0"}
+      {:mint, "~> 1.0"},
+      {:oban, "~> 2.19"}
     ]
   end
 
@@ -162,7 +164,7 @@ defmodule Explorer.Mixfile do
   defp package do
     [
       maintainers: ["Blockscout"],
-      licenses: ["GPL 3.0"],
+      licenses: ["Blockscout Software Licence"],
       links: %{"GitHub" => "https://github.com/blockscout/blockscout"}
     ]
   end

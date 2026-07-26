@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Explorer.Chain.Celo.ElectionReward do
   @moduledoc """
   Represents the rewards distributed in an epoch election. Each reward has a
@@ -31,12 +32,22 @@ defmodule Explorer.Chain.Celo.ElectionReward do
   import Explorer.PagingOptions, only: [default_paging_options: 0]
   import Ecto.Query, only: [from: 2, where: 3]
 
-  alias Explorer.{Chain, SortingHelper}
+  alias Explorer.{Chain, Helper, SortingHelper}
   alias Explorer.Chain.{Address, Address.Reputation, Celo.Epoch, Hash, Token, Wei}
   alias Explorer.Chain.Cache.CeloCoreContracts
 
   @type type :: :voter | :validator | :group | :delegated_payment
   @types_enum ~w(voter validator group delegated_payment)a
+
+  # Legacy URL forms that differ from `to_string(atom)`.
+  # The URL path uses "delegated-payment" (hyphen), but the canonical atom
+  # is :delegated_payment (underscore). OpenApiSpex.Plug.CastAndValidate
+  # matches enum values via `to_string(atom) == binary`, so
+  # "delegated-payment" does not match :delegated_payment. Including the
+  # hyphenated string in the enum lets CastAndValidate accept both forms
+  # during a migration period, after which the hyphenated form can be
+  # removed.
+  @legacy_type_url_strings ["delegated-payment"]
 
   @reward_type_url_string_to_atom %{
     "voter" => :voter,
@@ -123,6 +134,21 @@ defmodule Explorer.Chain.Celo.ElectionReward do
   """
   @spec types() :: [type]
   def types, do: @types_enum
+
+  @doc """
+  Returns the list of election reward types extended with legacy hyphenated
+  URL strings (e.g. `"delegated-payment"`).
+
+  Intended for use as the `enum` in OpenApiSpex schemas so that
+  `CastAndValidate` accepts both the canonical atom forms (`voter`,
+  `validator`, `group`, `delegated_payment`) and the legacy hyphenated URL
+  form (`delegated-payment`).
+
+  Once the migration period ends and `"delegated-payment"` is no longer
+  accepted, replace usages with `types/0` and remove `@legacy_type_url_strings`.
+  """
+  @spec type_enum_with_legacy() :: [type | String.t()]
+  def type_enum_with_legacy, do: @types_enum ++ @legacy_type_url_strings
 
   @doc """
   Converts a reward type url string to its corresponding atom.
@@ -243,6 +269,7 @@ defmodule Explorer.Chain.Celo.ElectionReward do
     sorting_options = Keyword.get(options, :sorting, [])
     from_epoch = Keyword.get(options, :from_epoch)
     to_epoch = Keyword.get(options, :to_epoch)
+    timeout = Keyword.get(options, :timeout)
 
     address_hash
     |> address_hash_to_rewards_query()
@@ -251,7 +278,7 @@ defmodule Explorer.Chain.Celo.ElectionReward do
     |> SortingHelper.apply_sorting(sorting_options, default_sorting)
     |> SortingHelper.page_with_sorting(paging_options, sorting_options, default_sorting)
     |> Chain.join_associations(necessity_by_association)
-    |> Chain.select_repo(options).all()
+    |> Chain.select_repo(options).all(Helper.maybe_timeout(timeout))
     |> with_loaded_token_reputations()
   end
 

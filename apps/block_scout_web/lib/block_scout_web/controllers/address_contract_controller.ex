@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 # credo:disable-for-this-file
 defmodule BlockScoutWeb.AddressContractController do
   use BlockScoutWeb, :controller
@@ -19,8 +20,9 @@ defmodule BlockScoutWeb.AddressContractController do
         :names => :optional,
         [smart_contract: :smart_contract_additional_sources] => :optional,
         :token => :optional,
-        Address.contract_creation_transaction_associations() => :optional
+        Address.contract_creation_transaction_association() => :optional
       },
+      preload_contract_creation_internal_transaction: true,
       ip: ip
     ]
 

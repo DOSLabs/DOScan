@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.API.V2.Proxy.AccountAbstractionController do
   use BlockScoutWeb, :controller
   use OpenApiSpex.ControllerSpecs
@@ -14,7 +15,7 @@ defmodule BlockScoutWeb.API.V2.Proxy.AccountAbstractionController do
 
   plug(OpenApiSpex.Plug.CastAndValidate, json_render_error_v2: true)
 
-  tags(["account_abstraction"])
+  tags(["account-abstraction"])
 
   operation :operation,
     summary: "Get a user operation by hash",

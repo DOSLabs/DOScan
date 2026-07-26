@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.Schemas.API.V2.InternalTransaction do
   @moduledoc """
   This module defines the schema for the InternalTransaction struct.
@@ -30,7 +31,7 @@ defmodule BlockScoutWeb.Schemas.API.V2.InternalTransaction do
         description: "The index of the parent transaction inside the block."
       },
       from: Address,
-      to: Address,
+      to: %Schema{allOf: [Address], nullable: true},
       created_contract: %Schema{allOf: [Address], nullable: true},
       value: General.IntegerString,
       block_number: %Schema{
@@ -43,12 +44,7 @@ defmodule BlockScoutWeb.Schemas.API.V2.InternalTransaction do
         description: "The index of this internal transaction inside the transaction.",
         nullable: false
       },
-      gas_limit: General.IntegerStringNullable,
-      block_index: %Schema{
-        type: :integer,
-        description: "The index of this internal transaction inside the block.",
-        nullable: true
-      }
+      gas_limit: General.IntegerStringNullable
     },
     required: [
       :error,
@@ -63,8 +59,7 @@ defmodule BlockScoutWeb.Schemas.API.V2.InternalTransaction do
       :block_number,
       :timestamp,
       :index,
-      :gas_limit,
-      :block_index
+      :gas_limit
     ],
     additionalProperties: false
   })

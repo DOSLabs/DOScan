@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Explorer.Chain.Import.Stage.BlockTransactionReferencing do
   @moduledoc """
   Imports any data that is related to blocks and transactions.
@@ -12,7 +13,6 @@ defmodule Explorer.Chain.Import.Stage.BlockTransactionReferencing do
     Runner.Transaction.Forks,
     Runner.Block.Rewards,
     Runner.Block.SecondDegreeRelations,
-    Runner.TransactionActions,
     Runner.Withdrawals,
     Runner.SignedAuthorizations,
     Runner.FheOperations

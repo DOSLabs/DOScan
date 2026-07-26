@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Explorer.MicroserviceInterfaces.TACOperationLifecycle do
   @moduledoc """
     Interface to interact with Tac Operation Lifecycle Service (https://github.com/blockscout/blockscout-rs/tree/main/tac-operation-lifecycle)
@@ -54,17 +55,12 @@ defmodule Explorer.MicroserviceInterfaces.TACOperationLifecycle do
   end
 
   defp log_error(error) do
-    old_truncate = Application.get_env(:logger, :truncate)
-    Logger.configure(truncate: :infinity)
-
     Logger.error(fn ->
       [
         "#{@request_error_msg}: ",
-        inspect(error, limit: :infinity, printable_limit: :infinity)
+        inspect(error)
       ]
     end)
-
-    Logger.configure(truncate: old_truncate)
   end
 
   defp operations_quick_search_url do

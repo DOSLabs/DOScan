@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Indexer.Fetcher.InternalTransaction.DeleteQueueTest do
   use Explorer.DataCase
 
@@ -46,7 +47,6 @@ defmodule Indexer.Fetcher.InternalTransaction.DeleteQueueTest do
     insert(:internal_transaction,
       transaction: transaction_1,
       index: 0,
-      block_hash: transaction_1.block_hash,
       block_number: fresh_block_number,
       transaction_index: transaction_1.index
     )
@@ -54,7 +54,6 @@ defmodule Indexer.Fetcher.InternalTransaction.DeleteQueueTest do
     insert(:internal_transaction,
       transaction: transaction_2,
       index: 0,
-      block_hash: transaction_2.block_hash,
       block_number: expired_block_number,
       transaction_index: transaction_2.index
     )
