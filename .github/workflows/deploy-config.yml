@@ -605,8 +605,12 @@ jobs:
               done
 
               for attempt in $(seq 1 30); do
-                if curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null &&
-                   curl -fsS http://127.0.0.1:13080/public-metrics >/dev/null; then
+                rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_chainId\",\"params\":[]}"
+                if curl -fsS http://127.0.0.1:13080/ >/dev/null &&
+                   curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null &&
+                   curl -fsS http://127.0.0.1:13080/public-metrics >/dev/null &&
+                   curl -fsS -H "Content-Type: application/json" --data "${rpc_body}" \
+                     http://127.0.0.1:8545/ | grep -q "\"result\":\"0xf63\""; then
                   break
                 fi
                 if [ "${attempt}" -eq 30 ]; then
@@ -617,8 +621,15 @@ jobs:
                 sleep 5
               done
 
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://test.doscan.io/ >/dev/null
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://test.doscan.io/api/v2/stats >/dev/null
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://test.doscan.io/public-metrics >/dev/null
+              rpc_response="$(
+                curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                  -D - -H "Content-Type: application/json" --data "${rpc_body}" https://test.doschain.com/
+              )"
+              grep -q "\"result\":\"0xf63\"" <<<"${rpc_response}"
+              grep -qi "X-DOS-RPC-Origin: archive-dos-testnet-r0" <<<"${rpc_response}"
 
               sudo docker compose ps
               echo "GCP testnet deployment completed"

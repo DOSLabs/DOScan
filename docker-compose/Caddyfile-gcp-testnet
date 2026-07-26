@@ -51,3 +51,48 @@
 		reverse_proxy frontend:3000
 	}
 }
+
+:8545 {
+	@options method OPTIONS
+	handle @options {
+		header Access-Control-Allow-Origin "*"
+		header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+		header Access-Control-Allow-Headers "*"
+		respond "" 204
+	}
+
+	header {
+		-Access-Control-Allow-Credentials
+		Access-Control-Allow-Origin "*"
+		Access-Control-Allow-Methods "GET, POST, OPTIONS"
+		Access-Control-Allow-Headers "*"
+		defer
+	}
+
+	@archive_websocket path /ws
+	handle @archive_websocket {
+		header X-DOS-RPC-Origin "archive-dos-testnet-r0"
+		rewrite * /ext/bc/2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ/ws
+		reverse_proxy 10.148.0.7:9650 {
+			header_down -Access-Control-Allow-Origin
+			header_down -Access-Control-Allow-Methods
+			header_down -Access-Control-Allow-Headers
+			header_down -Access-Control-Allow-Credentials
+		}
+	}
+
+	@archive_rpc {
+		not method OPTIONS
+		not path /ws
+	}
+	handle @archive_rpc {
+		header X-DOS-RPC-Origin "archive-dos-testnet-r0"
+		rewrite * /ext/bc/2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ/rpc
+		reverse_proxy 10.148.0.7:9650 {
+			header_down -Access-Control-Allow-Origin
+			header_down -Access-Control-Allow-Methods
+			header_down -Access-Control-Allow-Headers
+			header_down -Access-Control-Allow-Credentials
+		}
+	}
+}
