@@ -109,7 +109,13 @@
     "webpack-cli": "^6.0.1"
   },
   "overrides": {
-    "form-data": "2.5.5"
+    "@walletconnect/socket-transport": {
+      "ws": "7.5.11"
+    },
+    "form-data": "2.5.6",
+    "levelup": {
+      "semver": "5.7.2"
+    }
   },
   "jest": {
     "moduleNameMapper": {
