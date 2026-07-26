@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.API.V2.AddressController do
   use BlockScoutWeb, :controller
   use Utils.CompileTimeEnvHelper, chain_identity: [:explorer, :chain_identity], chain_type: [:explorer, :chain_type]
@@ -27,7 +28,14 @@ defmodule BlockScoutWeb.API.V2.AddressController do
 
   import Explorer.Helper, only: [safe_parse_non_negative_integer: 1]
 
-  import Explorer.MicroserviceInterfaces.BENS, only: [maybe_preload_ens: 1, maybe_preload_ens_to_address: 1]
+  import Explorer.MicroserviceInterfaces.BENS,
+    only: [
+      maybe_preload_ens: 1,
+      maybe_preload_ens_for_token_transfers: 1,
+      maybe_preload_ens_for_transactions: 1,
+      maybe_preload_ens_to_address: 1
+    ]
+
   import Explorer.MicroserviceInterfaces.Metadata, only: [maybe_preload_metadata: 1]
   import Explorer.Chain.Address.Reputation, only: [reputation_association: 0]
 
@@ -46,6 +54,7 @@ defmodule BlockScoutWeb.API.V2.AddressController do
   alias Explorer.Chain.{Address, Beacon.Deposit, Block, Hash, Token, Transaction}
   alias Explorer.Chain.Address.{CoinBalance, Counters}
 
+  alias Explorer.Chain.Token.FiatValue
   alias Explorer.Chain.Token.Instance
   alias Explorer.SmartContract.Helper, as: SmartContractHelper
 
@@ -65,19 +74,6 @@ defmodule BlockScoutWeb.API.V2.AddressController do
     _ ->
       @chain_type_transaction_necessity_by_association %{}
   end
-
-  @transaction_necessity_by_association [
-    necessity_by_association:
-      %{
-        [created_contract_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()]] =>
-          :optional,
-        [from_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()]] => :optional,
-        [to_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()]] => :optional,
-        :block => :optional
-      }
-      |> Map.merge(@chain_type_transaction_necessity_by_association),
-    api?: true
-  ]
 
   @token_transfer_necessity_by_association [
     necessity_by_association: %{
@@ -158,8 +154,8 @@ defmodule BlockScoutWeb.API.V2.AddressController do
   defp contract_address_preloads do
     chain_type_associations =
       case chain_type() do
-        :filecoin -> Address.contract_creation_transaction_with_from_address_associations()
-        _ -> Address.contract_creation_transaction_associations()
+        :filecoin -> [Address.contract_creation_transaction_with_from_address_association()]
+        _ -> [Address.contract_creation_transaction_association()]
       end
 
     [:smart_contract | chain_type_associations]
@@ -406,7 +402,8 @@ defmodule BlockScoutWeb.API.V2.AddressController do
       case Chain.hash_to_address(address_hash, @address_options) do
         {:ok, _address} ->
           options =
-            @transaction_necessity_by_association
+            [necessity_by_association: address_transactions_necessity_by_association()]
+            |> Keyword.merge(@api_true)
             |> Keyword.merge(paging_options(params))
             |> Keyword.merge(current_filter(params))
             |> Keyword.merge(address_transactions_sorting(params))
@@ -427,7 +424,7 @@ defmodule BlockScoutWeb.API.V2.AddressController do
           |> put_status(200)
           |> put_view(TransactionView)
           |> render(:transactions, %{
-            transactions: transactions |> maybe_preload_ens() |> maybe_preload_metadata(),
+            transactions: transactions |> maybe_preload_ens_for_transactions() |> maybe_preload_metadata(),
             next_page_params: next_page_params
           })
 
@@ -441,6 +438,34 @@ defmodule BlockScoutWeb.API.V2.AddressController do
           })
       end
     end
+  end
+
+  defp address_transactions_necessity_by_association do
+    %{
+      [
+        created_contract_address: [
+          :scam_badge,
+          :names,
+          proxy_implementations_association()
+        ]
+      ] => :optional,
+      [
+        from_address: [
+          :scam_badge,
+          :names,
+          proxy_implementations_association()
+        ]
+      ] => :optional,
+      [
+        to_address: [
+          :scam_badge,
+          :names,
+          proxy_implementations_association()
+        ]
+      ] => :optional,
+      :block => :optional
+    }
+    |> Map.merge(@chain_type_transaction_necessity_by_association)
   end
 
   operation :token_transfers,
@@ -527,7 +552,10 @@ defmodule BlockScoutWeb.API.V2.AddressController do
           |> put_view(TransactionView)
           |> render(:token_transfers, %{
             token_transfers:
-              token_transfers |> Instance.preload_nft(@api_true) |> maybe_preload_ens() |> maybe_preload_metadata(),
+              token_transfers
+              |> Instance.preload_nft(@api_true)
+              |> maybe_preload_ens_for_token_transfers()
+              |> maybe_preload_metadata(),
             next_page_params: next_page_params
           })
 
@@ -588,13 +616,11 @@ defmodule BlockScoutWeb.API.V2.AddressController do
         {:ok, _address} ->
           full_options =
             [
-              necessity_by_association: %{
-                [created_contract_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()]] =>
-                  :optional,
-                [from_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()]] =>
-                  :optional,
-                [to_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()]] => :optional
-              }
+              address_preloads: [
+                created_contract_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()],
+                from_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()],
+                to_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()]
+              ]
             ]
             |> Keyword.merge(paging_options(params))
             |> Keyword.merge(current_filter(params))
@@ -1036,22 +1062,7 @@ defmodule BlockScoutWeb.API.V2.AddressController do
         {"List of native coin holders with their balances, with pagination.", "application/json",
          SchemasHelper.extend_schema(
            paginated_response(
-             items:
-               Schemas.Address.schema()
-               |> SchemasHelper.extend_schema(
-                 properties: %{
-                   coin_balance: Schemas.General.IntegerStringNullable,
-                   transactions_count: %Schema{
-                     anyOf: [
-                       Schemas.General.IntegerString,
-                       # TODO: replace empty string with null?
-                       Schemas.General.EmptyString
-                     ],
-                     nullable: true
-                   }
-                 },
-                 required: [:coin_balance, :transactions_count]
-               ),
+             items: Schemas.Address.TopAddress,
              next_page_params_example: %{
                "fetched_coin_balance" => "124355417998347240251800",
                "hash" => "0x59708733fbbf64378d9293ec56b977c011a08fd2",
@@ -1410,26 +1421,15 @@ defmodule BlockScoutWeb.API.V2.AddressController do
 
   @spec celo_election_rewards_paging_options(map()) :: PagingOptions.t()
   defp celo_election_rewards_paging_options(params) do
-    with %{
-           epoch_number: epoch_number_string,
-           amount: amount_string,
-           associated_account_address_hash: associated_account_address_hash_string,
-           type: type_string
-         }
-         when is_binary(epoch_number_string) and
-                is_binary(amount_string) and
-                is_binary(associated_account_address_hash_string) and
-                is_binary(type_string) <- params,
-         {:ok, epoch_number} <- safe_parse_non_negative_integer(epoch_number_string),
-         {amount, ""} <- Decimal.parse(amount_string),
-         {:ok, associated_account_address_hash} <-
-           Hash.Address.cast(associated_account_address_hash_string),
-         sanitized_type_string <-
-           type_string
-           |> String.trim()
-           |> String.downcase()
-           |> String.replace("-", "_"),
-         {:ok, type} <- CeloElectionReward.type_from_string(sanitized_type_string) do
+    with {:ok, epoch_number_string} <- fetch_key(params, ["epoch_number", :epoch_number]),
+         {:ok, amount_string} <- fetch_key(params, ["amount", :amount]),
+         {:ok, associated_account_address_hash_string} <-
+           fetch_key(params, ["associated_account_address_hash", :associated_account_address_hash]),
+         {:ok, type_string} <- fetch_key(params, ["type", :type]),
+         {:ok, epoch_number} <- parse_non_negative_integer_string(epoch_number_string),
+         {:ok, amount} <- FiatValue.cast(amount_string),
+         {:ok, associated_account_address_hash} <- Hash.Address.cast(associated_account_address_hash_string),
+         {:ok, type} <- parse_celo_reward_type_string(type_string) do
       %{
         PagingOptions.default_paging_options()
         | key: %{
@@ -1444,6 +1444,36 @@ defmodule BlockScoutWeb.API.V2.AddressController do
         PagingOptions.default_paging_options()
     end
   end
+
+  defp fetch_key(map, keys) when is_list(keys) do
+    Enum.find_value(keys, :error, fn key ->
+      case Map.fetch(map, key) do
+        {:ok, value} -> {:ok, value}
+        :error -> nil
+      end
+    end)
+  end
+
+  @spec parse_non_negative_integer_string(String.t()) :: {:ok, non_neg_integer()} | :error
+  defp parse_non_negative_integer_string(value) when is_binary(value),
+    do: safe_parse_non_negative_integer(value)
+
+  defp parse_non_negative_integer_string(_), do: :error
+
+  @spec parse_celo_reward_type_string(String.t() | atom()) :: {:ok, CeloElectionReward.type()} | :error
+  defp parse_celo_reward_type_string(value) when is_atom(value) do
+    if value in CeloElectionReward.types(), do: {:ok, value}, else: :error
+  end
+
+  defp parse_celo_reward_type_string(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> String.downcase()
+    |> String.replace("-", "_")
+    |> CeloElectionReward.type_from_string()
+  end
+
+  defp parse_celo_reward_type_string(_), do: :error
 
   operation :beacon_deposits,
     summary: "List Beacon Deposits for a specific address",

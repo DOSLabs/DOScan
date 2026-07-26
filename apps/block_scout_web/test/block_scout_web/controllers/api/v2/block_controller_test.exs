@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.API.V2.BlockControllerTest do
   use BlockScoutWeb.ConnCase
   use Utils.CompileTimeEnvHelper, chain_type: [:explorer, :chain_type]
 
   alias Explorer.Chain.{Address, Block, InternalTransaction, Transaction, Withdrawal}
   alias Explorer.Chain.Beacon.Deposit, as: BeaconDeposit
+  alias Explorer.Chain.Cache.{BlockNumber, Counters.AverageBlockTime}
 
   setup do
     Supervisor.terminate_child(Explorer.Supervisor, Explorer.Chain.Cache.Blocks.child_id())
@@ -207,6 +209,62 @@ defmodule BlockScoutWeb.API.V2.BlockControllerTest do
       assert response_2nd_page = json_response(request_2nd_page, 200)
 
       check_paginated_response(response, response_2nd_page, uncles)
+    end
+
+    test "return 422 on invalid type", %{conn: conn} do
+      request = get(conn, "/api/v2/blocks", %{"type" => "bogus"})
+
+      assert %{
+               "errors" => [
+                 %{
+                   "source" => %{"pointer" => "/type"},
+                   "title" => "Invalid value"
+                 }
+                 | _
+               ]
+             } = json_response(request, 422)
+    end
+  end
+
+  describe "/blocks/{block_number}/countdown" do
+    setup do
+      average_block_time_config = Application.get_env(:explorer, AverageBlockTime)
+
+      start_supervised!(AverageBlockTime)
+      Application.put_env(:explorer, AverageBlockTime, enabled: true, cache_period: 1_800_000)
+
+      Supervisor.terminate_child(Explorer.Supervisor, BlockNumber.child_id())
+      Supervisor.restart_child(Explorer.Supervisor, BlockNumber.child_id())
+
+      on_exit(fn ->
+        Application.put_env(:explorer, AverageBlockTime, average_block_time_config)
+      end)
+    end
+
+    test "returns countdown information for a future block", %{conn: conn} do
+      current_block_number = 110
+      target_block_number = 120
+      average_block_time = 15
+      first_timestamp = Timex.now()
+
+      for number <- 1..current_block_number do
+        insert(:block,
+          number: number,
+          timestamp: Timex.shift(first_timestamp, seconds: number * average_block_time),
+          consensus: true
+        )
+      end
+
+      AverageBlockTime.refresh()
+
+      request = get(conn, "/api/v2/blocks/#{target_block_number}/countdown")
+
+      assert %{
+               "current_block_number" => current_block_number,
+               "countdown_block_number" => target_block_number,
+               "remaining_blocks_count" => 10,
+               "estimated_time_in_seconds" => "150.0"
+             } == json_response(request, 200)
     end
   end
 
@@ -878,8 +936,7 @@ defmodule BlockScoutWeb.API.V2.BlockControllerTest do
         transaction: transaction,
         index: 0,
         block_number: transaction.block_number,
-        transaction_index: transaction.index,
-        block_hash: transaction.block_hash
+        transaction_index: transaction.index
       )
 
       internal_transactions =
@@ -894,10 +951,10 @@ defmodule BlockScoutWeb.API.V2.BlockControllerTest do
             transaction: transaction,
             index: index,
             block_number: transaction.block_number,
-            transaction_index: transaction.index,
-            block_hash: transaction.block_hash
+            transaction_index: transaction.index
           )
         end)
+        |> InternalTransaction.preload_addresses()
 
       request = get(conn, "/api/v2/blocks/#{block.hash}/internal-transactions")
       assert response = json_response(request, 200)
@@ -1006,7 +1063,7 @@ defmodule BlockScoutWeb.API.V2.BlockControllerTest do
     assert internal_transaction.block_number == json["block_number"]
     assert to_string(internal_transaction.gas) == json["gas_limit"]
     assert internal_transaction.index == json["index"]
-    assert to_string(internal_transaction.transaction_hash) == json["transaction_hash"]
+    assert to_string(internal_transaction.transaction.hash) == json["transaction_hash"]
     assert Address.checksum(internal_transaction.from_address_hash) == json["from"]["hash"]
     assert Address.checksum(internal_transaction.to_address_hash) == json["to"]["hash"]
   end
@@ -1059,5 +1116,54 @@ defmodule BlockScoutWeb.API.V2.BlockControllerTest do
     assert Enum.count(second_page_resp["items"]) == 1
     assert second_page_resp["next_page_params"] == nil
     compare_item(Enum.at(list, 0), Enum.at(second_page_resp["items"], 0))
+  end
+
+  if @chain_type == :arbitrum do
+    describe "/blocks/arbitrum-batch/:batch_number_param" do
+      test "returns empty list when batch has no blocks", %{conn: conn} do
+        batch = insert(:arbitrum_l1_batch)
+
+        request = get(conn, "/api/v2/blocks/arbitrum-batch/#{batch.number}")
+        assert response = json_response(request, 200)
+        assert response["items"] == []
+        assert response["next_page_params"] == nil
+      end
+
+      test "returns blocks in the batch", %{conn: conn} do
+        batch = insert(:arbitrum_l1_batch)
+        block = insert(:block, consensus: true)
+
+        insert(:arbitrum_batch_block, batch_number: batch.number, block_number: block.number)
+
+        request = get(conn, "/api/v2/blocks/arbitrum-batch/#{batch.number}")
+        assert response = json_response(request, 200)
+        assert length(response["items"]) == 1
+        assert hd(response["items"])["height"] == block.number
+      end
+
+      test "can paginate blocks in Arbitrum batch", %{conn: conn} do
+        batch = insert(:arbitrum_l1_batch)
+        blocks = insert_list(51, :block, consensus: true)
+
+        Enum.each(blocks, fn block ->
+          insert(:arbitrum_batch_block, batch_number: batch.number, block_number: block.number)
+        end)
+
+        request = get(conn, "/api/v2/blocks/arbitrum-batch/#{batch.number}")
+        assert response = json_response(request, 200)
+
+        request_2nd_page =
+          get(conn, "/api/v2/blocks/arbitrum-batch/#{batch.number}", response["next_page_params"])
+
+        assert response_2nd_page = json_response(request_2nd_page, 200)
+
+        check_paginated_response(response, response_2nd_page, blocks)
+      end
+
+      test "returns 422 for non-integer batch_number_param", %{conn: conn} do
+        request = get(conn, "/api/v2/blocks/arbitrum-batch/invalid")
+        assert %{"errors" => [_]} = json_response(request, 422)
+      end
+    end
   end
 end

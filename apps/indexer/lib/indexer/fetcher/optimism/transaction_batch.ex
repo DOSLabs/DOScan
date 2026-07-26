@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Indexer.Fetcher.Optimism.TransactionBatch do
   @moduledoc """
     Fills op_transaction_batches, op_frame_sequence, and op_frame_sequence_blobs DB tables.
@@ -32,13 +33,14 @@ defmodule Indexer.Fetcher.Optimism.TransactionBatch do
   alias EthereumJSONRPC.Block.ByHash
   alias EthereumJSONRPC.{Blocks, Contract}
   alias Explorer.{Chain, Repo}
-  alias Explorer.Chain.{Block, Hash, RollupReorgMonitorQueue}
+  alias Explorer.Chain.{Block, Hash}
   alias Explorer.Chain.Events.Publisher
   alias Explorer.Chain.Optimism.{FrameSequence, FrameSequenceBlob}
   alias Explorer.Chain.Optimism.TransactionBatch, as: OptimismTransactionBatch
   alias Indexer.Fetcher.{Optimism, RollupL1ReorgMonitor}
   alias Indexer.Helper
   alias Indexer.Prometheus.Instrumenter
+  alias Indexer.RollupReorgMonitorQueue
   alias Varint.LEB128
 
   @fetcher_name :optimism_transaction_batches
@@ -335,7 +337,7 @@ defmodule Indexer.Fetcher.Optimism.TransactionBatch do
             {incomplete_channels_acc, nil}
           end
 
-        reorg_block = RollupReorgMonitorQueue.reorg_block_pop(__MODULE__)
+        reorg_block = RollupReorgMonitorQueue.pop(__MODULE__)
 
         if !is_nil(reorg_block) && reorg_block > 0 do
           new_incomplete_channels = handle_l1_reorg(reorg_block, new_incomplete_channels)
@@ -585,44 +587,51 @@ defmodule Indexer.Fetcher.Optimism.TransactionBatch do
        ) do
     blob_versioned_hashes
     |> Enum.reduce([], fn blob_hash, inputs_acc ->
-      with {:ok, response} <- Helper.http_get_request(blobs_api_url <> "/" <> blob_hash),
-           blob_data = Map.get(response, "blob_data"),
-           false <- is_nil(blob_data) do
-        # read the data from Blockscout API
-        decoded =
-          blob_data
-          |> hash_to_binary()
-          |> OptimismTransactionBatch.decode_eip4844_blob()
-
-        if is_nil(decoded) do
-          Logger.warning("Cannot decode the blob #{blob_hash} taken from the Blockscout Blobs API.")
-
-          inputs_acc
-        else
-          Logger.info(
-            "The input for transaction #{transaction_hash} is taken from the Blockscout Blobs API. Blob hash: #{blob_hash}"
-          )
-
-          input = %{
-            bytes: decoded,
-            eip4844_blob_hash: blob_hash
-          }
-
-          [input | inputs_acc]
-        end
-      else
-        _ ->
-          # read the data from the fallback source (beacon node)
-          eip4844_blobs_to_inputs_from_fallback(
-            transaction_hash,
-            blob_hash,
-            block_timestamp,
-            inputs_acc,
-            chain_id_l1
-          )
-      end
+      process_blob(blob_hash, transaction_hash, block_timestamp, inputs_acc, blobs_api_url, chain_id_l1)
     end)
     |> Enum.reverse()
+  end
+
+  defp process_blob(blob_hash, transaction_hash, block_timestamp, inputs_acc, blobs_api_url, chain_id_l1) do
+    with {:ok, response} <- Helper.http_get_request(blobs_api_url <> "/" <> blob_hash),
+         blob_data = Map.get(response, "blob_data"),
+         false <- is_nil(blob_data) do
+      decode_and_process_blob(blob_data, blob_hash, transaction_hash, inputs_acc)
+    else
+      _ ->
+        # read the data from the fallback source (beacon node)
+        eip4844_blobs_to_inputs_from_fallback(
+          transaction_hash,
+          blob_hash,
+          block_timestamp,
+          inputs_acc,
+          chain_id_l1
+        )
+    end
+  end
+
+  defp decode_and_process_blob(blob_data, blob_hash, transaction_hash, inputs_acc) do
+    # read the data from Blockscout API
+    decoded =
+      blob_data
+      |> hash_to_binary()
+      |> OptimismTransactionBatch.decode_eip4844_blob()
+
+    if is_nil(decoded) do
+      Logger.warning("Cannot decode the blob #{blob_hash} taken from the Blockscout Blobs API.")
+      inputs_acc
+    else
+      Logger.info(
+        "The input for transaction #{transaction_hash} is taken from the Blockscout Blobs API. Blob hash: #{blob_hash}"
+      )
+
+      input = %{
+        bytes: decoded,
+        eip4844_blob_hash: blob_hash
+      }
+
+      [input | inputs_acc]
+    end
   end
 
   defp eip4844_blobs_to_inputs_from_fallback(

@@ -1,5 +1,8 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.GraphQL.Schema.Query.TransactionTest do
   use BlockScoutWeb.ConnCase
+
+  alias Explorer.Chain.InternalTransaction
 
   describe "transaction field" do
     test "with valid argument 'hash', returns all expected fields", %{conn: conn} do
@@ -135,15 +138,16 @@ defmodule BlockScoutWeb.GraphQL.Schema.Query.TransactionTest do
         transaction_index: transaction.index,
         index: 0,
         from_address: address,
+        created_contract_code: contract_address.contract_code,
+        created_contract_address: contract_address,
         call_type: :call,
-        block_hash: transaction.block_hash,
         block_number: transaction.block_number
       }
 
       internal_transaction =
         :internal_transaction_create
         |> insert(internal_transaction_attributes)
-        |> with_contract_creation(contract_address)
+        |> InternalTransaction.preload_addresses()
 
       query = """
       query ($hash: FullHash!, $first: Int!) {
@@ -208,7 +212,7 @@ defmodule BlockScoutWeb.GraphQL.Schema.Query.TransactionTest do
                              to_string(internal_transaction.created_contract_address_hash),
                            "from_address_hash" => to_string(internal_transaction.from_address_hash),
                            "to_address_hash" => nil,
-                           "transaction_hash" => to_string(internal_transaction.transaction_hash)
+                           "transaction_hash" => to_string(internal_transaction.transaction.hash)
                          }
                        }
                      ]
@@ -268,7 +272,6 @@ defmodule BlockScoutWeb.GraphQL.Schema.Query.TransactionTest do
         transaction: transaction,
         transaction_index: transaction.index,
         index: 2,
-        block_hash: transaction.block_hash,
         block_number: transaction.block_number
       )
 
@@ -276,7 +279,6 @@ defmodule BlockScoutWeb.GraphQL.Schema.Query.TransactionTest do
         transaction: transaction,
         transaction_index: transaction.index,
         index: 0,
-        block_hash: transaction.block_hash,
         block_number: transaction.block_number
       )
 
@@ -284,7 +286,6 @@ defmodule BlockScoutWeb.GraphQL.Schema.Query.TransactionTest do
         transaction: transaction,
         transaction_index: transaction.index,
         index: 1,
-        block_hash: transaction.block_hash,
         block_number: transaction.block_number
       )
 
@@ -399,7 +400,6 @@ defmodule BlockScoutWeb.GraphQL.Schema.Query.TransactionTest do
         transaction: transaction,
         transaction_index: transaction.index,
         index: 2,
-        block_hash: transaction.block_hash,
         block_number: transaction.block_number
       )
 
@@ -407,7 +407,6 @@ defmodule BlockScoutWeb.GraphQL.Schema.Query.TransactionTest do
         transaction: transaction,
         transaction_index: transaction.index,
         index: 0,
-        block_hash: transaction.block_hash,
         block_number: transaction.block_number
       )
 
@@ -415,7 +414,6 @@ defmodule BlockScoutWeb.GraphQL.Schema.Query.TransactionTest do
         transaction: transaction,
         transaction_index: transaction.index,
         index: 1,
-        block_hash: transaction.block_hash,
         block_number: transaction.block_number
       )
 
@@ -457,7 +455,6 @@ defmodule BlockScoutWeb.GraphQL.Schema.Query.TransactionTest do
           transaction: transaction,
           transaction_index: transaction.index,
           index: index,
-          block_hash: transaction.block_hash,
           block_number: transaction.block_number
         )
       end

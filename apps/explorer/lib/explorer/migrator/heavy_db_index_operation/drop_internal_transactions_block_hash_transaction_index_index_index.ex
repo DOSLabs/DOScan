@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Explorer.Migrator.HeavyDbIndexOperation.DropInternalTransactionsBlockHashTransactionIndexIndexIndex do
   @moduledoc """
   Drops index "internal_transactions_block_hash_transaction_index_index_index" btree (block_hash, transaction_index, index).
@@ -11,6 +12,7 @@ defmodule Explorer.Migrator.HeavyDbIndexOperation.DropInternalTransactionsBlockH
     MigrationStatus
   }
 
+  alias Explorer.Migrator.HeavyDbIndexOperation.DropInternalTransactionsCreatedContractAddressHashPartialIndex
   alias Explorer.Migrator.HeavyDbIndexOperation.Helper, as: HeavyDbIndexOperationHelper
 
   @table_name :internal_transactions
@@ -29,7 +31,8 @@ defmodule Explorer.Migrator.HeavyDbIndexOperation.DropInternalTransactionsBlockH
   @impl HeavyDbIndexOperation
   def dependent_from_migrations do
     [
-      EmptyInternalTransactionsData.migration_name()
+      EmptyInternalTransactionsData.migration_name(),
+      DropInternalTransactionsCreatedContractAddressHashPartialIndex.migration_name()
     ]
   end
 

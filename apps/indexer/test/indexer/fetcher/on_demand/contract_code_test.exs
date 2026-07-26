@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Indexer.Fetcher.OnDemand.ContractCodeTest do
   use EthereumJSONRPC.Case, async: false
   use Explorer.DataCase
@@ -86,7 +87,15 @@ defmodule Indexer.Fetcher.OnDemand.ContractCodeTest do
       address = assert(Repo.get(Address, address_hash))
       assert is_nil(address.contract_code)
 
-      attempts = Repo.get(AddressContractCodeFetchAttempt, address_hash)
+      attempts =
+        wait_for_results(fn ->
+          Repo.one!(
+            from(attempt in AddressContractCodeFetchAttempt,
+              where: attempt.address_hash == ^address_hash and attempt.retries_number == 1
+            )
+          )
+        end)
+
       assert attempts.retries_number == 1
 
       refute_receive({:chain_event, :fetched_bytecode, :on_demand, [^address_hash, "0x"]})
@@ -110,7 +119,15 @@ defmodule Indexer.Fetcher.OnDemand.ContractCodeTest do
       address = assert(Repo.get(Address, address_hash))
       assert is_nil(address.contract_code)
 
-      attempts = Repo.get(AddressContractCodeFetchAttempt, address_hash)
+      attempts =
+        wait_for_results(fn ->
+          Repo.one!(
+            from(attempt in AddressContractCodeFetchAttempt,
+              where: attempt.address_hash == ^address_hash and attempt.retries_number == 1
+            )
+          )
+        end)
+
       assert attempts.retries_number == 1
 
       refute_receive({:chain_event, :fetched_bytecode, :on_demand, [^address_hash, "0x"]})
@@ -127,7 +144,16 @@ defmodule Indexer.Fetcher.OnDemand.ContractCodeTest do
       address = assert(Repo.get(Address, address_hash))
       assert is_nil(address.contract_code)
 
-      refute is_nil(Repo.get(AddressContractCodeFetchAttempt, address_hash))
+      attempts =
+        wait_for_results(fn ->
+          Repo.one!(
+            from(attempt in AddressContractCodeFetchAttempt,
+              where: attempt.address_hash == ^address_hash and attempt.retries_number == 1
+            )
+          )
+        end)
+
+      assert attempts.retries_number == 1
 
       refute_receive({:chain_event, :fetched_bytecode, :on_demand, [^address_hash, ^contract_code]})
 

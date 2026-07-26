@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.API.V2.BlockController do
   use BlockScoutWeb, :controller
 
@@ -12,7 +13,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
       next_page_params: 3,
       next_page_params: 5,
       paging_options: 1,
-      param_to_block_number: 1,
+      param_to_block_number: 2,
       put_key_value_to_paging_options: 3,
       split_list_by_page: 1,
       parse_block_hash_or_number_param: 1,
@@ -27,7 +28,9 @@ defmodule BlockScoutWeb.API.V2.BlockController do
       internal_transaction_call_type_options: 1
     ]
 
-  import Explorer.MicroserviceInterfaces.BENS, only: [maybe_preload_ens: 1]
+  import Explorer.MicroserviceInterfaces.BENS,
+    only: [maybe_preload_ens: 1, maybe_preload_ens_for_blocks: 1, maybe_preload_ens_for_transactions: 1]
+
   import Explorer.MicroserviceInterfaces.Metadata, only: [maybe_preload_metadata: 1]
   import Explorer.Chain.Address.Reputation, only: [reputation_association: 0]
 
@@ -101,25 +104,12 @@ defmodule BlockScoutWeb.API.V2.BlockController do
       @chain_type_block_necessity_by_association %{}
   end
 
-  @transaction_necessity_by_association [
-    necessity_by_association:
-      %{
-        [created_contract_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()]] =>
-          :optional,
-        [from_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()]] => :optional,
-        [to_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()]] => :optional,
-        :block => :optional
-      }
-      |> Map.merge(@chain_type_transaction_necessity_by_association)
-  ]
-
-  @internal_transaction_necessity_by_association [
-    necessity_by_association: %{
-      [created_contract_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()]] =>
-        :optional,
-      [from_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()]] => :optional,
-      [to_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()]] => :optional
-    }
+  @internal_transaction_address_preloads [
+    address_preloads: [
+      created_contract_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()],
+      from_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()],
+      to_address: [:scam_badge, :names, :smart_contract, proxy_implementations_association()]
+    ]
   ]
 
   @api_true [api?: true]
@@ -187,7 +177,18 @@ defmodule BlockScoutWeb.API.V2.BlockController do
 
   operation :blocks,
     summary: "List blocks with optional filtering by block type",
-    description: "Retrieves a paginated list of blocks with optional filtering by block type.",
+    description: """
+    Retrieves a paginated list of blocks ordered by descending block number.
+
+    When the `type` query parameter is omitted, only main-chain consensus blocks
+    (equivalent to `type=block`) are returned. Use `type=uncle` to list ommer
+    blocks (valid but not in the main chain) and `type=reorg` to list blocks
+    that lost consensus during a chain reorganization.
+
+    Pagination is cursor-based: the response contains `next_page_params` with
+    `block_number` and `items_count` — pass these back as query parameters on
+    the next request to fetch the following page.
+    """,
     parameters:
       base_params() ++
         [block_type_param()] ++
@@ -201,7 +202,8 @@ defmodule BlockScoutWeb.API.V2.BlockController do
              "block_number" => 22_566_361,
              "items_count" => 50
            }
-         )}
+         )},
+      unprocessable_entity: JsonErrorResponse.response()
     ]
 
   @doc """
@@ -224,7 +226,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
     conn
     |> put_status(200)
     |> render(:blocks, %{
-      blocks: blocks |> maybe_preload_ens() |> maybe_preload_metadata(),
+      blocks: blocks |> maybe_preload_ens_for_blocks() |> maybe_preload_metadata(),
       next_page_params: next_page_params
     })
   end
@@ -271,7 +273,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
     conn
     |> put_status(200)
     |> render(:blocks, %{
-      blocks: blocks |> maybe_preload_ens() |> maybe_preload_metadata(),
+      blocks: blocks |> maybe_preload_ens_for_blocks() |> maybe_preload_metadata(),
       next_page_params: next_page_params
     })
   end
@@ -319,7 +321,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
     conn
     |> put_status(200)
     |> render(:blocks, %{
-      blocks: blocks |> maybe_preload_ens() |> maybe_preload_metadata(),
+      blocks: blocks |> maybe_preload_ens_for_blocks() |> maybe_preload_metadata(),
       next_page_params: next_page_params
     })
   end
@@ -367,7 +369,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
     conn
     |> put_status(200)
     |> render(:blocks, %{
-      blocks: blocks |> maybe_preload_ens() |> maybe_preload_metadata(),
+      blocks: blocks |> maybe_preload_ens_for_blocks() |> maybe_preload_metadata(),
       next_page_params: next_page_params
     })
   end
@@ -404,7 +406,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
   def transactions(conn, %{block_hash_or_number_param: block_hash_or_number} = params) do
     with {:ok, block} <- block_param_to_block(block_hash_or_number) do
       full_options =
-        @transaction_necessity_by_association
+        transaction_necessity_by_association()
         |> Keyword.merge(put_key_value_to_paging_options(paging_options(params), :is_index_in_asc_order, true))
         |> Keyword.merge(type_filter_options(params))
         |> Keyword.merge(@api_true)
@@ -421,7 +423,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
       |> put_status(200)
       |> put_view(TransactionView)
       |> render(:transactions, %{
-        transactions: transactions |> maybe_preload_ens() |> maybe_preload_metadata(),
+        transactions: transactions |> maybe_preload_ens_for_transactions() |> maybe_preload_metadata(),
         next_page_params: next_page_params
       })
     end
@@ -464,7 +466,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
   def internal_transactions(conn, %{block_hash_or_number_param: block_hash_or_number} = params) do
     with {:ok, block} <- block_param_to_block(block_hash_or_number) do
       full_options =
-        @internal_transaction_necessity_by_association
+        @internal_transaction_address_preloads
         |> Keyword.merge(paging_options(params))
         |> Keyword.merge(@api_true)
         |> Keyword.merge(internal_transaction_type_options(params))
@@ -580,7 +582,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
           | {:average_block_time, {:error, :disabled}}
           | {:remaining_blocks, 0}
   def block_countdown(conn, %{block_number_param: block_number}) do
-    with {:format, {:ok, target_block_number}} <- {:format, param_to_block_number(block_number)},
+    with {:format, {:ok, target_block_number}} <- {:format, param_to_block_number(block_number, false)},
          {:max_block, current_block_number} when not is_nil(current_block_number) <-
            {:max_block, BlockNumber.get_max()},
          {:average_block_time, average_block_time} when is_struct(average_block_time) <-
@@ -684,6 +686,39 @@ defmodule BlockScoutWeb.API.V2.BlockController do
         next_page_params: next_page_params
       })
     end
+  end
+
+  defp transaction_necessity_by_association do
+    [
+      necessity_by_association:
+        Map.merge(
+          %{
+            [
+              created_contract_address: [
+                :scam_badge,
+                :names,
+                proxy_implementations_association()
+              ]
+            ] => :optional,
+            [
+              from_address: [
+                :scam_badge,
+                :names,
+                proxy_implementations_association()
+              ]
+            ] => :optional,
+            [
+              to_address: [
+                :scam_badge,
+                :names,
+                proxy_implementations_association()
+              ]
+            ] => :optional,
+            :block => :optional
+          },
+          @chain_type_transaction_necessity_by_association
+        )
+    ]
   end
 
   defp block_param_to_block(block_hash_or_number, options \\ @api_true) do

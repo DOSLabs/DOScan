@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.API.V2.InternalTransactionControllerTest do
   use BlockScoutWeb.ConnCase
 
@@ -31,7 +32,6 @@ defmodule BlockScoutWeb.API.V2.InternalTransactionControllerTest do
         transaction: tx,
         transaction_index: 0,
         block_number: tx.block_number,
-        block_hash: tx.block_hash,
         index: 1
       )
 
@@ -50,7 +50,6 @@ defmodule BlockScoutWeb.API.V2.InternalTransactionControllerTest do
           transaction: transaction,
           transaction_index: 0,
           block_number: transaction.block_number,
-          block_hash: transaction.block_hash,
           index: 1
         )
 
@@ -62,12 +61,11 @@ defmodule BlockScoutWeb.API.V2.InternalTransactionControllerTest do
             transaction: transaction_2,
             transaction_index: 0,
             block_number: transaction_2.block_number,
-            block_hash: transaction_2.block_hash,
             index: i
           )
         end
 
-      internal_transactions = [internal_transaction | internal_transactions]
+      internal_transactions = InternalTransaction.preload_addresses([internal_transaction | internal_transactions])
 
       request = get(conn, "/api/v2/internal-transactions")
       assert response = json_response(request, 200)
@@ -89,7 +87,6 @@ defmodule BlockScoutWeb.API.V2.InternalTransactionControllerTest do
         transaction: tx,
         transaction_index: 0,
         block_number: tx.block_number,
-        block_hash: tx.block_hash,
         index: 0,
         type: :call
       )
@@ -100,7 +97,6 @@ defmodule BlockScoutWeb.API.V2.InternalTransactionControllerTest do
           transaction: tx,
           transaction_index: 0,
           block_number: tx.block_number,
-          block_hash: tx.block_hash,
           index: 1,
           type: :call
         )
@@ -111,7 +107,6 @@ defmodule BlockScoutWeb.API.V2.InternalTransactionControllerTest do
           transaction: tx,
           transaction_index: 0,
           block_number: tx.block_number,
-          block_hash: tx.block_hash,
           index: 2,
           type: :call
         )
@@ -140,7 +135,6 @@ defmodule BlockScoutWeb.API.V2.InternalTransactionControllerTest do
         transaction: tx,
         transaction_index: 0,
         block_number: tx.block_number,
-        block_hash: tx.block_hash,
         index: 0,
         type: :call
       )
@@ -151,7 +145,6 @@ defmodule BlockScoutWeb.API.V2.InternalTransactionControllerTest do
           transaction: tx,
           transaction_index: 0,
           block_number: tx.block_number,
-          block_hash: tx.block_hash,
           index: i,
           type: :call
         )
@@ -180,7 +173,7 @@ defmodule BlockScoutWeb.API.V2.InternalTransactionControllerTest do
   defp compare_item(%InternalTransaction{} = internal_transaction, json) do
     assert Address.checksum(internal_transaction.from_address_hash) == json["from"]["hash"]
     assert Address.checksum(internal_transaction.to_address_hash) == json["to"]["hash"]
-    assert to_string(internal_transaction.transaction_hash) == json["transaction_hash"]
+    assert to_string(internal_transaction.transaction.hash) == json["transaction_hash"]
     assert internal_transaction.block_number == json["block_number"]
     assert internal_transaction.transaction_index == json["transaction_index"]
     assert internal_transaction.index == json["index"]

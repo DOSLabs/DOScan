@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Explorer.Chain.Transaction.StateChange do
   @moduledoc """
     Helper functions and struct for storing state changes
@@ -7,7 +8,18 @@ defmodule Explorer.Chain.Transaction.StateChange do
     miner_gets_burnt_fees?: [:explorer, [Explorer.Chain.Transaction, :block_miner_gets_burnt_fees?]]
 
   alias Explorer.Chain
-  alias Explorer.Chain.{Address, Block, Hash, InternalTransaction, TokenTransfer, Transaction, Wei}
+
+  alias Explorer.Chain.{
+    Address,
+    Block,
+    DenormalizationHelper,
+    Hash,
+    InternalTransaction,
+    TokenTransfer,
+    Transaction,
+    Wei
+  }
+
   alias Explorer.Chain.Transaction.StateChange
 
   defstruct [:coin_or_token_transfers, :address, :token_id, :balance_before, :balance_after, :balance_diff, :miner?]
@@ -101,8 +113,15 @@ defmodule Explorer.Chain.Transaction.StateChange do
   end
 
   defp token_transfers_balances_reducer(transfer, state_balances_map, include_transfers) do
+    token_type =
+      if DenormalizationHelper.tt_denormalization_finished?() do
+        transfer.token_type
+      else
+        transfer.token && transfer.token.type
+      end
+
     # Skip ERC-7984 (confidential) transfers - we can't track encrypted balances
-    if transfer.token && transfer.token.type == "ERC-7984" do
+    if token_type == "ERC-7984" do
       state_balances_map
     else
       from = transfer.from_address
@@ -148,7 +167,14 @@ defmodule Explorer.Chain.Transaction.StateChange do
   end
 
   defp do_update_balance(old_val, type, transfer, _) do
-    token_ids = if transfer.token.type == "ERC-1155", do: transfer.token_ids, else: [nil]
+    token_type =
+      if DenormalizationHelper.tt_denormalization_finished?() do
+        transfer.token_type
+      else
+        transfer.token.type
+      end
+
+    token_ids = if token_type == "ERC-1155", do: transfer.token_ids, else: [nil]
     transfer_amounts = transfer.amounts || [transfer.amount || 1]
 
     sub_or_add =
@@ -183,7 +209,7 @@ defmodule Explorer.Chain.Transaction.StateChange do
   end
 
   def from_loss(%InternalTransaction{} = transaction) do
-    transaction.value
+    transaction.value || Wei.zero()
   end
 
   @doc """
@@ -193,14 +219,14 @@ defmodule Explorer.Chain.Transaction.StateChange do
   @spec to_profit(Transaction.t() | InternalTransaction.t()) :: Wei.t()
   def to_profit(%Transaction{} = transaction) do
     if error?(transaction) do
-      %Wei{value: 0}
+      Wei.zero()
     else
       transaction.value
     end
   end
 
   def to_profit(%InternalTransaction{} = transaction) do
-    transaction.value
+    transaction.value || Wei.zero()
   end
 
   # Calculates block miner profit for the given transaction.
@@ -332,7 +358,10 @@ defmodule Explorer.Chain.Transaction.StateChange do
       balance_diff = Decimal.sub(balance, balance_before)
       transfer = elem(List.first(transfers), 1)
 
-      if transfer.token.type not in ["ERC-20", "ZRC-2"] or has_diff?(balance_diff) do
+      token_type =
+        if DenormalizationHelper.tt_denormalization_finished?(), do: transfer.token_type, else: transfer.token.type
+
+      if token_type not in ["ERC-20", "ZRC-2"] or has_diff?(balance_diff) do
         %StateChange{
           coin_or_token_transfers: transfers,
           address: address,

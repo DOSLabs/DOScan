@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 import Config
 
 alias EthereumJSONRPC.Variant
@@ -132,7 +133,6 @@ for repo <- [
       Explorer.Repo.Filecoin,
       Explorer.Repo.Optimism,
       Explorer.Repo.PolygonEdge,
-      Explorer.Repo.PolygonZkevm,
       Explorer.Repo.RSK,
       Explorer.Repo.Scroll,
       Explorer.Repo.Shibarium,

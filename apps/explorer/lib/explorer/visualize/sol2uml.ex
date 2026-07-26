@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Explorer.Visualize.Sol2uml do
   @moduledoc """
     Adapter for sol2uml visualizer with https://github.com/blockscout/blockscout-rs/blob/main/visualizer
@@ -13,7 +14,7 @@ defmodule Explorer.Visualize.Sol2uml do
     http_post_request(visualize_contracts_url(), body)
   end
 
-  def http_post_request(url, body) do
+  defp http_post_request(url, body) do
     headers = [{"Content-Type", "application/json"}]
 
     case HttpClient.post(url, Jason.encode!(body), headers, recv_timeout: @post_timeout) do
@@ -25,17 +26,20 @@ defmodule Explorer.Visualize.Sol2uml do
         {:error, "failed to visualize contract"}
 
       {:error, error} ->
-        old_truncate = Application.get_env(:logger, :truncate)
-        Logger.configure(truncate: :infinity)
-
         Logger.error(fn ->
           [
-            "Error while sending request to visualizer microservice. url: #{url}, body: #{inspect(body, limit: :infinity, printable_limit: :infinity)}: ",
-            inspect(error, limit: :infinity, printable_limit: :infinity)
+            "Error while sending request to visualizer microservice. url: #{url} ",
+            inspect(error)
           ]
         end)
 
-        Logger.configure(truncate: old_truncate)
+        Logger.debug(fn ->
+          [
+            "Error while sending request to visualizer microservice. url: #{url}, body: #{inspect(body, limit: :infinity, printable_limit: :infinity)}: ",
+            inspect(error)
+          ]
+        end)
+
         {:error, @request_error_msg}
     end
   end

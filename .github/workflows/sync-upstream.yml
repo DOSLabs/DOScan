@@ -13,6 +13,7 @@ on:
 permissions:
   contents: write
   actions: write
+  pull-requests: write
 
 jobs:
   sync:
@@ -38,9 +39,20 @@ jobs:
           if [ -n "${{ inputs.tag }}" ]; then
             TAG="${{ inputs.tag }}"
           else
-            # Get latest release tag from upstream (filter only vX.Y.Z pattern)
-            TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+            # Prefer the newest STABLE release (no -alpha/-beta/-rc suffix).
+            # Fall back to the newest non-alpha prerelease (beta/rc) only when no
+            # stable release exists. Never auto-sync -alpha tags.
+            TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -vE -- '-' | head -1)
+            if [ -z "$TAG" ]; then
+              TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -ivE -- '-alpha' | head -1)
+            fi
           fi
+
+          if [ -z "$TAG" ]; then
+            echo "::error::No upstream release tag matched 'v[0-9]*.[0-9]*.[0-9]*'. Aborting."
+            exit 1
+          fi
+
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "Target tag: $TAG"
 
@@ -62,7 +74,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Files that MUST match upstream exactly (versions, deps, build config)
+          # Files that MUST match upstream exactly (versions, deps, build config).
+          # Kept in sync with .github/scripts/auto-resolve-merge-conflicts.sh.
           VERSION_FILES=(
             mix.exs
             rel/config.exs
@@ -80,39 +93,24 @@ jobs:
           if git merge "$TAG" --no-edit -m "Merge upstream $TAG"; then
             echo "Clean merge succeeded"
           else
-            # Merge failed — auto-resolve conflicts
+            # Merge failed - auto-resolve conflicts
             echo "::notice::Merge conflict detected, attempting auto-resolve..."
 
-            for f in "${VERSION_FILES[@]}"; do
-              if git diff --name-only --diff-filter=U | grep -qx "$f"; then
-                echo "  Auto-resolve (theirs): $f"
-                git checkout --theirs "$f"
-                git add "$f"
-              fi
-            done
-
-            # Accept upstream for ALL upstream workflow files (version bumps)
-            # Our custom workflows (docker-publish, deploy-config, sync-upstream) won't conflict
-            CONFLICT_WORKFLOWS=$(git diff --name-only --diff-filter=U | grep '^\.github/workflows/' || true)
-            if [ -n "$CONFLICT_WORKFLOWS" ]; then
-              echo "  Auto-resolve (theirs): workflow files"
-              echo "$CONFLICT_WORKFLOWS" | xargs git checkout --theirs
-              echo "$CONFLICT_WORKFLOWS" | xargs git add
-            fi
-
-            # Check if any conflicts remain
-            REMAINING=$(git diff --name-only --diff-filter=U || true)
-            if [ -n "$REMAINING" ]; then
+            if bash .github/scripts/auto-resolve-merge-conflicts.sh; then
+              git commit --no-edit -m "Merge upstream $TAG (auto-resolved conflicts)"
+            else
+              # Conflicts remain - capture list, abort merge, hand off to PR step.
+              REMAINING=$(git diff --name-only --diff-filter=U || true)
               echo "::warning::Unresolvable conflicts in: $REMAINING"
               git merge --abort
               echo "result=conflict" >> $GITHUB_OUTPUT
-              echo "conflict_files<<EOF" >> $GITHUB_OUTPUT
-              echo "$REMAINING" >> $GITHUB_OUTPUT
-              echo "EOF" >> $GITHUB_OUTPUT
+              {
+                echo "conflict_files<<EOF"
+                echo "$REMAINING"
+                echo "EOF"
+              } >> $GITHUB_OUTPUT
               exit 0
             fi
-
-            git commit --no-edit -m "Merge upstream $TAG (auto-resolved conflicts)"
           fi
 
           # Post-merge: ensure version files match upstream EXACTLY
@@ -216,23 +214,33 @@ jobs:
           git checkout -b "$BRANCH"
           git merge "$TAG" --no-edit || true
 
-          # Auto-resolve what we can (same strategy as above)
-          for f in mix.exs rel/config.exs docker/Makefile CHANGELOG.md apps/*/mix.exs; do
-            if git diff --name-only --diff-filter=U | grep -qx "$f" 2>/dev/null; then
-              git checkout --theirs "$f" && git add "$f"
-            fi
-          done
-          CONFLICT_WF=$(git diff --name-only --diff-filter=U | grep '^\.github/workflows/' || true)
-          [ -n "$CONFLICT_WF" ] && echo "$CONFLICT_WF" | xargs git checkout --theirs && echo "$CONFLICT_WF" | xargs git add
+          # Auto-resolve what we can. Script exits 1 when conflicts remain;
+          # that is expected here - we still commit and push the WIP state
+          # so reviewers see only the unresolvable conflicts.
+          bash .github/scripts/auto-resolve-merge-conflicts.sh || true
 
           git add -A
           git commit -m "WIP: Merge upstream $TAG (has conflicts)" --no-verify || true
-          git push origin "$BRANCH"
+          git push origin "$BRANCH" --force
 
+          EXISTING_PR=$(gh pr list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --head "$BRANCH" \
+            --base main \
+            --state open \
+            --json url \
+            --jq '.[0].url // empty')
+          if [ -n "$EXISTING_PR" ]; then
+            echo "::notice::Conflict PR already exists: $EXISTING_PR"
+            exit 0
+          fi
+
+          # GitHub's GraphQL createPullRequest replica lags behind the REST
+          # branches endpoint. Even after the branch is visible via REST, the
+          # GraphQL mutation can return: "No commits between main and BRANCH".
+          # Retry the PR creation itself with backoff.
           REMAINING=$(echo "${{ steps.merge.outputs.conflict_files }}" | head -20)
-          gh pr create \
-            --title "Sync upstream $TAG (merge conflicts)" \
-            --body "$(cat <<EOF
+          PR_BODY="$(cat <<EOF
           ## Upstream Sync - $TAG
 
           Auto-merge with upstream \`$TAG\` failed. Version/workflow conflicts were auto-resolved,
@@ -250,6 +258,22 @@ jobs:
 
           [Upstream release notes](https://github.com/blockscout/blockscout/releases/tag/$TAG)
           EOF
-          )" \
-            --head "$BRANCH" \
-            --base main
+          )"
+          # Use REST API directly — gh pr create uses GraphQL which has a
+          # longer replication lag against new branches (>30s observed).
+          PR_TITLE="Sync upstream $TAG (merge conflicts)"
+          for attempt in 1 2 3 4 5 6; do
+            if PR_URL=$(jq -n --arg t "$PR_TITLE" --arg b "$PR_BODY" --arg h "$BRANCH" \
+              '{title:$t, body:$b, head:$h, base:"main"}' | \
+              gh api -X POST "repos/${GITHUB_REPOSITORY}/pulls" \
+                --input - \
+                --jq '.html_url' 2>&1); then
+              echo "PR created successfully on attempt $attempt: $PR_URL"
+              exit 0
+            fi
+            echo "PR creation failed (attempt $attempt): $PR_URL"
+            echo "Retrying in 5s..."
+            sleep 5
+          done
+          echo "::error::PR creation failed after 6 attempts"
+          exit 1

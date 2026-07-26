@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Explorer.Migrator.SanitizeDuplicatedLogIndexLogsTest do
   use Explorer.DataCase, async: false
 
@@ -7,7 +8,7 @@ defmodule Explorer.Migrator.SanitizeDuplicatedLogIndexLogsTest do
   alias Explorer.Chain.Token.Instance
   alias Explorer.Migrator.{SanitizeDuplicatedLogIndexLogs, MigrationStatus}
 
-  if Application.compile_env(:explorer, :chain_type) in [:polygon_zkevm, :rsk, :filecoin] do
+  if Application.compile_env(:explorer, :chain_type) in [:rsk, :filecoin] do
     describe "Sanitize duplicated log index logs" do
       setup do
         configuration = Application.get_env(:explorer, SanitizeDuplicatedLogIndexLogs)

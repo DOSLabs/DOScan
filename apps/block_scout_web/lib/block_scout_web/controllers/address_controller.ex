@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.AddressController do
   use BlockScoutWeb, :controller
   use Utils.CompileTimeEnvHelper, chain_type: [:explorer, :chain_type]
@@ -27,14 +28,12 @@ defmodule BlockScoutWeb.AddressController do
     :filecoin ->
       @contract_address_preloads [
         :smart_contract,
-        [contract_creation_internal_transaction: :from_address],
         [contract_creation_transaction: :from_address]
       ]
 
     _ ->
       @contract_address_preloads [
         :smart_contract,
-        :contract_creation_internal_transaction,
         :contract_creation_transaction
       ]
   end
@@ -127,7 +126,7 @@ defmodule BlockScoutWeb.AddressController do
       render(
         conn,
         "_show_address_transactions.html",
-        address: address,
+        address: fully_preloaded_address,
         coin_balance_status: CoinBalanceOnDemand.trigger_fetch(ip, address),
         exchange_rate: Market.get_coin_exchange_rate(),
         filter: params["filter"],

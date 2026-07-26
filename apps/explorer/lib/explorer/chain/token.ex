@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Explorer.Chain.Token.Schema do
   @moduledoc false
   use Utils.CompileTimeEnvHelper, bridged_tokens_enabled: [:explorer, [Explorer.Chain.BridgedToken, :enabled]]
@@ -34,6 +35,7 @@ defmodule Explorer.Chain.Token.Schema do
         field(:icon_url, :string)
         field(:is_verified_via_admin_panel, :boolean)
         field(:volume_24h, FiatValue)
+        field(:circulating_supply, :decimal)
         field(:transfer_count, :integer)
 
         belongs_to(
@@ -148,7 +150,7 @@ defmodule Explorer.Chain.Token do
   Explorer.Chain.Token.Schema.generate()
 
   @required_attrs ~w(contract_address_hash type)a
-  @optional_attrs ~w(cataloged decimals name symbol total_supply skip_metadata total_supply_updated_at_block metadata_updated_at updated_at fiat_value circulating_market_cap icon_url is_verified_via_admin_panel volume_24h)a
+  @optional_attrs ~w(cataloged decimals name symbol total_supply skip_metadata total_supply_updated_at_block metadata_updated_at updated_at fiat_value circulating_market_cap circulating_supply icon_url is_verified_via_admin_panel volume_24h)a
 
   @doc """
     Returns the **ordered** list of allowed NFT type labels.
@@ -379,13 +381,15 @@ defmodule Explorer.Chain.Token do
       |> SortingHelper.page_with_sorting(paging_options, sorting, @default_sorting)
 
     filtered_query =
-      case filter && filter !== "" && Search.prepare_search_term(filter) do
-        {:some, filter_term} ->
-          sorted_paginated_query
-          |> apply_fts_filter(filter_term)
+      case filter && Chain.string_to_address_hash(filter) do
+        {:ok, address_hash} ->
+          from(t in sorted_paginated_query, where: t.contract_address_hash == ^address_hash)
 
         _ ->
-          sorted_paginated_query
+          case filter && filter !== "" && Search.prepare_search_term(filter) do
+            {:some, filter_term} -> apply_fts_filter(sorted_paginated_query, filter_term)
+            _ -> sorted_paginated_query
+          end
       end
 
     filtered_query
