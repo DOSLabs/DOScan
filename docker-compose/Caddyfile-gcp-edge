@@ -1,0 +1,110 @@
+doscan.io, www.doscan.io {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+	reverse_proxy doscan-l1-caddy-1:80
+}
+
+api.doscan.io {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+	reverse_proxy doscan-l1-backend-1:4000
+}
+
+stats.doscan.io {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+	header Access-Control-Allow-Origin "https://doscan.io"
+	header Access-Control-Allow-Methods "GET, OPTIONS"
+	header Access-Control-Allow-Headers "Content-Type"
+	reverse_proxy doscan-l1-stats-1:8050
+}
+
+viz.doscan.io {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+	header Access-Control-Allow-Origin "https://doscan.io"
+	header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+	header Access-Control-Allow-Headers "Content-Type"
+	reverse_proxy doscan-l1-visualizer-1:8050
+}
+
+l1.doscan.io {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+	reverse_proxy doscan-l1-caddy-1:80
+}
+
+# Cloudflare publishes main, main2, and main3 through this listener.
+:8545 {
+	@options method OPTIONS
+	handle @options {
+		header Access-Control-Allow-Origin "*"
+		header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+		header Access-Control-Allow-Headers "*"
+		respond "" 204
+	}
+
+	header {
+		-Access-Control-Allow-Credentials
+		Access-Control-Allow-Origin "*"
+		Access-Control-Allow-Methods "GET, POST, OPTIONS"
+		Access-Control-Allow-Headers "*"
+		defer
+	}
+
+	@main_websocket {
+		host main.doschain.com
+		path /ws
+	}
+	handle @main_websocket {
+		header X-DOS-RPC-Origin "icm-r0"
+		rewrite * /ext/bc/2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk/ws
+		reverse_proxy 10.148.0.8:19650 {
+			header_down -Access-Control-Allow-Origin
+			header_down -Access-Control-Allow-Methods
+			header_down -Access-Control-Allow-Headers
+			header_down -Access-Control-Allow-Credentials
+		}
+	}
+
+	@main_rpc {
+		host main.doschain.com
+		not path /ws
+	}
+	handle @main_rpc {
+		header X-DOS-RPC-Origin "icm-r0"
+		rewrite * /ext/bc/2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk/rpc
+		reverse_proxy 10.148.0.8:19650 {
+			header_down -Access-Control-Allow-Origin
+			header_down -Access-Control-Allow-Methods
+			header_down -Access-Control-Allow-Headers
+			header_down -Access-Control-Allow-Credentials
+		}
+	}
+
+	@archive_websocket {
+		host main2.doschain.com main3.doschain.com
+		path /ws
+	}
+	handle @archive_websocket {
+		header X-DOS-RPC-Origin "archive-doscan-mainnet"
+		rewrite * /ext/bc/2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk/ws
+		reverse_proxy host.docker.internal:9650 {
+			header_down -Access-Control-Allow-Origin
+			header_down -Access-Control-Allow-Methods
+			header_down -Access-Control-Allow-Headers
+			header_down -Access-Control-Allow-Credentials
+		}
+	}
+
+	@archive_rpc host main2.doschain.com main3.doschain.com
+	handle @archive_rpc {
+		header X-DOS-RPC-Origin "archive-doscan-mainnet"
+		rewrite * /ext/bc/2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk/rpc
+		reverse_proxy host.docker.internal:9650 {
+			header_down -Access-Control-Allow-Origin
+			header_down -Access-Control-Allow-Methods
+			header_down -Access-Control-Allow-Headers
+			header_down -Access-Control-Allow-Credentials
+		}
+	}
+
+	handle {
+		respond "unknown RPC host" 404
+	}
+}

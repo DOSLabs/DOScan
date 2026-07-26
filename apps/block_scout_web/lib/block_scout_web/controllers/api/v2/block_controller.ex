@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule BlockScoutWeb.API.V2.BlockController do
   use BlockScoutWeb, :controller
 
@@ -12,7 +13,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
       next_page_params: 3,
       next_page_params: 5,
       paging_options: 1,
-      param_to_block_number: 1,
+      param_to_block_number: 2,
       put_key_value_to_paging_options: 3,
       split_list_by_page: 1,
       parse_block_hash_or_number_param: 1,
@@ -176,7 +177,18 @@ defmodule BlockScoutWeb.API.V2.BlockController do
 
   operation :blocks,
     summary: "List blocks with optional filtering by block type",
-    description: "Retrieves a paginated list of blocks with optional filtering by block type.",
+    description: """
+    Retrieves a paginated list of blocks ordered by descending block number.
+
+    When the `type` query parameter is omitted, only main-chain consensus blocks
+    (equivalent to `type=block`) are returned. Use `type=uncle` to list ommer
+    blocks (valid but not in the main chain) and `type=reorg` to list blocks
+    that lost consensus during a chain reorganization.
+
+    Pagination is cursor-based: the response contains `next_page_params` with
+    `block_number` and `items_count` — pass these back as query parameters on
+    the next request to fetch the following page.
+    """,
     parameters:
       base_params() ++
         [block_type_param()] ++
@@ -190,7 +202,8 @@ defmodule BlockScoutWeb.API.V2.BlockController do
              "block_number" => 22_566_361,
              "items_count" => 50
            }
-         )}
+         )},
+      unprocessable_entity: JsonErrorResponse.response()
     ]
 
   @doc """
@@ -569,7 +582,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
           | {:average_block_time, {:error, :disabled}}
           | {:remaining_blocks, 0}
   def block_countdown(conn, %{block_number_param: block_number}) do
-    with {:format, {:ok, target_block_number}} <- {:format, param_to_block_number(block_number)},
+    with {:format, {:ok, target_block_number}} <- {:format, param_to_block_number(block_number, false)},
          {:max_block, current_block_number} when not is_nil(current_block_number) <-
            {:max_block, BlockNumber.get_max()},
          {:average_block_time, average_block_time} when is_struct(average_block_time) <-

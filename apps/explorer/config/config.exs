@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 # This file is responsible for configuring your application
 # and its dependencies with the aid of the Config module.
 #
@@ -113,6 +114,8 @@ config :explorer, Explorer.Chain.Mud, enabled: ConfigHelper.parse_bool_env_var("
 
 config :explorer, Explorer.Utility.VersionConstantsUpdater, enabled: true
 
+config :explorer, Explorer.Utility.VersionUpgrade, enabled: true
+
 for migrator <- [
       # Background migrations
       Explorer.Migrator.TransactionsDenormalization,
@@ -192,7 +195,9 @@ for index_operation <- [
       Explorer.Migrator.HeavyDbIndexOperation.DropInternalTransactionsBlockNumberCreatedContractAddressHashIndex,
       Explorer.Migrator.HeavyDbIndexOperation.DropInternalTransactionsCreatedContractAddressHashIndex,
       Explorer.Migrator.HeavyDbIndexOperation.DropInternalTransactionsFromAddressHashPartialIndex,
-      Explorer.Migrator.HeavyDbIndexOperation.DropInternalTransactionsToAddressHashPartialIndex
+      Explorer.Migrator.HeavyDbIndexOperation.DropInternalTransactionsToAddressHashPartialIndex,
+      Explorer.Migrator.HeavyDbIndexOperation.CreateLogsAddressHashFirstTopicSecondTopicBlockNumberIndex,
+      Explorer.Migrator.HeavyDbIndexOperation.CreateAddressCurrentTokenBalancesAddressHashBlockNumberIndex
     ] do
   config :explorer, index_operation, enabled: true
 end
@@ -211,6 +216,8 @@ config :explorer, Explorer.Utility.RateLimiter, enabled: true
 
 config :explorer, Explorer.Utility.Hammer.Redis, enabled: true
 config :explorer, Explorer.Utility.Hammer.ETS, enabled: true
+
+config :explorer, Explorer.Chain.Health.Monitor, enabled: true
 
 config :explorer, Explorer.Repo,
   migration_timestamps: [type: :utc_datetime_usec],

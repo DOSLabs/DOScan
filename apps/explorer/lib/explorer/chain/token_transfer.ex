@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Explorer.Chain.TokenTransfer.Schema do
   @moduledoc """
     Models token transfers.
@@ -137,7 +138,12 @@ defmodule Explorer.Chain.TokenTransfer do
   use Explorer.Schema
 
   use Utils.CompileTimeEnvHelper, chain_identity: [:explorer, :chain_identity]
-  use Utils.RuntimeEnvHelper, chain_identity: [:explorer, :chain_identity]
+
+  use Utils.RuntimeEnvHelper,
+    chain_identity: [:explorer, :chain_identity],
+    chain_type: [:explorer, :chain_type],
+    arc_native_token_address: [:indexer, [:arc, :arc_native_token_address]],
+    arc_native_token_system_address: [:indexer, [:arc, :arc_native_token_system_address]]
 
   require Explorer.Chain.TokenTransfer.Schema
 
@@ -172,6 +178,9 @@ defmodule Explorer.Chain.TokenTransfer do
   # event NativeCoinBurned(address indexed from, uint256 amount)
   @arc_native_coin_burned_event "0xaaf1ef013644e67c5cea90217acdf0accd334f8437fc9a89a53cfc9b25fb5c25"
   @erc7984_transfer_event "0x67500e8d0ed826d2194f514dd0d8124f35648ab6e3fb5e6ed867134cffe661e9"
+
+  # EIP-7708: log `address` for protocol-emitted ETH/native transfer logs
+  @eip7708_system_address "0xfffffffffffffffffffffffffffffffffffffffe"
 
   @transfer_function_signature "0xa9059cbb"
 
@@ -247,6 +256,11 @@ defmodule Explorer.Chain.TokenTransfer do
   def arc_native_coin_burned_event, do: @arc_native_coin_burned_event
 
   def erc7984_transfer_event, do: @erc7984_transfer_event
+
+  @doc """
+  EIP-7708 [`SYSTEM_ADDRESS`](https://eips.ethereum.org/EIPS/eip-7708) — log emitter for protocol `Transfer` events.
+  """
+  def eip7708_system_address, do: @eip7708_system_address
 
   @doc """
   ERC 20's transfer(address,uint256) function signature
@@ -682,16 +696,40 @@ defmodule Explorer.Chain.TokenTransfer do
     query =
       from(l in Log,
         as: :log,
-        where:
-          l.first_topic == ^@constant or
-            l.first_topic == ^@erc1155_single_transfer_signature or
-            l.first_topic == ^@erc1155_batch_transfer_signature,
+        where: ^token_transfer_log_filter_dynamic(),
         where: not exists(token_transfer_exists_query()),
         select: l.block_number,
         distinct: l.block_number
       )
 
     Repo.stream_reduce(query, [], &[&1 | &2])
+  end
+
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
+  defp token_transfer_log_filter_dynamic do
+    base_filter =
+      dynamic(
+        [log: l],
+        l.first_topic == ^@constant or
+          l.first_topic == ^@erc1155_single_transfer_signature or
+          l.first_topic == ^@erc1155_batch_transfer_signature
+      )
+
+    case chain_type() do
+      :arc ->
+        dynamic(
+          [log: l],
+          (^base_filter and
+             not (l.first_topic == ^@constant and l.address_hash == ^arc_native_token_address())) or
+            ((l.first_topic == ^@arc_native_coin_transferred_event or
+                l.first_topic == ^@arc_native_coin_minted_event or
+                l.first_topic == ^@arc_native_coin_burned_event) and
+               l.address_hash == ^arc_native_token_system_address())
+        )
+
+      _ ->
+        base_filter
+    end
   end
 
   # Builds a query to check if a token transfer exists for a given log. Handles

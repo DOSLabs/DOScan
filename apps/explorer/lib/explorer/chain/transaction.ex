@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LicenseRef-Blockscout
 defmodule Explorer.Chain.Transaction.Schema do
   @moduledoc """
     Models transactions.
@@ -997,8 +998,13 @@ defmodule Explorer.Chain.Transaction do
     )
   end
 
+  # Fallback for a to_address that is neither a loaded `Address`, `nil`, nor
+  # `NotLoaded`. This happens when ENS/metadata preloading replaces an unloaded
+  # to_address with a bare map (e.g. `%{ens_domain_name: ...}` or
+  # `%{metadata: ...}`, see `Explorer.Chain.Address.MetadataPreloader.alter_address/4`).
+  # Such a map carries no contract data, so there is nothing to decode.
   def decoded_input_data(
-        %__MODULE__{to_address: %{metadata: _, ens_domain_name: _}},
+        %__MODULE__{},
         _,
         _,
         _,
@@ -1158,7 +1164,7 @@ defmodule Explorer.Chain.Transaction do
     end
   rescue
     e ->
-      Logger.warning(fn ->
+      Logger.debug(fn ->
         [
           "Could not decode input data for transaction: ",
           Hash.to_iodata(hash),
@@ -1188,7 +1194,7 @@ defmodule Explorer.Chain.Transaction do
     {:ok, mapping}
   rescue
     e ->
-      Logger.warning(fn ->
+      Logger.debug(fn ->
         [
           "Could not decode input data for transaction: ",
           Hash.to_iodata(hash),
