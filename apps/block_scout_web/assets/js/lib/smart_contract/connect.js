@@ -17,6 +17,7 @@ let provider
 
 // Reown AppKit instance
 let appKit
+let appKitReady
 
 const network = {
   id: instanceChainId,
@@ -62,8 +63,10 @@ export async function web3ModalInit (connectToWallet, ...args) {
       onramp: false
     }
   })
+  appKitReady = appKit.ready()
+  await appKitReady
 
-  if (appKit.getIsConnected()) {
+  if (appKit.getIsConnectedState()) {
     provider = appKit.getWalletProvider()
     if (provider) {
       await connectToWallet(...args)
@@ -88,19 +91,30 @@ const getInjectedProvider = async () => {
 
 const waitForAppKitProvider = () => {
   return new Promise((resolve, reject) => {
-    let unsubscribe = () => {}
-    unsubscribe = appKit.subscribeProvider(({ provider: connectedProvider, isConnected, error }) => {
-      if (error) {
-        unsubscribe()
-        reject(error)
-      } else if (isConnected && connectedProvider) {
-        unsubscribe()
-        resolve(connectedProvider)
+    let modalWasOpened = false
+    let unsubscribeProviders = () => {}
+    let unsubscribeState = () => {}
+    const cleanup = () => {
+      unsubscribeProviders()
+      unsubscribeState()
+    }
+
+    unsubscribeProviders = appKit.subscribeProviders(providers => {
+      if (providers.eip155) {
+        cleanup()
+        resolve(providers.eip155)
+      }
+    })
+    unsubscribeState = appKit.subscribeState(({ open }) => {
+      modalWasOpened = modalWasOpened || open
+      if (modalWasOpened && !open && !appKit.getWalletProvider()) {
+        cleanup()
+        reject(new Error('Wallet connection was cancelled'))
       }
     })
 
     Promise.resolve(appKit.open({ view: 'Connect', namespace: 'eip155' })).catch(error => {
-      unsubscribe()
+      cleanup()
       reject(error)
     })
   })
@@ -118,8 +132,8 @@ export const walletEnabled = async () => {
 }
 
 export async function disconnect () {
-  if (appKit && appKit.getIsConnected()) {
-    await appKit.adapter?.connectionControllerClient?.disconnect()
+  if (appKit && appKit.getIsConnectedState()) {
+    await appKit.disconnect('eip155')
   } else if (provider && provider.disconnect) {
     await provider.disconnect()
   }
@@ -141,6 +155,7 @@ export async function disconnectWallet () {
 export const connectToProvider = () => {
   return (async () => {
     if (appKit) {
+      await appKitReady
       provider = appKit.getWalletProvider() || await waitForAppKitProvider()
     } else if (window.ethereum) {
       await window.ethereum.request({ method: 'eth_requestAccounts' })

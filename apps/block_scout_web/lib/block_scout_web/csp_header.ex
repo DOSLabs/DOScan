@@ -23,7 +23,9 @@ defmodule BlockScoutWeb.CSPHeader do
         "https://notify.walletconnect.com https://notify.walletconnect.org https://echo.walletconnect.com " <>
         "https://echo.walletconnect.org https://push.walletconnect.com https://push.walletconnect.org " <>
         "wss://www.walletlink.org https://cca-lite.coinbase.com"
-    walletconnect_frames = "https://verify.walletconnect.com https://verify.walletconnect.org"
+    walletconnect_frames =
+      "https://verify.walletconnect.com https://verify.walletconnect.org " <>
+        "https://secure.walletconnect.com https://secure.walletconnect.org"
     json_rpc_url = Application.get_env(:block_scout_web, :json_rpc)
 
     Controller.put_secure_browser_headers(conn, %{

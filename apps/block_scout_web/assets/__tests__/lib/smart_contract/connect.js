@@ -50,7 +50,8 @@ describe('wallet connection', () => {
 
   test('initializes Reown AppKit for the configured custom chain', async () => {
     const appKit = {
-      getIsConnected: jest.fn(() => false)
+      ready: jest.fn(() => Promise.resolve()),
+      getIsConnectedState: jest.fn(() => false)
     }
     mockCreateAppKit.mockReturnValue(appKit)
     const { web3ModalInit } = loadConnect()
@@ -63,6 +64,7 @@ describe('wallet connection', () => {
         rpcUrls: { default: { http: ['https://rpc.example'] } }
       })]
     }))
+    expect(appKit.ready).toHaveBeenCalled()
   })
 
   test('uses an injected EIP-1193 provider when AppKit is unavailable', async () => {
@@ -76,5 +78,65 @@ describe('wallet connection', () => {
     await expect(connectToProvider()).resolves.toBe(provider)
     expect(provider.request).toHaveBeenCalledWith({ method: 'eth_requestAccounts' })
     expect(mockWeb3).toHaveBeenCalledWith(provider)
+  })
+
+  test('restores a connected AppKit session after initialization', async () => {
+    const provider = { on: jest.fn() }
+    const appKit = {
+      ready: jest.fn(() => Promise.resolve()),
+      getIsConnectedState: jest.fn(() => true),
+      getWalletProvider: jest.fn(() => provider)
+    }
+    mockCreateAppKit.mockReturnValue(appKit)
+    const onReconnect = jest.fn()
+    const { web3ModalInit } = loadConnect()
+
+    await web3ModalInit(onReconnect, 'argument')
+
+    expect(appKit.ready).toHaveBeenCalled()
+    expect(onReconnect).toHaveBeenCalledWith('argument')
+  })
+
+  test('disconnects an active AppKit session through the public API', async () => {
+    const appKit = {
+      ready: jest.fn(() => Promise.resolve()),
+      getIsConnectedState: jest.fn()
+        .mockReturnValueOnce(false)
+        .mockReturnValueOnce(true),
+      disconnect: jest.fn(() => Promise.resolve())
+    }
+    mockCreateAppKit.mockReturnValue(appKit)
+    const { disconnect, web3ModalInit } = loadConnect()
+    await web3ModalInit(jest.fn())
+
+    await disconnect()
+
+    expect(appKit.disconnect).toHaveBeenCalledWith('eip155')
+    expect(window.web3).toBeNull()
+  })
+
+  test('rejects when the AppKit modal closes without a provider', async () => {
+    let stateHandler
+    const appKit = {
+      ready: jest.fn(() => Promise.resolve()),
+      getIsConnectedState: jest.fn(() => false),
+      getWalletProvider: jest.fn(() => null),
+      subscribeProviders: jest.fn(() => jest.fn()),
+      subscribeState: jest.fn(handler => {
+        stateHandler = handler
+        return jest.fn()
+      }),
+      open: jest.fn(() => Promise.resolve())
+    }
+    mockCreateAppKit.mockReturnValue(appKit)
+    const { connectToProvider, web3ModalInit } = loadConnect()
+    await web3ModalInit(jest.fn())
+
+    const connection = connectToProvider()
+    await Promise.resolve()
+    stateHandler({ open: true })
+    stateHandler({ open: false })
+
+    await expect(connection).rejects.toThrow('Wallet connection was cancelled')
   })
 })
