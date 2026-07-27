@@ -84,7 +84,22 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes automake autoconf build-essential file git libgmp-dev libtool make python3
+          sudo apt-get install --yes \
+            automake \
+            autoconf \
+            build-essential \
+            ffmpeg \
+            file \
+            git \
+            libavcodec-dev \
+            libavdevice-dev \
+            libavformat-dev \
+            libavutil-dev \
+            libgmp-dev \
+            libswscale-dev \
+            libtool \
+            make \
+            python3
 
       - name: Compile production application
         run: |
@@ -125,6 +140,42 @@ jobs:
             end)
           '
 
+      - name: Smoke test NFT video processing
+        run: |
+          video_dir="$(mktemp --directory)"
+          video_path="$video_dir/smoke.mp4"
+          trap 'rm -rf "$video_dir"' EXIT
+
+          ffmpeg \
+            -hide_banner \
+            -loglevel error \
+            -f lavfi \
+            -i color=c=red:s=600x600:d=1 \
+            -c:v mpeg4 \
+            -pix_fmt yuv420p \
+            "$video_path"
+
+          VIDEO_PATH="$video_path" mix run --no-start -e '
+            video_path = System.fetch_env!("VIDEO_PATH")
+
+            {:ok, image} =
+              Image.Video.with_video(video_path, fn video ->
+                Image.Video.image_from_video(video, frame: 0)
+              end)
+
+            600 = Image.width(image)
+            600 = Image.height(image)
+
+            thumbnails =
+              NFTMediaHandler.Image.Resizer.resize(
+                image,
+                "https://example.com/nft/smoke.mp4",
+                ".jpg"
+              )
+
+            [60, 250, 500] = Enum.map(thumbnails, &elem(&1, 0))
+          '
+
   production-docker:
     name: Build published production Docker image
     needs: changes
@@ -138,15 +189,58 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
+      - name: Generate NFT video fixture
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
+          mkdir -p "$RUNNER_TEMP/nft-video-smoke"
+          ffmpeg \
+            -hide_banner \
+            -loglevel error \
+            -f lavfi \
+            -i color=c=red:s=600x600:d=1 \
+            -c:v mpeg4 \
+            -pix_fmt yuv420p \
+            "$RUNNER_TEMP/nft-video-smoke/smoke.mp4"
+
       - name: Build production image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: ./docker/Dockerfile
+          load: true
           push: false
           platforms: linux/amd64
+          tags: doscan-dependency-build:local
           cache-from: type=gha,scope=dependency-build-production
           cache-to: type=gha,mode=max,scope=dependency-build-production
+
+      - name: Smoke test production image NFT video processing
+        run: |
+          docker run --rm \
+            --volume "$RUNNER_TEMP/nft-video-smoke:/tmp/smoke:ro" \
+            doscan-dependency-build:local \
+            elixir -pa '/app/lib/*/ebin' -e '
+              video_path = "/tmp/smoke/smoke.mp4"
+
+              {:ok, image} =
+                Image.Video.with_video(video_path, fn video ->
+                  Image.Video.image_from_video(video, frame: 0)
+                end)
+
+              600 = Image.width(image)
+              600 = Image.height(image)
+
+              [60, 250, 500] =
+                image
+                |> NFTMediaHandler.Image.Resizer.resize(
+                  "https://example.com/nft/smoke.mp4",
+                  ".jpg"
+                )
+                |> Enum.map(&elem(&1, 0))
+
+              IO.puts("NFT_VIDEO_SMOKE_OK")
+            '
 
   old-ui-docker:
     name: Build old UI Docker image
