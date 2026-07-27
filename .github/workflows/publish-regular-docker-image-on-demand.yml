@@ -15,14 +15,19 @@ env:
   OTP_VERSION: '27.3.4.6'
   ELIXIR_VERSION: '1.19.4'
 
-permissions:
-  contents: write
-  packages: write
+concurrency:
+  group: publish-regular-docker-image
+  cancel-in-progress: false
 
 jobs:
   push_to_registry:
     name: Push Docker image to GitHub Container Registry
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    outputs:
+      deployment_pin_changed: ${{ steps.deployment_pin.outputs.changed }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
@@ -93,6 +98,7 @@ jobs:
             RELEASE_VERSION=${{ steps.version.outputs.release_version }}
 
       - name: Update deployment image pins
+        id: deployment_pin
         env:
           BACKEND_DIGEST: ${{ steps.backend_image.outputs.digest }}
           RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
@@ -113,12 +119,49 @@ jobs:
 
           if git diff --quiet -- docker-compose/; then
             echo "Deployment image pins are already current"
-            exit 0
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git add \
+              docker-compose/docker-compose-mainnet.yml \
+              docker-compose/docker-compose-testnet.yml \
+              docker-compose/docker-compose-beta.yml
+            git commit -m "chore: deploy DOScan ${RELEASE_VERSION}"
+            git push origin main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-          git add \
-            docker-compose/docker-compose-mainnet.yml \
-            docker-compose/docker-compose-testnet.yml \
-            docker-compose/docker-compose-beta.yml
-          git commit -m "chore: deploy DOScan ${RELEASE_VERSION}"
-          git push origin main
+  deploy_mainnet:
+    name: Dispatch mainnet deployment
+    needs: push_to_registry
+    if: needs.push_to_registry.outputs.deployment_pin_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch Deploy Config
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run deploy-config.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref main \
+            -f environment=mainnet
+
+  deploy_testnet:
+    name: Dispatch testnet deployment
+    needs: push_to_registry
+    if: needs.push_to_registry.outputs.deployment_pin_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch Deploy Config
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run deploy-config.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref main \
+            -f environment=testnet
