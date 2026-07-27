@@ -2,16 +2,6 @@ name: Dependency build
 
 on:
   pull_request:
-    paths:
-      - "mix.exs"
-      - "mix.lock"
-      - "apps/**/mix.exs"
-      - "apps/**/package.json"
-      - "apps/**/package-lock.json"
-      - "apps/**/yarn.lock"
-      - "docker/Dockerfile"
-      - "docker/oldUI.Dockerfile"
-      - ".github/workflows/dependency-build.yml"
   push:
     branches: [main]
     paths:
@@ -39,8 +29,46 @@ env:
   MIX_ENV: prod
 
 jobs:
+  changes:
+    name: Detect dependency changes
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect dependency and build changes
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" > /tmp/changed-files
+          cat /tmp/changed-files
+
+          if grep -Eq \
+            '^(mix\.exs|mix\.lock|apps/.+/(mix\.exs|package\.json|package-lock\.json|yarn\.lock)|docker/(Dockerfile|oldUI\.Dockerfile)|\.github/workflows/dependency-build\.yml)$' \
+            /tmp/changed-files; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
   elixir-compile:
     name: Compile Elixir
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -68,6 +96,8 @@ jobs:
 
   production-docker:
     name: Build published production Docker image
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -89,6 +119,8 @@ jobs:
 
   old-ui-docker:
     name: Build old UI Docker image
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -107,3 +139,42 @@ jobs:
           platforms: linux/amd64
           cache-from: type=gha,scope=dependency-build-old-ui
           cache-to: type=gha,mode=max,scope=dependency-build-old-ui
+
+  dependency-build-gate:
+    name: Dependency build gate
+    needs:
+      - changes
+      - elixir-compile
+      - production-docker
+      - old-ui-docker
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify dependency build results
+        env:
+          RELEVANT: ${{ needs.changes.outputs.relevant }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          COMPILE_RESULT: ${{ needs.elixir-compile.result }}
+          PRODUCTION_RESULT: ${{ needs.production-docker.result }}
+          OLD_UI_RESULT: ${{ needs.old-ui-docker.result }}
+        run: |
+          set -euo pipefail
+
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::Dependency change detection failed."
+            exit 1
+          fi
+
+          if [ "$RELEVANT" != "true" ]; then
+            echo "No dependency or build files changed."
+            exit 0
+          fi
+
+          for result in "$COMPILE_RESULT" "$PRODUCTION_RESULT" "$OLD_UI_RESULT"; do
+            if [ "$result" != "success" ]; then
+              echo "::error::A required dependency build job did not succeed."
+              exit 1
+            fi
+          done
+
+          echo "All dependency build jobs succeeded."
