@@ -47,7 +47,7 @@ runs:
       run: echo "BUILDER_IP=$(./.github/scripts/select-builder.sh ${{ inputs.docker-arm-host }} root ~/.ssh/id_rsa)" >> $GITHUB_ENV
     - name: Set up SSH
       if: ${{ inputs.docker-remote-multi-platform == 'true' }}
-      uses: MrSquaare/ssh-setup-action@523473d91581ccbf89565e12b40faba93f2708bd # v1.1.0
+      uses: MrSquaare/ssh-setup-action@84a60849dca0e42e04b9b73f930036654e4672ab # v4.0.0
       with:
         host: ${{ env.BUILDER_IP }}
         private-key: ${{ inputs.docker-arm-host-key }}
