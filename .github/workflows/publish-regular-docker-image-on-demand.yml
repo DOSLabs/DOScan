@@ -20,6 +20,10 @@ permissions:
   contents: write
   packages: write
 
+concurrency:
+  group: publish-regular-docker-image
+  cancel-in-progress: false
+
 jobs:
   push_to_registry:
     name: Push Docker image to GitHub Container Registry
@@ -115,15 +119,14 @@ jobs:
 
           if git diff --quiet -- docker-compose/; then
             echo "Deployment image pins are already current"
-            exit 0
+          else
+            git add \
+              docker-compose/docker-compose-mainnet.yml \
+              docker-compose/docker-compose-testnet.yml \
+              docker-compose/docker-compose-beta.yml
+            git commit -m "chore: deploy DOScan ${RELEASE_VERSION}"
+            git push origin main
           fi
-
-          git add \
-            docker-compose/docker-compose-mainnet.yml \
-            docker-compose/docker-compose-testnet.yml \
-            docker-compose/docker-compose-beta.yml
-          git commit -m "chore: deploy DOScan ${RELEASE_VERSION}"
-          git push origin main
 
           gh workflow run deploy-config.yml \
             --ref main \
