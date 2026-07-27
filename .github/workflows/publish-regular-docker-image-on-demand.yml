@@ -16,6 +16,7 @@ env:
   ELIXIR_VERSION: '1.19.4'
 
 permissions:
+  actions: write
   contents: write
   packages: write
 
@@ -95,6 +96,7 @@ jobs:
       - name: Update deployment image pins
         env:
           BACKEND_DIGEST: ${{ steps.backend_image.outputs.digest }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
         run: |
           set -euo pipefail
@@ -122,3 +124,10 @@ jobs:
             docker-compose/docker-compose-beta.yml
           git commit -m "chore: deploy DOScan ${RELEASE_VERSION}"
           git push origin main
+
+          gh workflow run deploy-config.yml \
+            --ref main \
+            -f environment=mainnet
+          gh workflow run deploy-config.yml \
+            --ref main \
+            -f environment=testnet
