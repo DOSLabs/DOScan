@@ -46,7 +46,7 @@ services:
       retries: 5
 
   backend:
-    image: ghcr.io/dos/doscan:11.2.3.commit.a0eb1169@sha256:8f12c2423fe27b05551e72376cea4614819c485759298176ef64ceaad31463cf
+    image: ghcr.io/dos/doscan:11.2.3.commit.841b9e3b@sha256:45d9f854f44178185f15579908c6cd7f57acb9836e64a86d90e2385b63882229
     pull_policy: always
     restart: unless-stopped
     stop_grace_period: 5m
