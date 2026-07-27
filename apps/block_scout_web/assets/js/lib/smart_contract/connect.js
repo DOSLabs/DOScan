@@ -1,111 +1,146 @@
 import Web3 from 'web3'
-import Web3Modal from 'web3modal'
-import WalletConnectProvider from '@walletconnect/web3-provider'
+import { createAppKit } from '@reown/appkit'
+import { EthersAdapter } from '@reown/appkit-adapter-ethers'
 import { compareChainIDs, formatError, showConnectElements, showConnectedToElements } from './common_helpers'
 import { openWarningModal } from '../modals'
 
 // @ts-ignore
 const instanceChainIdStr = document.getElementById('js-chain-id').value
 const instanceChainId = parseInt(instanceChainIdStr, 10)
-const walletConnectOptions = { rpc: {}, chainId: instanceChainId }
 // @ts-ignore
 const jsonRPC = document.getElementById('js-json-rpc').value
-walletConnectOptions.rpc[instanceChainId] = jsonRPC
+// @ts-ignore
+const reownProjectId = document.getElementById('js-reown-project-id').value
 
 // Chosen wallet provider given by the dialog window
 let provider
 
-// Web3modal instance
-let web3Modal
+// Reown AppKit instance
+let appKit
+let appKitReady
+
+const network = {
+  id: instanceChainId,
+  name: document.title,
+  nativeCurrency: {
+    decimals: 18,
+    name: 'Native token',
+    symbol: document.getElementById('js-coin-name').value
+  },
+  rpcUrls: {
+    default: { http: [jsonRPC] }
+  },
+  blockExplorers: {
+    default: { name: document.title, url: window.location.origin }
+  }
+}
 
 /**
  * Setup the orchestra
  */
 export async function web3ModalInit (connectToWallet, ...args) {
-  return new Promise((resolve) => {
-    // Tell Web3modal what providers we have available.
-    // Built-in web browser provider (only one can exist as a time)
-    // like MetaMask, Brave or Opera is added automatically by Web3modal
-    const providerOptions = {
-      walletconnect: {
-        package: WalletConnectProvider,
-        options: walletConnectOptions
-      }
+  if (!reownProjectId) {
+    return null
+  }
+
+  appKit = createAppKit({
+    adapters: [new EthersAdapter()],
+    networks: [network],
+    defaultNetwork: network,
+    projectId: reownProjectId,
+    metadata: {
+      name: document.title,
+      description: document.title,
+      url: window.location.origin,
+      icons: [`${window.location.origin}/favicon.ico`]
+    },
+    enableNetworkSwitch: false,
+    features: {
+      analytics: false,
+      email: false,
+      socials: [],
+      swaps: false,
+      onramp: false
+    }
+  })
+  appKitReady = appKit.ready()
+  await appKitReady
+
+  if (appKit.getIsConnectedState()) {
+    provider = appKit.getWalletProvider()
+    if (provider) {
+      await connectToWallet(...args)
+    }
+  }
+
+  return appKit
+}
+
+const getInjectedProvider = async () => {
+  if (!window.ethereum) {
+    return null
+  }
+
+  try {
+    const accounts = await window.ethereum.request({ method: 'eth_accounts' })
+    return accounts.length > 0 ? window.ethereum : null
+  } catch (_error) {
+    return null
+  }
+}
+
+const waitForAppKitProvider = () => {
+  return new Promise((resolve, reject) => {
+    let modalWasOpened = false
+    let unsubscribeProviders = () => {}
+    let unsubscribeState = () => {}
+    const cleanup = () => {
+      unsubscribeProviders()
+      unsubscribeState()
     }
 
-    web3Modal = new Web3Modal({
-      cacheProvider: true,
-      providerOptions,
-      disableInjectedProvider: false
+    unsubscribeProviders = appKit.subscribeProviders(providers => {
+      if (providers.eip155) {
+        cleanup()
+        resolve(providers.eip155)
+      }
+    })
+    unsubscribeState = appKit.subscribeState(({ open }) => {
+      modalWasOpened = modalWasOpened || open
+      if (modalWasOpened && !open && !appKit.getWalletProvider()) {
+        cleanup()
+        reject(new Error('Wallet connection was cancelled'))
+      }
     })
 
-    if (web3Modal.cachedProvider) {
-      connectToWallet(...args)
-    }
-
-    resolve(web3Modal)
+    Promise.resolve(appKit.open({ view: 'Connect', namespace: 'eip155' })).catch(error => {
+      cleanup()
+      reject(error)
+    })
   })
 }
 
-export const walletEnabled = () => {
-  return new Promise((resolve) => {
-    if (window.web3 && window.web3.currentProvider && window.web3.currentProvider.wc) {
-      resolve(true)
-    } else {
-      if (window.ethereum) {
-        window.web3 = new Web3(window.ethereum)
-        window.ethereum._metamask.isUnlocked()
-          .then(isUnlocked => {
-            if (isUnlocked && window.ethereum.isNiftyWallet) { // Nifty Wallet
-              window.web3 = new Web3(window.web3.currentProvider)
-              resolve(true)
-            } else if (isUnlocked === false && window.ethereum.isNiftyWallet) { // Nifty Wallet
-              window.ethereum.enable()
-              resolve(false)
-            } else {
-              if (window.ethereum.isNiftyWallet) {
-                window.ethereum.enable()
-                window.web3 = new Web3(window.web3.currentProvider)
-                resolve(true)
-              } else {
-                return window.ethereum.request({ method: 'eth_requestAccounts' })
-                  .then((_res) => {
-                    window.web3 = new Web3(window.web3.currentProvider)
-                    resolve(true)
-                  })
-                  .catch(_error => {
-                    resolve(false)
-                  })
-              }
-            }
-          })
-          .catch(_error => {
-            resolve(false)
-          })
-      } else if (window.web3) {
-        window.web3 = new Web3(window.web3.currentProvider)
-        resolve(true)
-      } else {
-        resolve(false)
-      }
-    }
-  })
+export const walletEnabled = async () => {
+  provider = provider || (appKit && appKit.getWalletProvider()) || await getInjectedProvider()
+
+  if (!provider) {
+    return false
+  }
+
+  window.web3 = new Web3(provider)
+  return true
 }
 
 export async function disconnect () {
-  if (provider && provider.close) {
-    await provider.close()
+  if (appKit && appKit.getIsConnectedState()) {
+    await appKit.disconnect('eip155')
+  } else if (provider && provider.disconnect) {
+    await provider.disconnect()
   }
 
   provider = null
 
   window.web3 = null
-
-  // If the cached provider is not cleared,
-  // WalletConnect will default to the existing session
-  // and does not allow to re-scan the QR code with a new wallet.
-  // Depending on your use case you may want or want not his behavior.
-  await web3Modal.clearCachedProvider()
 }
 
 /**
@@ -118,19 +153,20 @@ export async function disconnectWallet () {
 }
 
 export const connectToProvider = () => {
-  return new Promise((resolve, reject) => {
-    try {
-      web3Modal
-        .connect()
-        .then((connectedProvider) => {
-          provider = connectedProvider
-          window.web3 = new Web3(provider)
-          resolve(provider)
-        })
-    } catch (e) {
-      reject(e)
+  return (async () => {
+    if (appKit) {
+      await appKitReady
+      provider = appKit.getWalletProvider() || await waitForAppKitProvider()
+    } else if (window.ethereum) {
+      await window.ethereum.request({ method: 'eth_requestAccounts' })
+      provider = window.ethereum
+    } else {
+      throw new Error('No wallet provider is available')
     }
-  })
+
+    window.web3 = new Web3(provider)
+    return provider
+  })()
 }
 
 export const connectToWallet = async () => {
