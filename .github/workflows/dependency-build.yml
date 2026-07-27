@@ -84,7 +84,22 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes automake autoconf build-essential file git libgmp-dev libtool make python3
+          sudo apt-get install --yes \
+            automake \
+            autoconf \
+            build-essential \
+            ffmpeg \
+            file \
+            git \
+            libavcodec-dev \
+            libavdevice-dev \
+            libavformat-dev \
+            libavutil-dev \
+            libgmp-dev \
+            libswscale-dev \
+            libtool \
+            make \
+            python3
 
       - name: Compile production application
         run: |
@@ -123,6 +138,41 @@ jobs:
               ^size = Image.width(reloaded)
               ^size = Image.height(reloaded)
             end)
+          '
+
+      - name: Smoke test NFT video processing
+        run: |
+          video_path="$(mktemp --suffix=.mp4)"
+          trap 'rm -f "$video_path"' EXIT
+
+          ffmpeg \
+            -hide_banner \
+            -loglevel error \
+            -f lavfi \
+            -i color=c=red:s=600x600:d=1 \
+            -c:v mpeg4 \
+            -pix_fmt yuv420p \
+            "$video_path"
+
+          VIDEO_PATH="$video_path" mix run --no-start -e '
+            video_path = System.fetch_env!("VIDEO_PATH")
+
+            {:ok, image} =
+              Image.Video.with_video(video_path, fn video ->
+                Image.Video.image_from_video(video, frame: 0)
+              end)
+
+            600 = Image.width(image)
+            600 = Image.height(image)
+
+            thumbnails =
+              NFTMediaHandler.Image.Resizer.resize(
+                image,
+                "https://example.com/nft/smoke.mp4",
+                ".jpg"
+              )
+
+            [60, 250, 500] = Enum.map(thumbnails, &elem(&1, 0))
           '
 
   production-docker:
