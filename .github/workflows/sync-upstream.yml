@@ -137,6 +137,7 @@ jobs:
         run: |
           # Keep ONLY our DOS-specific workflows, delete everything else
           KEEP_FILES=(
+            "dependency-build.yml"
             "deploy-config.yml"
             "publish-regular-docker-image-on-demand.yml"
             "sync-upstream.yml"
