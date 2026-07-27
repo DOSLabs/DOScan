@@ -26,10 +26,10 @@ jobs:
     permissions:
       contents: write
       packages: write
-    outputs:
-      deployment_pin_changed: ${{ steps.deployment_pin.outputs.changed }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          token: ${{ secrets.GH_PAT }}
 
       - name: Determine release version
         id: version
@@ -98,7 +98,6 @@ jobs:
             RELEASE_VERSION=${{ steps.version.outputs.release_version }}
 
       - name: Update deployment image pins
-        id: deployment_pin
         env:
           BACKEND_DIGEST: ${{ steps.backend_image.outputs.digest }}
           RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
@@ -119,7 +118,6 @@ jobs:
 
           if git diff --quiet -- docker-compose/; then
             echo "Deployment image pins are already current"
-            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             git add \
               docker-compose/docker-compose-mainnet.yml \
@@ -127,41 +125,4 @@ jobs:
               docker-compose/docker-compose-beta.yml
             git commit -m "chore: deploy DOScan ${RELEASE_VERSION}"
             git push origin main
-            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
-
-  deploy_mainnet:
-    name: Dispatch mainnet deployment
-    needs: push_to_registry
-    if: needs.push_to_registry.outputs.deployment_pin_changed == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-      contents: read
-    steps:
-      - name: Dispatch Deploy Config
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh workflow run deploy-config.yml \
-            --repo "${GITHUB_REPOSITORY}" \
-            --ref main \
-            -f environment=mainnet
-
-  deploy_testnet:
-    name: Dispatch testnet deployment
-    needs: push_to_registry
-    if: needs.push_to_registry.outputs.deployment_pin_changed == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-      contents: read
-    steps:
-      - name: Dispatch Deploy Config
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh workflow run deploy-config.yml \
-            --repo "${GITHUB_REPOSITORY}" \
-            --ref main \
-            -f environment=testnet
