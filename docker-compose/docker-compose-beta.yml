@@ -30,7 +30,7 @@ services:
     depends_on:
       redis-db:
         condition: service_healthy
-    image: ghcr.io/dos/doscan:11.2.3.commit.a1b48166@sha256:b604e1c0983c50f5b489b89f3d81ba257f86519007dc552920d6d278a57b0bd0
+    image: ghcr.io/dos/doscan:11.2.3.commit.a4c9159e@sha256:6b7ed9a9082092b3e32ce83a1067d3ae510b84d23b43ee30a1e0494af328e7a2
     pull_policy: always
     restart: always
     stop_grace_period: 5m
