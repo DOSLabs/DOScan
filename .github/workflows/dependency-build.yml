@@ -94,6 +94,37 @@ jobs:
           mix deps.compile --skip-umbrella-children
           mix compile
 
+      - name: Smoke test NFT image processing
+        run: |
+          mix run --no-start -e '
+            source = """
+            <svg xmlns="http://www.w3.org/2000/svg" width="600" height="600">
+              <rect width="600" height="600" fill="#ff2e29"/>
+            </svg>
+            """
+
+            {:ok, image} = Image.from_binary(source, pages: -1)
+            600 = Image.width(image)
+            600 = Image.height(image)
+            1 = Image.pages(image)
+
+            thumbnails =
+              NFTMediaHandler.Image.Resizer.resize(
+                image,
+                "https://example.com/nft/smoke.png",
+                ".png"
+              )
+
+            [60, 250, 500] = Enum.map(thumbnails, &elem(&1, 0))
+
+            Enum.each(thumbnails, fn {size, encoded, file_name} ->
+              true = String.ends_with?(file_name, "_#{size}x#{size}.png")
+              {:ok, reloaded} = Image.from_binary(encoded, pages: -1)
+              ^size = Image.width(reloaded)
+              ^size = Image.height(reloaded)
+            end)
+          '
+
   production-docker:
     name: Build published production Docker image
     needs: changes
