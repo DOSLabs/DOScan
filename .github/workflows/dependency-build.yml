@@ -97,19 +97,32 @@ jobs:
       - name: Smoke test NFT image processing
         run: |
           mix run --no-start -e '
-            source =
-              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-              |> Base.decode64!()
+            source = """
+            <svg xmlns="http://www.w3.org/2000/svg" width="600" height="600">
+              <rect width="600" height="600" fill="#ff2e29"/>
+            </svg>
+            """
 
             {:ok, image} = Image.from_binary(source, pages: -1)
-            1 = Image.width(image)
-            1 = Image.height(image)
+            600 = Image.width(image)
+            600 = Image.height(image)
             1 = Image.pages(image)
-            {:ok, thumbnail} = Image.thumbnail(image, "1x1", [])
-            {:ok, encoded} = NFTMediaHandler.image_to_binary(thumbnail, "smoke.png", ".png")
-            {:ok, reloaded} = Image.from_binary(encoded, pages: -1)
-            1 = Image.width(reloaded)
-            1 = Image.height(reloaded)
+
+            thumbnails =
+              NFTMediaHandler.Image.Resizer.resize(
+                image,
+                "https://example.com/nft/smoke.png",
+                ".png"
+              )
+
+            [60, 250, 500] = Enum.map(thumbnails, &elem(&1, 0))
+
+            Enum.each(thumbnails, fn {size, encoded, file_name} ->
+              true = String.ends_with?(file_name, "_#{size}x#{size}.png")
+              {:ok, reloaded} = Image.from_binary(encoded, pages: -1)
+              ^size = Image.width(reloaded)
+              ^size = Image.height(reloaded)
+            end)
           '
 
   production-docker:
