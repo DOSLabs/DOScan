@@ -54,7 +54,7 @@ jobs:
             exit 0
           fi
 
-          git diff --name-only --diff-filter=ACMRT "$BASE_SHA" "$HEAD_SHA" > /tmp/changed-files
+          git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" > /tmp/changed-files
           cat /tmp/changed-files
 
           if grep -Eq \
