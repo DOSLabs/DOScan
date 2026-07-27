@@ -24,12 +24,13 @@ jobs:
     name: Push Docker image to GitHub Container Registry
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       packages: write
+    outputs:
+      backend_digest: ${{ steps.backend_image.outputs.digest }}
+      release_version: ${{ steps.version.outputs.release_version }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          token: ${{ secrets.GH_PAT }}
 
       - name: Determine release version
         id: version
@@ -97,18 +98,29 @@ jobs:
             BLOCKSCOUT_VERSION=v${{ steps.version.outputs.release_version }}.+commit.${{ env.SHORT_SHA }}
             RELEASE_VERSION=${{ steps.version.outputs.release_version }}
 
-      - name: Update deployment image pins
+  update_deployment_pins:
+    name: Update deployment image pins
+    needs: push_to_registry
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: main
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Commit deployment image pins
         env:
-          BACKEND_DIGEST: ${{ steps.backend_image.outputs.digest }}
-          RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
+          BACKEND_DIGEST: ${{ needs.push_to_registry.outputs.backend_digest }}
+          RELEASE_VERSION: ${{ needs.push_to_registry.outputs.release_version }}
         run: |
           set -euo pipefail
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git checkout -B main origin/main
 
+          SHORT_SHA="${GITHUB_SHA::8}"
           IMAGE="ghcr.io/dos/doscan:${RELEASE_VERSION}.commit.${SHORT_SHA}@${BACKEND_DIGEST}"
           sed -i -E \
             "s#ghcr.io/dos/doscan:[^[:space:]]+#${IMAGE}#" \
