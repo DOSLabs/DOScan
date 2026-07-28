@@ -147,9 +147,13 @@ jobs:
             --command='
               set -euo pipefail
 
-              ARCHIVE="/tmp/doscan-config-${{ github.run_id }}-${{ github.run_attempt }}.tgz"
+              RUN_ID='"${GITHUB_RUN_ID}"'
+              RUN_ATTEMPT='"${GITHUB_RUN_ATTEMPT}"'
+              DEPLOY_ID="${RUN_ID}-${RUN_ATTEMPT}"
+              ARCHIVE="/tmp/doscan-config-${DEPLOY_ID}.tgz"
+              test -s "${ARCHIVE}"
               SRC="$(mktemp -d /tmp/doscan-deploy.XXXXXX)"
-              BACKUP="/opt/doscan-l1/backups/github-${{ github.run_id }}-${{ github.run_attempt }}"
+              BACKUP="/opt/doscan-l1/backups/github-${DEPLOY_ID}"
               L1_PATH="/opt/doscan-l1"
               EDGE_PATH="/opt/doscan"
               SHARED_ENV_PATH="/opt/doscan/envs"
@@ -460,7 +464,7 @@ jobs:
                 http://smart-contract-verifier:8050/health >/dev/null
 
               verify_nft_media_runtime() {
-                probe_key="healthchecks/github-${{ github.run_id }}-${{ github.run_attempt }}.txt"
+                probe_key="healthchecks/github-${DEPLOY_ID}.txt"
                 for probe_attempt in $(seq 1 5); do
                   if probe_output="$(
                     sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
@@ -515,7 +519,7 @@ jobs:
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/public-metrics >/dev/null
               frontend_env="$(
                 curl --fail --silent --show-error --retry 6 --retry-delay 5 \
-                  "https://doscan.io/assets/envs.js?deploy=${{ github.run_id }}-${{ github.run_attempt }}"
+                  "https://doscan.io/assets/envs.js?deploy=${DEPLOY_ID}"
               )"
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://doscan.io/metadata-api\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://doscan.io\"" <<<"${frontend_env}"
@@ -647,10 +651,14 @@ jobs:
             --command='
               set -euo pipefail
 
-              ARCHIVE="/tmp/doscan-testnet-config-${{ github.run_id }}-${{ github.run_attempt }}.tgz"
+              RUN_ID='"${GITHUB_RUN_ID}"'
+              RUN_ATTEMPT='"${GITHUB_RUN_ATTEMPT}"'
+              DEPLOY_ID="${RUN_ID}-${RUN_ATTEMPT}"
+              ARCHIVE="/tmp/doscan-testnet-config-${DEPLOY_ID}.tgz"
+              test -s "${ARCHIVE}"
               SRC="$(mktemp -d /tmp/doscan-testnet-deploy.XXXXXX)"
               DEPLOY_PATH="/opt/doscan-testnet"
-              BACKUP="${DEPLOY_PATH}/backups/github-${{ github.run_id }}-${{ github.run_attempt }}"
+              BACKUP="${DEPLOY_PATH}/backups/github-${DEPLOY_ID}"
               SECRETS_ENV="${DEPLOY_PATH}/envs/common-blockscout-secrets.env"
               NFT_MEDIA_SECRETS="${SRC}/common-blockscout-nft-media.env"
               DEPLOYMENT_STARTED=0
@@ -921,7 +929,7 @@ jobs:
                 "https://metadata.services.blockscout.com/api/v1/metadata?chain_id=3939&addresses=0x0000000000000000000000000000000000000000&tags_limit=1" >/dev/null
 
               verify_nft_media_runtime() {
-                probe_key="healthchecks/github-${{ github.run_id }}-${{ github.run_attempt }}.txt"
+                probe_key="healthchecks/github-${DEPLOY_ID}.txt"
                 for probe_attempt in $(seq 1 5); do
                   if probe_output="$(
                     sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
@@ -942,7 +950,7 @@ jobs:
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://test.doscan.io/public-metrics >/dev/null
               frontend_env="$(
                 curl --fail --silent --show-error --retry 6 --retry-delay 5 \
-                  "https://test.doscan.io/assets/envs.js?deploy=${{ github.run_id }}-${{ github.run_attempt }}"
+                  "https://test.doscan.io/assets/envs.js?deploy=${DEPLOY_ID}"
               )"
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://test.doscan.io/metadata-api\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://test.doscan.io\"" <<<"${frontend_env}"
