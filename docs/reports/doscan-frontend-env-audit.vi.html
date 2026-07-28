@@ -137,13 +137,13 @@
   <section class="hero">
     <div class="eyebrow">DOScan Production Audit</div>
     <h1>Env Blockscout Frontend nào đáng bật cho DOS Chain?</h1>
-    <p class="lead">Đối chiếu env đang chạy thật trên prod với Blockscout Frontend v2.9.4 và đặc tính Avalanche L1 dùng Subnet-EVM.</p>
+    <p class="lead">Đối chiếu env đang chạy thật trên prod với Blockscout Frontend v2.9.5, Blockscout Backend 11.2.3 và đặc tính Avalanche L1 dùng Subnet-EVM.</p>
     <div class="grid">
       <div class="metric"><strong>71</strong><span>env frontend đang chạy sau deploy</span></div>
-      <div class="metric"><strong>8</strong><span>cấu hình hữu ích đã triển khai</span></div>
+      <div class="metric"><strong>9</strong><span>cấu hình hữu ích đã triển khai</span></div>
       <div class="metric"><strong>6</strong><span>cấu hình sai hoặc vô ích đã dọn</span></div>
     </div>
-    <div class="verdict"><strong>Đã triển khai ngày 25/07/2026:</strong> Hot Contracts, SEO nâng cao, chi tiết phí giao dịch, nhóm phí giao dịch, menu DeFi, DOS Faucet đúng app, ẩn giá DOS chưa có dữ liệu và dọn widget homepage rỗng. Tính năng đáng đầu tư tiếp theo riêng cho Avalanche L1 là Cross-chain Transactions cho ICM/Teleporter/ICTT, nhưng cần triển khai thêm Interchain Indexer chứ không chỉ thêm env.</div>
+    <div class="verdict"><strong>Đã triển khai đến ngày 28/07/2026:</strong> Hot Contracts, SEO nâng cao, chi tiết phí giao dịch, nhóm phí giao dịch, menu DeFi, DOS Faucet đúng app, ẩn giá DOS chưa có dữ liệu, dọn widget homepage rỗng và NFT Media Handler dùng Google Cloud Storage. Tính năng đáng đầu tư tiếp theo riêng cho Avalanche L1 là Cross-chain Transactions cho ICM/Teleporter/ICTT, nhưng cần triển khai thêm Interchain Indexer chứ không chỉ thêm env.</div>
   </section>
 
   <h2>0. Trạng thái triển khai</h2>
@@ -154,6 +154,11 @@
     <p>Kiểm tra live bằng Playwright sau merge: homepage, <code>/hot-contracts</code>, <code>/ops</code> và <code>/apps</code> đều tải đúng; console không còn lỗi Reown allowlist hoặc Metadata CORS. Menu DeFi, DOS Faucet, Hot Contracts, User Operations, Gas fee và Fee per gas đều hiển thị.</p>
   </div>
   <div class="verdict"><strong class="good">Reown và Metadata đã được xử lý:</strong> Reown Dashboard đã allowlist <code>https://doscan.io</code>. Metadata Service được proxy an toàn qua <code>https://doscan.io/metadata-api</code>; Caddy loại bỏ <code>Cookie</code> và <code>Authorization</code> trước khi chuyển request tới dịch vụ bên ngoài. Kiểm tra Playwright ngày 25/07/2026 không còn lỗi Reown allowlist hoặc Metadata CORS.</div>
+  <div class="verdict">
+    <strong class="good">NFT Media Handler đã chạy trên Mainnet và Testnet:</strong>
+    <p><a href="https://github.com/DOS/DOScan/pull/115">PR #115</a> bật xử lý media trong backend hiện tại, dùng bucket GCS <code>doscan</code>. Các PR <a href="https://github.com/DOS/DOScan/pull/116">#116</a>, <a href="https://github.com/DOS/DOScan/pull/117">#117</a>, <a href="https://github.com/DOS/DOScan/pull/119">#119</a> và <a href="https://github.com/DOS/DOScan/pull/120">#120</a> hoàn thiện recreate backend, runtime probe và Erlang node naming. <a href="https://github.com/DOS/DOScan/actions/runs/30331379243">Deploy run #30331379243</a> xác nhận dispatcher cùng GCS ghi-đọc-xóa thành công trên cả hai môi trường.</p>
+    <p>Mainnet đã được kiểm tra lại sau deploy: container backend mới tạo lúc <code>2026-07-28T05:24:02Z</code>, trạng thái healthy, API hoạt động, handler bật và dùng prefix <code>mainnet/nft-media</code>. Testnet đã xử lý NFT thật thành công, ghi original cùng thumbnail 60, 250 và 500 px vào prefix <code>testnet/nft-media</code>.</p>
+  </div>
 
   <h2>1. DOS Chain có phù hợp với các env EVM không?</h2>
   <p><strong>Có.</strong> DOS Chain là Avalanche L1 chạy Subnet-EVM, nên địa chỉ, giao dịch, token ERC, smart contract, EIP-1559 gas và wallet interaction đều dùng mô hình EVM. Avalanche ghi rõ Avalanche L1 có thể dùng Subnet-EVM và chọn EVM-style Chain ID. Địa chỉ EVM vẫn là dạng <code>0x...</code>; Bech32 chỉ dành cho X-Chain/P-Chain.</p>
@@ -233,6 +238,29 @@ NEXT_PUBLIC_VIEWS_TX_GROUPED_FEES=true</pre>
   'total_blocks','average_block_time','total_txs','wallet_addresses','gas_tracker'
 ]
 NEXT_PUBLIC_HIDE_NATIVE_COIN_PRICE=true</pre>
+    </div>
+  </div>
+
+  <h2>2A. NFT Media Handler và Google Cloud Storage</h2>
+  <div class="priority">
+    <div class="num">7</div>
+    <div>
+      <h3>Xử lý thumbnail NFT ngay trong Blockscout backend</h3>
+      <span class="tag now">Đã bật Mainnet</span><span class="tag now">Đã bật Testnet</span><span class="tag now">Phù hợp Avalanche L1</span>
+      <p>Blockscout tải media từ metadata NFT, kiểm tra định dạng, tạo các thumbnail 60, 250 và 500 px, rồi lưu original cùng thumbnail vào Google Cloud Storage. Frontend đọc URL public đã xử lý nên trang NFT ổn định hơn, tải nhanh hơn và ít phụ thuộc trực tiếp vào IPFS gateway hoặc website nguồn.</p>
+      <p>Tính năng này không phụ thuộc cơ chế consensus. DOS Chain dùng EVM và chuẩn ERC-721/ERC-1155 như các chain EVM khác, nên hoàn toàn phù hợp với Avalanche L1 chạy Subnet-EVM.</p>
+      <pre>NFT_MEDIA_HANDLER_ENABLED=true
+NFT_MEDIA_HANDLER_REMOTE_DISPATCHER_NODE_MODE_ENABLED=false
+NFT_MEDIA_HANDLER_AWS_BUCKET_HOST=storage.googleapis.com
+NFT_MEDIA_HANDLER_AWS_BUCKET_NAME=doscan
+NFT_MEDIA_HANDLER_AWS_PUBLIC_BUCKET_URL=https://storage.googleapis.com/doscan
+NFT_MEDIA_HANDLER_BACKFILL_ENABLED=true</pre>
+      <p><strong>Không bắt buộc Cloudflare R2.</strong> Blockscout dùng giao thức S3-compatible, còn Google Cloud Storage cung cấp XML API tương thích S3 tại <code>storage.googleapis.com</code>. Vì vậy DOS tận dụng được GCP credit và không cần dựng thêm R2.</p>
+      <p><strong>Không có container riêng.</strong> Handler đang chạy inline trong backend Blockscout hiện tại. Mainnet và Testnet dùng chung bucket <code>gs://doscan</code> nhưng tách prefix <code>mainnet/nft-media</code> và <code>testnet/nft-media</code>.</p>
+      <p><a href="doscan-nft-media-handler.vi.html">Mở báo cáo chuyên biệt về NFT Media Handler, policy GCS và bằng chứng end-to-end.</a></p>
+      <p><strong>Bảo mật:</strong> trình duyệt chỉ có quyền đọc object public theo URL đã biết. HMAC nằm trong Google Secret Manager <code>doscan-nft-media-hmac</code>, được workflow đưa vào secret env trên VM và không nằm trong repo. Custom role <code>doscanPublicObjectReader</code> chỉ chứa quyền <code>storage.objects.get</code>, nên không cho phép liệt kê bucket, upload, ghi đè hoặc xóa object. Probe ẩn danh xác nhận GET object trả HTTP 200, còn list bucket bị chặn.</p>
+      <p><strong>Chi phí:</strong> GCS tính phí theo dung lượng lưu trữ, thao tác và băng thông ra ngoài. Tải nội bộ và giai đoạn lưu lượng thấp thường nhỏ, đồng thời được trừ vào GCP credit hiện có. Cần theo dõi số object và egress khi marketplace hoặc lượng NFT tăng mạnh.</p>
+      <div class="callout"><strong>Rủi ro vận hành còn lại:</strong> Mainnet và Testnet đang dùng chung một HMAC service account. Khi rotate key phải deploy và xác minh cả hai môi trường trước khi vô hiệu hóa key cũ.</div>
     </div>
   </div>
 
@@ -365,12 +393,14 @@ NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=none</pre>
   <h2>7. Nguồn và phạm vi kiểm chứng</h2>
   <ul class="sources">
     <li><a href="https://docs.blockscout.com/setup/env-variables/frontend-common-envs/envs">Blockscout Frontend ENVs chính thức</a></li>
-    <li><a href="https://github.com/blockscout/frontend/releases/tag/v2.9.4">Blockscout Frontend v2.9.4</a></li>
+    <li><a href="https://github.com/blockscout/frontend/releases/tag/v2.9.5">Blockscout Frontend v2.9.5</a></li>
+    <li><a href="https://docs.blockscout.com/setup/env-variables/backend-env-variables">Blockscout Backend ENVs và NFT Media Handler</a></li>
+    <li><a href="https://docs.cloud.google.com/storage/docs/interoperability">Google Cloud Storage XML API tương thích S3 và HMAC</a></li>
     <li><a href="https://build.avax.network/docs/tooling/avalanche-cli/create-avalanche-l1">Avalanche: tạo EVM-based L1 bằng Subnet-EVM</a></li>
     <li><a href="https://build.avax.network/docs/tooling/avalanche-sdk/client/accounts/local/addresses">Avalanche: địa chỉ EVM 0x và địa chỉ X/P-Chain Bech32</a></li>
     <li><a href="https://github.com/blockscout/blockscout-rs/tree/main/interchain-indexer">Blockscout Interchain Indexer</a></li>
   </ul>
-  <p class="muted">Audit ban đầu thực hiện ngày 24/07/2026. Gói env được deploy và kiểm tra lại ngày 25/07/2026 trên container <code>metados/blockscout-frontend:2.9.4</code> tại production GCP. Bản sao env trước deploy đã được giữ lại trên VM để rollback nếu cần.</p>
+  <p class="muted">Audit ban đầu thực hiện ngày 24/07/2026. Frontend được kiểm tra trên image <code>metados/blockscout-frontend:2.9.5</code>. NFT Media Handler được deploy và kiểm tra lại ngày 28/07/2026 trên Blockscout Backend 11.2.3 tại production GCP. Bản sao env trước deploy đã được giữ lại trên VM để rollback nếu cần.</p>
 </main>
 </body>
 </html>

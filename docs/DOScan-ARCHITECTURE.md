@@ -4,14 +4,16 @@
 
 DOScan is the blockchain explorer for DOS Chain, built on [Blockscout](https://github.com/blockscout/blockscout). This document describes the architecture for both Testnet and Mainnet deployments.
 
+> Current deployment note: Mainnet and Testnet run on GCP. Some historical Azure and local Beta sections remain below for migration context. Use the checked-in GCP compose files and [NFT Media Handler documentation](NFT-MEDIA-HANDLER.md) as the source of truth for the current NFT media path.
+
 ---
 
 ## Environments
 
 | Environment | Domain | Chain ID | Host | Status |
 |-------------|--------|----------|------|--------|
-| Testnet | test.doscan.io | 3939 | Azure VM `dev` (20.198.249.62) | Active |
-| Mainnet | doscan.io | 7979 | Azure VM `archive` (20.195.24.239) | Active |
+| Testnet | test.doscan.io | 3939 | GCP VM `dos-testnet-r0`, `asia-southeast1-a` | Active |
+| Mainnet | doscan.io | 7979 | GCP VM `doscan-mainnet`, `asia-southeast1-b` | Active |
 | **Beta** | beta.doscan.io | 7979 | **Local WSL2** (Cloudflare Tunnel) | Active (2026-02-22) |
 
 ---
@@ -81,7 +83,7 @@ DOScan is the blockchain explorer for DOS Chain, built on [Blockscout](https://g
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                  AvalancheGo (Native Systemd — NOT Docker)                  │
+│                  AvalancheGo (Native Systemd - NOT Docker)                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Binary: /usr/local/bin/avalanchego (v1.14.1, built-in subnet-evm)        │
 │  Service: systemctl start|stop avalanchego                                 │
@@ -139,8 +141,8 @@ SUBNETWORK=Mainnet
 
 | Domain | Backend | CORS |
 |--------|---------|------|
-| `doscan.io`, `www.doscan.io` | Frontend (:3000) default, Backend (:4000) for `/api/*`, `/socket/*`, `/auth/*`, `/sitemap.xml`, `/metrics`; Visualizer (:8050) for `/visualize/*` | — |
-| `api.doscan.io` | Backend (:4000) all paths | — |
+| `doscan.io`, `www.doscan.io` | Frontend (:3000) default, Backend (:4000) for `/api/*`, `/socket/*`, `/auth/*`, `/sitemap.xml`, `/metrics`; Visualizer (:8050) for `/visualize/*` | - |
+| `api.doscan.io` | Backend (:4000) all paths | - |
 | `stats.doscan.io` | Stats (:8050) | `https://doscan.io` |
 | `viz.doscan.io` | Visualizer (:8050) | `https://doscan.io` |
 
@@ -151,7 +153,7 @@ All domains use Cloudflare Origin SSL certificates (`/etc/caddy/certs/origin.pem
 AvalancheGo runs as **native systemd** on the host (NOT Docker):
 
 ```bash
-# Binary: /usr/local/bin/avalanchego (v1.14.1, built-in subnet-evm — no plugin file needed)
+# Binary: /usr/local/bin/avalanchego (v1.14.1, built-in subnet-evm - no plugin file needed)
 sudo systemctl status avalanchego
 ```
 
@@ -184,10 +186,10 @@ All environments use a **base + override** pattern for env files. Mainnet is the
 
 ```
 envs/
-├── common-blockscout.env          ← BASE (mainnet) — ~680 lines, all options
+├── common-blockscout.env          ← BASE (mainnet) - ~680 lines, all options
 ├── common-blockscout-beta.env     ← Override (~25 lines): RPC, DB, host, secret, concurrency
 ├── common-blockscout-testnet.env  ← Override (~34 lines): RPC, DB, chain ID, host, secret, sourcify
-├── common-frontend.env            ← BASE (mainnet) — ~200 lines, all options
+├── common-frontend.env            ← BASE (mainnet) - ~200 lines, all options
 ├── common-frontend-beta.env       ← Override (~11 lines): host, API host, stats/viz URLs
 ├── common-frontend-testnet.env    ← Override (~38 lines): network name, chain ID, testnet flag, etc.
 ├── common-smart-contract-verifier.env  ← Shared (all envs)
@@ -207,11 +209,11 @@ frontend:
     - ./envs/common-frontend-testnet.env    # override (testnet-specific)
 ```
 
-> **IMPORTANT — Empty string override pitfall:**
+> **IMPORTANT - Empty string override pitfall:**
 > Setting `VAR=` (empty string) in override file is NOT the same as unsetting it.
-> Blockscout frontend validates env dependencies — e.g. `NEXT_PUBLIC_METADATA_ADDRESS_TAGS_UPDATE_ENABLED`
+> Blockscout frontend validates env dependencies - e.g. `NEXT_PUBLIC_METADATA_ADDRESS_TAGS_UPDATE_ENABLED`
 > requires `NEXT_PUBLIC_METADATA_SERVICE_API_HOST` to be non-empty.
-> If you don't need to change a value, **don't include it in the override file** — let the base apply.
+> If you don't need to change a value, **don't include it in the override file** - let the base apply.
 
 **GitHub Environments & Secrets:**
 
@@ -433,7 +435,7 @@ az vm run-command invoke --resource-group METADOS --name dev \
 
 ### Microservices (from [blockscout-rs](https://github.com/blockscout/blockscout-rs))
 
-All microservices run as official Docker images from `ghcr.io/blockscout/`. No fork needed — pull image, configure via env vars.
+All microservices run as official Docker images from `ghcr.io/blockscout/`. No fork needed - pull image, configure via env vars.
 
 #### In Use (6/12)
 
@@ -450,14 +452,14 @@ All microservices run as official Docker images from `ghcr.io/blockscout/`. No f
 
 | Service | Why Not Used |
 |---------|-------------|
-| **eth-bytecode-db** | Cross-chain bytecode DB for auto-verification — single chain, not needed yet |
-| **interchain-indexer** | Universal Bridge Indexer — could use for ICM/ICTT bridge indexing (future) |
-| **proxy-verifier** | Multi-chain verification backend — already have smart-contract-verifier |
-| **da-indexer** | Celestia/EigenDA blob collection — DOS Chain doesn't use DA layers |
-| **tac-operation-lifecycle** | TON Application Chain specific — not applicable |
-| **multichain-aggregator** | Aggregate multiple Blockscout instances + interop — mainnet/testnet run separately |
+| **eth-bytecode-db** | Cross-chain bytecode DB for auto-verification - single chain, not needed yet |
+| **interchain-indexer** | Universal Bridge Indexer - could use for ICM/ICTT bridge indexing (future) |
+| **proxy-verifier** | Multi-chain verification backend - already have smart-contract-verifier |
+| **da-indexer** | Celestia/EigenDA blob collection - DOS Chain doesn't use DA layers |
+| **tac-operation-lifecycle** | TON Application Chain specific - not applicable |
+| **multichain-aggregator** | Aggregate multiple Blockscout instances + interop - mainnet/testnet run separately |
 
-#### BENS (blockscout-ens) — DOS Name Service
+#### BENS (blockscout-ens) - DOS Name Service
 
 Runs on dev VM (`20.198.249.62`), separate from the main DOScan stack:
 
@@ -618,7 +620,7 @@ Cloudflare (DNS)
 ```
 
 > **Note:** `main.doschain.com` and `main2.doschain.com` both route through the **gw** VM nginx.
-> Users call `/` (root path) — nginx appends the full blockchain RPC path internally.
+> Users call `/` (root path) - nginx appends the full blockchain RPC path internally.
 
 ### ICM Relayer (archive VM)
 
@@ -650,6 +652,7 @@ Backend and avago are in the same docker network, no external traffic needed.
 
 ## Related Documentation
 
+- [NFT Media Handler](NFT-MEDIA-HANDLER.md)
 - [Blockscout Docs](https://docs.blockscout.com/)
 - [Frontend ENV Variables](https://docs.blockscout.com/setup/env-variables/frontend-common-envs)
 - [Backend ENV Variables](https://docs.blockscout.com/setup/env-variables)
