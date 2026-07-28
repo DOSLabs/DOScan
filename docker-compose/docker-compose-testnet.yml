@@ -110,6 +110,36 @@ services:
     platform: linux/amd64
     restart: unless-stopped
 
+  user-ops-indexer:
+    image: ghcr.io/blockscout/user-ops-indexer@sha256:d0ffe9c672d9c5cf1e035b2dd8e4baf9e9b28d3382822ea2d07e69a924562932
+    pull_policy: always
+    platform: linux/amd64
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      USER_OPS_INDEXER__INDEXER__RPC_URL: http://10.148.0.7:9650/ext/bc/2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ/rpc
+      USER_OPS_INDEXER__INDEXER__CONCURRENCY: "5"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V06: "true"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V06_ENTRY_POINT: "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V07: "true"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V07_ENTRY_POINT: "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V08: "true"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V08_ENTRY_POINT: "0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108"
+      USER_OPS_INDEXER__INDEXER__REALTIME__ENABLED: "true"
+      USER_OPS_INDEXER__INDEXER__PAST_RPC_LOGS_INDEXER__ENABLED: "true"
+      USER_OPS_INDEXER__INDEXER__PAST_RPC_LOGS_INDEXER__BLOCK_RANGE: "1000"
+      USER_OPS_INDEXER__INDEXER__PAST_DB_LOGS_INDEXER__ENABLED: "true"
+      USER_OPS_INDEXER__INDEXER__PAST_DB_LOGS_INDEXER__START_BLOCK: "0"
+      USER_OPS_INDEXER__INDEXER__PAST_DB_LOGS_INDEXER__END_BLOCK: "0"
+      USER_OPS_INDEXER__DATABASE__CONNECT__URL: postgresql://postgres:@db:5432/blockscout
+      USER_OPS_INDEXER__DATABASE__CREATE_DATABASE: "false"
+      USER_OPS_INDEXER__DATABASE__RUN_MIGRATIONS: "true"
+      USER_OPS_INDEXER__SERVER__HTTP__ADDR: "0.0.0.0:8050"
+
   stats:
     image: ghcr.io/blockscout/stats@sha256:1091cacba9287b6930575fac2aa3512dec3a8e81de58316ca63a6c20e1ddc457
     pull_policy: always
