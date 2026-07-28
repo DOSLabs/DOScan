@@ -139,23 +139,31 @@
     <h1>Các tính năng Blockscout đang bật trên DOS Chain</h1>
     <p class="lead">Đối chiếu cấu hình Frontend và Backend của Mainnet/Testnet với Blockscout Frontend v2.9.5, Blockscout Backend 11.2.3 và đặc tính Avalanche L1 dùng Subnet-EVM.</p>
     <div class="grid">
-      <div class="metric"><strong>17</strong><span>nhóm tính năng hữu ích đã cấu hình</span></div>
-      <div class="metric"><strong>17</strong><span>nhóm bật trên cả Mainnet và Testnet</span></div>
+      <div class="metric"><strong>18</strong><span>nhóm tính năng hữu ích đã cấu hình</span></div>
+      <div class="metric"><strong>18</strong><span>nhóm bật trên cả Mainnet và Testnet</span></div>
       <div class="metric"><strong>0</strong><span>lệch ở các feature flag dùng chung</span></div>
     </div>
-    <div class="verdict"><strong>Trạng thái cấu hình ngày 28/07/2026:</strong> các feature flag dùng chung đã được đồng bộ cho Mainnet và Testnet. Account Abstraction, Metadata backend, Rust Smart Contract Verifier, token metadata updater, NFT retry, partial reverification và indexer metrics đều được bật. Pending transaction và internal transaction vẫn tắt riêng trên Testnet vì RPC 3939 thực tế không cung cấp <code>txpool_content</code> và <code>debug_traceBlockByNumber</code>.</div>
+    <div class="verdict"><strong>Trạng thái production ngày 28/07/2026:</strong> các feature flag dùng chung đã được đồng bộ cho Mainnet và Testnet. Account Abstraction, Metadata backend, Web3 wallet helpers, Rust Smart Contract Verifier, token metadata updater, NFT retry, partial reverification và indexer metrics đều đã deploy. Pending transaction và internal transaction vẫn tắt riêng trên Testnet vì RPC 3939 thực tế không cung cấp <code>txpool_content</code> và <code>debug_traceBlockByNumber</code>.</div>
   </section>
 
   <h2>0. Trạng thái triển khai</h2>
   <div class="verdict">
     <strong class="good">Đã deploy thành công lên production GCP.</strong>
-    <p>Cấu hình GCP nền tảng đã merge qua <a href="https://github.com/DOS/DOScan/pull/78">PR #78</a> và <a href="https://github.com/DOS/DOScan/pull/79">PR #79</a>. Chuỗi sửa deploy Pools nằm trong <a href="https://github.com/DOS/DOScan/pull/126">PR #126</a> đến <a href="https://github.com/DOS/DOScan/pull/130">PR #130</a>. <a href="https://github.com/DOS/DOScan/pull/133">PR #133</a> đồng bộ các tính năng backend/frontend khả dụng cho hai môi trường. Các PR <a href="https://github.com/DOS/DOScan/pull/135">#135</a> và <a href="https://github.com/DOS/DOScan/pull/136">#136</a> sửa giới hạn expression của GitHub Actions và ràng buộc đúng archive theo từng run. Workflow mới nhất <a href="https://github.com/DOS/DOScan/actions/runs/30378112152">Deploy Config #30378112152</a> hoàn tất thành công cho cả Mainnet và Testnet.</p>
-    <p>Kiểm tra live sau deploy xác nhận trang <code>/ops</code>, API <code>/api/v2/proxy/account-abstraction/status</code>, API <code>/api/v2/proxy/account-abstraction/operations</code>, <code>/public-metrics</code> và <code>/pools</code> đều trả HTTP 200 ở hai môi trường. Mainnet đã có UserOperation thật; Testnet hiển thị đúng trạng thái rỗng. Runtime probe trong workflow xác nhận backend kết nối được Rust Smart Contract Verifier và Metadata Service. Trình duyệt không ghi nhận console error trên trang User Operations Mainnet hoặc Testnet.</p>
-    <p>Kiểm tra live sau deploy xác nhận <code>/pools</code> ở hai môi trường trả HTTP 200, runtime env bật DEX Pools, API same-origin trả HTTP 200 và trình duyệt không có console error. Trang hiện báo chưa có pool vì Contract Info chưa trả dữ liệu pool cho chain 7979 và 3939.</p>
+    <p>Cấu hình GCP nền tảng đã merge qua <a href="https://github.com/DOS/DOScan/pull/78">PR #78</a> và <a href="https://github.com/DOS/DOScan/pull/79">PR #79</a>. Chuỗi sửa Pools nằm trong <a href="https://github.com/DOS/DOScan/pull/126">PR #126</a> đến <a href="https://github.com/DOS/DOScan/pull/130">PR #130</a>. <a href="https://github.com/DOS/DOScan/pull/132">PR #132</a> bật Web3 wallet helpers và xóa self-link Testnet. <a href="https://github.com/DOS/DOScan/pull/133">PR #133</a> đồng bộ các backend/frontend feature khả dụng cùng User Ops Indexer Testnet. Các PR <a href="https://github.com/DOS/DOScan/pull/134">#134</a> đến <a href="https://github.com/DOS/DOScan/pull/136">#136</a> sửa guard deploy, giới hạn expression của GitHub Actions và ràng buộc đúng archive theo từng run.</p>
+    <p><a href="https://github.com/DOS/DOScan/actions/runs/30378112152">Deploy Config #30378112152</a> hoàn tất thành công cho cả Mainnet và Testnet. Kiểm tra live xác nhận <code>/pools</code>, <code>/ops</code>, Account Abstraction status và operations, Metadata proxy, Contract Info proxy cùng <code>/public-metrics</code> đều hoạt động. Runtime probe xác nhận backend kết nối được Rust Smart Contract Verifier và Metadata Service. Browser xác nhận nút <code>Add DOS Chain</code>, <code>Connect</code>, trang DEX tracker và User Operations đều render đúng, không có console error từ ứng dụng.</p>
+    <p>Mainnet đã có UserOperation thật; Testnet hiển thị đúng trạng thái rỗng. <code>/pools</code> hiện báo chưa có pool vì Contract Info chưa trả dữ liệu cho chain 7979 và 3939. Đây là trạng thái rỗng hợp lệ, không còn là lỗi 404.</p>
     <p><code>/hot-contracts</code> và API Hot Contracts hoạt động nhưng chưa có kết quả. Backend log xác nhận module trì hoãn khởi động vì chain chưa đủ 30 ngày tuổi. Đây là giới hạn dữ liệu hiện tại của logic upstream, không phải frontend bị tắt. Theo block thứ hai ngày 08/07/2026, mốc 30 ngày rơi vào khoảng 07/08/2026 UTC.</p>
   </div>
 
-  <h2>0A. Danh sách tính năng đang bật ở Frontend và Backend</h2>
+  <h2>0A. Giám sát outage của Metadata upstream</h2>
+  <div class="verdict">
+    <strong class="good">Đã có monitor liên tục trên Google Cloud Monitoring.</strong>
+    <p>"Outage upstream" ở đây nghĩa là dịch vụ ngoài hệ thống DOS tại <code>metadata.services.blockscout.com</code> bị timeout, trả HTTP 5xx hoặc trả body không có object <code>addresses</code>. Trong tình huống đó, node, RPC, database và explorer DOS vẫn có thể khỏe; tác động chính là tag địa chỉ và NFT metadata bị chậm hoặc thiếu. Không được rollback database chỉ vì upstream này lỗi.</p>
+    <p>Ba uptime check đang chạy mỗi 15 phút từ <code>ASIA_PACIFIC</code>, <code>EUROPE</code> và <code>USA_OREGON</code>: Metadata upstream trực tiếp, DOScan Mainnet proxy và DOScan Testnet proxy. Alert policy <code>DOScan Metadata Service availability</code> gửi email qua channel <code>JOY AI</code> khi ít nhất hai vùng cùng fail trong 5 phút. Dữ liệu Monitoring sau deploy đã ghi nhận ba vùng của cả ba check đều pass.</p>
+    <p>Ước tính 25.920 executions mỗi tháng, thấp hơn mức 1 triệu uptime check executions miễn phí mỗi tháng của Google Cloud. Cấu hình hiện tại vì vậy không phát sinh chi phí monitor trực tiếp, miễn là toàn project vẫn nằm trong quota miễn phí này.</p>
+  </div>
+
+  <h2>0B. Danh sách tính năng đang bật ở Frontend và Backend</h2>
   <table>
     <thead>
       <tr><th>Tính năng</th><th>Lớp</th><th>Mainnet</th><th>Testnet</th><th>Giá trị và trạng thái thực tế</th></tr>
@@ -180,7 +188,14 @@
         <td>Frontend + Backend microservice</td>
         <td class="good">Đã bật</td>
         <td class="good">Đã bật</td>
-        <td><code>NEXT_PUBLIC_HAS_USER_OPS=true</code> và <code>MICROSERVICE_ACCOUNT_ABSTRACTION_ENABLED=true</code> nằm trong env chung. Testnet có User Ops Indexer riêng, theo dõi EntryPoint v0.6, v0.7 và v0.8. Đây không phải tính năng tài khoản người dùng, watchlist hoặc private tag.</td>
+        <td><code>NEXT_PUBLIC_HAS_USER_OPS=true</code> và <code>MICROSERVICE_ACCOUNT_ABSTRACTION_ENABLED=true</code> nằm trong env chung. Testnet có User Ops Indexer riêng, theo dõi EntryPoint v0.6, v0.7 và v0.8. API status của hai môi trường trả HTTP 200 và xác nhận past indexing hoàn tất. Mainnet có UserOperation thật; Testnet render trạng thái rỗng hợp lệ.</td>
+      </tr>
+      <tr>
+        <td>Web3 wallet helpers và Add DOS Chain</td>
+        <td>Frontend + Reown</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td><code>NEXT_PUBLIC_WEB3_WALLETS=['metamask','rabby','coinbase','token_pocket']</code>. Browser hiển thị nút <code>Connect</code> và <code>Add DOS Chain</code> trên cả hai môi trường. Reown Dashboard đã allowlist domain <code>doscan.io</code>.</td>
       </tr>
       <tr>
         <td>NFT Media Handler trên GCS</td>
@@ -194,7 +209,7 @@
         <td>Frontend + Backend + Caddy</td>
         <td class="good">Đã bật</td>
         <td class="good">Đã bật</td>
-        <td>Frontend dùng endpoint same-origin <code>/metadata-api</code>. Backend bật <code>MICROSERVICE_METADATA_ENABLED=true</code> để preload tag vào address, block và transaction API. Workflow production đã xác nhận backend kết nối được Metadata Service; endpoint upstream trả HTTP 200 cho cả chain 7979 và 3939.</td>
+        <td>Frontend dùng endpoint same-origin <code>/metadata-api</code>. Backend bật <code>MICROSERVICE_METADATA_ENABLED=true</code> để preload tag vào address, block và transaction API. Workflow production xác nhận backend kết nối được Metadata Service. Probe live của upstream, Mainnet proxy và Testnet proxy đều trả HTTP 200 với object <code>addresses</code>; Google Cloud Monitoring tiếp tục kiểm tra định kỳ.</td>
       </tr>
       <tr>
         <td>Stats và biểu đồ</td>
@@ -243,7 +258,7 @@
         <td>Frontend</td>
         <td class="good">Đã bật</td>
         <td class="good">Đã bật</td>
-        <td>Marketplace, DOSwap, DOS Bridge và DOS Faucet được cấu hình từ env chung. Testnet kế thừa các env này trừ khi có override riêng.</td>
+        <td>Marketplace, DOSwap, DOS Bridge và DOS Faucet được cấu hình từ env chung. Đây là link điều hướng, không phải bằng chứng các dapp đích đã sẵn sàng end-to-end. OverMint hiện tắt và DOSwap chưa triển khai, nên readiness của từng dapp phải được theo dõi như service độc lập.</td>
       </tr>
       <tr>
         <td>Advanced Filter và Gas Tracker</td>
@@ -282,7 +297,7 @@
       </tr>
     </tbody>
   </table>
-  <div class="callout"><strong>Không bật mù các integration thiếu điều kiện:</strong> Account người dùng cần Auth0/Keycloak, email provider và frontend auth; async CSV cần Gokapi; SolidityScan, Noves và Blockaid cần API key; BENS cần protocol DOS; Multichain Search và Avalanche ICM cần service riêng; market price cần DOS được provider hỗ trợ. Các tính năng này không được tính là "có thể bật bằng env hiện tại".</div>
+  <div class="callout"><strong>"Bật tất cả tính năng có thể" không có nghĩa là bật mọi env upstream:</strong> phạm vi hoàn tất là các feature EVM phù hợp Avalanche L1, có backend/API hoặc credential thật và không tạo link giả. Account người dùng cần Auth0/Keycloak, email provider và frontend auth; async CSV cần Gokapi; SolidityScan, Noves và Blockaid cần API key; BENS cần protocol DOS; Multichain Search và Avalanche ICM cần service riêng; market price cần DOS được provider hỗ trợ. Các integration thiếu điều kiện không được tính là tính năng có thể bật an toàn.</div>
   <div class="verdict"><strong class="good">Reown và Metadata đã được xử lý:</strong> Reown Dashboard đã allowlist <code>https://doscan.io</code>. Metadata Service được proxy an toàn qua <code>https://doscan.io/metadata-api</code> trên Mainnet và <code>https://test.doscan.io/metadata-api</code> trên Testnet; Caddy loại bỏ <code>Cookie</code> và <code>Authorization</code> trước khi chuyển request tới dịch vụ bên ngoài. <a href="https://github.com/DOS/DOScan/pull/122">PR #122</a> khôi phục endpoint same-origin cho Testnet và thêm deployment guard chống rollback database do outage third-party. <a href="https://github.com/DOS/DOScan/actions/runs/30343254663">Deploy run #30343254663</a> cùng Playwright ngày 28/07/2026 xác nhận không còn lỗi Metadata CORS.</div>
   <div class="verdict">
     <strong class="good">NFT Media Handler đã chạy trên Mainnet và Testnet:</strong>
@@ -494,16 +509,17 @@ NFT_MEDIA_HANDLER_BACKFILL_ENABLED=true</pre>
   </table>
 
   <h2>6. Gói thay đổi đề xuất</h2>
-  <h3>Giai đoạn 1 - Đã triển khai ngày 25/07/2026</h3>
+  <h3>Giai đoạn 1 - Đã triển khai và xác minh ngày 28/07/2026</h3>
   <pre>NEXT_PUBLIC_HOT_CONTRACTS_ENABLED=true
 NEXT_PUBLIC_SEO_ENHANCED_DATA_ENABLED=true
 NEXT_PUBLIC_VIEWS_TX_ADDITIONAL_FIELDS=['fee_per_gas']
 NEXT_PUBLIC_VIEWS_TX_GROUPED_FEES=true
+NEXT_PUBLIC_WEB3_WALLETS=['metamask','rabby','coinbase','token_pocket']
 NEXT_PUBLIC_DEFI_DROPDOWN_ITEMS=[{'text':'Swap','icon':'swap','dappId':'doswap'},{'text':'Bridge','dappId':'dos-bridge'}]
 NEXT_PUBLIC_HIDE_NATIVE_COIN_PRICE=true
 NEXT_PUBLIC_HOMEPAGE_STATS=['total_blocks','average_block_time','total_txs','wallet_addresses','gas_tracker']
 NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=none</pre>
-  <p>Đồng thời đã bỏ tài khoản người dùng Blockscout, bridged tokens kiểu OmniBridge và BENS name service. Self-referencing network explorer đã được xóa khỏi cả hai môi trường. DEX Pools và User Ops được bật trên cả Mainnet lẫn Testnet.</p>
+  <p>Đồng thời đã bỏ tài khoản người dùng Blockscout, bridged tokens kiểu OmniBridge và BENS name service. Self-referencing network explorer đã được xóa khỏi cả hai môi trường. DEX Pools, User Ops và Web3 wallet helpers được bật trên cả Mainnet lẫn Testnet.</p>
 
   <h3>Giai đoạn 2 - Tính năng chiến lược cho Avalanche</h3>
   <ol>
@@ -520,11 +536,13 @@ NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=none</pre>
     <li><a href="https://github.com/blockscout/frontend/releases/tag/v2.9.5">Blockscout Frontend v2.9.5</a></li>
     <li><a href="https://docs.blockscout.com/setup/env-variables/backend-env-variables">Blockscout Backend ENVs và NFT Media Handler</a></li>
     <li><a href="https://docs.cloud.google.com/storage/docs/interoperability">Google Cloud Storage XML API tương thích S3 và HMAC</a></li>
+    <li><a href="https://docs.cloud.google.com/monitoring/uptime-checks/introduction">Google Cloud Monitoring Uptime Checks</a></li>
+    <li><a href="https://cloud.google.com/products/observability/pricing">Google Cloud Observability pricing</a></li>
     <li><a href="https://build.avax.network/docs/tooling/avalanche-cli/create-avalanche-l1">Avalanche: tạo EVM-based L1 bằng Subnet-EVM</a></li>
     <li><a href="https://build.avax.network/docs/tooling/avalanche-sdk/client/accounts/local/addresses">Avalanche: địa chỉ EVM 0x và địa chỉ X/P-Chain Bech32</a></li>
     <li><a href="https://github.com/blockscout/blockscout-rs/tree/main/interchain-indexer">Blockscout Interchain Indexer</a></li>
   </ul>
-  <p class="muted">Audit ban đầu thực hiện ngày 24/07/2026 và cập nhật trạng thái production ngày 28/07/2026. Frontend dùng image <code>metados/blockscout-frontend:2.9.5</code>; Backend dùng Blockscout 11.2.3 tại production GCP. Trạng thái trong bảng được đối chiếu từ env chung, override Mainnet/Testnet, Docker Compose, source v11.2.3, tài liệu Blockscout chính thức, workflow production #30378112152, public API và kiểm tra trình duyệt live.</p>
+  <p class="muted">Audit ban đầu thực hiện ngày 24/07/2026 và chốt bằng chứng production ngày 28/07/2026. Frontend dùng image <code>metados/blockscout-frontend:2.9.5</code>; Backend dùng Blockscout 11.2.3 tại production GCP. Trạng thái trong bảng được đối chiếu từ env chung, override Mainnet/Testnet, Docker Compose, source v11.2.3, tài liệu chính thức, deploy run <code>30378112152</code>, HTTP probe, Google Cloud Monitoring time series và browser kiểm tra giao diện thật.</p>
 </main>
 </body>
 </html>
