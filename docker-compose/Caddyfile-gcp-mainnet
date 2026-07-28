@@ -44,6 +44,13 @@
 			header_up -Authorization
 		}
 	}
+	handle_path /contracts-info-api/* {
+		reverse_proxy https://contracts-info.services.blockscout.com {
+			header_up Host contracts-info.services.blockscout.com
+			header_up -Cookie
+			header_up -Authorization
+		}
+	}
 	handle /metrics {
 		reverse_proxy backend:4000
 	}
