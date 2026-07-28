@@ -505,7 +505,9 @@ jobs:
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://doscan.io/metadata-api\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
-              grep -Fq "NEXT_PUBLIC_WEB3_WALLETS: \"['metamask','rabby','coinbase','token_pocket']\"" <<<"${frontend_env}"
+              quote="$(printf "\x27")"
+              expected_wallets="NEXT_PUBLIC_WEB3_WALLETS: \"[${quote}metamask${quote},${quote}rabby${quote},${quote}coinbase${quote},${quote}token_pocket${quote}]\","
+              [ "$(grep -Fxc "${expected_wallets}" <<<"${frontend_env}")" -eq 1 ]
 
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/stats >/dev/null
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/public-metrics >/dev/null
@@ -516,7 +518,9 @@ jobs:
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://doscan.io/metadata-api\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
-              grep -Fq "NEXT_PUBLIC_WEB3_WALLETS: \"['metamask','rabby','coinbase','token_pocket']\"" <<<"${frontend_env}"
+              quote="$(printf "\x27")"
+              expected_wallets="NEXT_PUBLIC_WEB3_WALLETS: \"[${quote}metamask${quote},${quote}rabby${quote},${quote}coinbase${quote},${quote}token_pocket${quote}]\","
+              [ "$(grep -Fxc "${expected_wallets}" <<<"${frontend_env}")" -eq 1 ]
               curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                 https://doscan.io/api/v1/chains/7979/pools >/dev/null
 
@@ -882,7 +886,9 @@ jobs:
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://test.doscan.io/metadata-api\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://test.doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
-              grep -Fq "NEXT_PUBLIC_WEB3_WALLETS: \"['metamask','rabby','coinbase','token_pocket']\"" <<<"${frontend_env}"
+              quote="$(printf "\x27")"
+              expected_wallets="NEXT_PUBLIC_WEB3_WALLETS: \"[${quote}metamask${quote},${quote}rabby${quote},${quote}coinbase${quote},${quote}token_pocket${quote}]\","
+              [ "$(grep -Fxc "${expected_wallets}" <<<"${frontend_env}")" -eq 1 ]
               if grep -F "NEXT_PUBLIC_NETWORK_EXPLORERS:" <<<"${frontend_env}" | grep -Fq "https://test.doscan.io/"; then
                 echo "Testnet must not link back to itself as an external explorer" >&2
                 exit 1
@@ -940,7 +946,9 @@ jobs:
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://test.doscan.io/metadata-api\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://test.doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
-              grep -Fq "NEXT_PUBLIC_WEB3_WALLETS: \"['metamask','rabby','coinbase','token_pocket']\"" <<<"${frontend_env}"
+              quote="$(printf "\x27")"
+              expected_wallets="NEXT_PUBLIC_WEB3_WALLETS: \"[${quote}metamask${quote},${quote}rabby${quote},${quote}coinbase${quote},${quote}token_pocket${quote}]\","
+              [ "$(grep -Fxc "${expected_wallets}" <<<"${frontend_env}")" -eq 1 ]
               if grep -F "NEXT_PUBLIC_NETWORK_EXPLORERS:" <<<"${frontend_env}" | grep -Fq "https://test.doscan.io/"; then
                 echo "Testnet must not link back to itself as an external explorer" >&2
                 exit 1
