@@ -451,6 +451,10 @@ jobs:
                 sleep 5
               done
 
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                docker compose exec -T backend curl -fsS \
+                http://smart-contract-verifier:8050/health >/dev/null
+
               verify_nft_media_runtime() {
                 probe_key="healthchecks/github-${{ github.run_id }}-${{ github.run_attempt }}.txt"
                 for probe_attempt in $(seq 1 5); do
@@ -658,7 +662,23 @@ jobs:
                 restore_rc=0
 
                 cd "${DEPLOY_PATH}"
-                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose stop backend stats
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                  docker compose stop backend stats || restore_rc=1
+                if ! user_ops_container_ids="$(
+                  sudo docker ps -aq \
+                    --filter "label=com.docker.compose.project=doscan-testnet" \
+                    --filter "label=com.docker.compose.service=user-ops-indexer"
+                )"; then
+                  restore_rc=1
+                fi
+                if [ -n "${user_ops_container_ids}" ]; then
+                  sudo docker stop ${user_ops_container_ids} || restore_rc=1
+                  sudo docker rm -f ${user_ops_container_ids} || restore_rc=1
+                fi
+                if [ "${restore_rc}" -ne 0 ]; then
+                  echo "TESTNET ROLLBACK ABORTED; database writers could not be stopped" >&2
+                  return 1
+                fi
                 sudo docker compose exec -T db dropdb --force -U postgres blockscout || restore_rc=1
                 sudo docker compose exec -T db createdb -U postgres blockscout || restore_rc=1
                 sudo cat "${BACKUP}/blockscout.dump" |
@@ -825,7 +845,7 @@ jobs:
 
               cd "${DEPLOY_PATH}"
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose config -q
-              STATELESS_SERVICES="backend frontend smart-contract-verifier visualizer sig-provider stats caddy"
+              STATELESS_SERVICES="backend frontend smart-contract-verifier visualizer sig-provider user-ops-indexer stats caddy"
               for service in ${STATELESS_SERVICES}; do
                 sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose pull "${service}"
                 if [ "${service}" = "caddy" ] ||
@@ -867,9 +887,32 @@ jobs:
                 echo "Testnet must not link back to itself as an external explorer" >&2
                 exit 1
               fi
+              grep -Fq "NEXT_PUBLIC_HAS_USER_OPS: \"true\"" <<<"${frontend_env}"
+
+              for attempt in $(seq 1 30); do
+                if curl -fsS \
+                  http://127.0.0.1:13080/api/v2/proxy/account-abstraction/status >/dev/null; then
+                  break
+                fi
+                if [ "${attempt}" -eq 30 ]; then
+                  echo "Testnet Account Abstraction proxy did not become healthy" >&2
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    docker compose logs --tail=100 user-ops-indexer backend
+                  exit 1
+                fi
+                sleep 5
+              done
+
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                docker compose exec -T backend curl -fsS \
+                http://smart-contract-verifier:8050/health >/dev/null
 
               # External GCS, Cloudflare, RPC, or metadata failures must not trigger a destructive database restore.
               DEPLOYMENT_STARTED=0
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                docker compose exec -T backend curl -fsS \
+                "https://metadata.services.blockscout.com/api/v1/metadata?chain_id=3939&addresses=0x0000000000000000000000000000000000000000&tags_limit=1" >/dev/null
+
               verify_nft_media_runtime() {
                 probe_key="healthchecks/github-${{ github.run_id }}-${{ github.run_attempt }}.txt"
                 for probe_attempt in $(seq 1 5); do

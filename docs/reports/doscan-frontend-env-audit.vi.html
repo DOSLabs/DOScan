@@ -139,11 +139,11 @@
     <h1>Các tính năng Blockscout đang bật trên DOS Chain</h1>
     <p class="lead">Đối chiếu cấu hình Frontend và Backend của Mainnet/Testnet với Blockscout Frontend v2.9.5, Blockscout Backend 11.2.3 và đặc tính Avalanche L1 dùng Subnet-EVM.</p>
     <div class="grid">
-      <div class="metric"><strong>14</strong><span>nhóm tính năng hữu ích đã cấu hình</span></div>
-      <div class="metric"><strong>13</strong><span>nhóm bật trên cả Mainnet và Testnet</span></div>
-      <div class="metric"><strong>1</strong><span>lệch đáng chú ý: Account Abstraction</span></div>
+      <div class="metric"><strong>17</strong><span>nhóm tính năng hữu ích đã cấu hình</span></div>
+      <div class="metric"><strong>17</strong><span>nhóm bật trên cả Mainnet và Testnet</span></div>
+      <div class="metric"><strong>0</strong><span>lệch ở các feature flag dùng chung</span></div>
     </div>
-    <div class="verdict"><strong>Trạng thái ngày 28/07/2026:</strong> Pools, Hot Contracts, NFT Media Handler, Metadata proxy, Stats, contract verification, contract visualizer, signature provider, SEO, phí giao dịch nâng cao, Marketplace và menu DeFi đã được cấu hình. Account Abstraction đang bật trên Mainnet nhưng bị tắt rõ ràng trên Testnet. Cross-chain Transactions cho ICM/Teleporter/ICTT vẫn cần Interchain Indexer, không thể chỉ bật bằng env.</div>
+    <div class="verdict"><strong>Trạng thái cấu hình ngày 28/07/2026:</strong> các feature flag dùng chung đã được đồng bộ cho Mainnet và Testnet. Account Abstraction, Metadata backend, Rust Smart Contract Verifier, token metadata updater, NFT retry, partial reverification và indexer metrics đều được bật. Pending transaction và internal transaction vẫn tắt riêng trên Testnet vì RPC 3939 thực tế không cung cấp <code>txpool_content</code> và <code>debug_traceBlockByNumber</code>.</div>
   </section>
 
   <h2>0. Trạng thái triển khai</h2>
@@ -178,8 +178,8 @@
         <td>Account Abstraction / User Operations</td>
         <td>Frontend + Backend microservice</td>
         <td class="good">Đã bật</td>
-        <td class="warn">Đang tắt</td>
-        <td>Mainnet đặt <code>NEXT_PUBLIC_HAS_USER_OPS=true</code> và <code>MICROSERVICE_ACCOUNT_ABSTRACTION_ENABLED=true</code>. Testnet override cả hai thành <code>false</code>. Đây không phải tính năng tài khoản người dùng, watchlist hoặc private tag.</td>
+        <td class="good">Đã bật</td>
+        <td><code>NEXT_PUBLIC_HAS_USER_OPS=true</code> và <code>MICROSERVICE_ACCOUNT_ABSTRACTION_ENABLED=true</code> nằm trong env chung. Testnet có User Ops Indexer riêng, theo dõi EntryPoint v0.6, v0.7 và v0.8. Đây không phải tính năng tài khoản người dùng, watchlist hoặc private tag.</td>
       </tr>
       <tr>
         <td>NFT Media Handler trên GCS</td>
@@ -190,10 +190,10 @@
       </tr>
       <tr>
         <td>Metadata Service proxy</td>
-        <td>Frontend + Caddy</td>
+        <td>Frontend + Backend + Caddy</td>
         <td class="good">Đã bật</td>
         <td class="good">Đã bật</td>
-        <td>Dùng endpoint same-origin <code>/metadata-api</code>, loại bỏ thông tin xác thực trước khi proxy để tránh CORS và rò rỉ credential.</td>
+        <td>Frontend dùng endpoint same-origin <code>/metadata-api</code>. Backend cấu hình <code>MICROSERVICE_METADATA_ENABLED=true</code> để preload tag vào address, block và transaction API. Endpoint upstream đã trả HTTP 200 cho cả chain 7979 và 3939 trong kiểm tra trước deploy; trạng thái tích hợp backend live sẽ được xác nhận sau workflow.</td>
       </tr>
       <tr>
         <td>Stats và biểu đồ</td>
@@ -207,7 +207,7 @@
         <td>Backend microservice</td>
         <td class="good">Đã bật</td>
         <td class="good">Đã bật</td>
-        <td>Verifier riêng hỗ trợ luồng xác minh source contract. Backend cũng bật tra cứu bytecode qua <code>eth_bytecode_db</code>.</td>
+        <td>Backend dùng Rust verifier nội bộ tại <code>http://smart-contract-verifier:8050/</code> với <code>MICROSERVICE_SC_VERIFIER_TYPE=sc_verifier</code>. Solidity, Vyper và Sourcify đều được bật trong service.</td>
       </tr>
       <tr>
         <td>Sol2UML Contract Visualizer</td>
@@ -258,8 +258,30 @@
         <td class="good">Đã bật</td>
         <td>Kiểm tra live xác nhận Backend trỏ tới release của <code>DOS/DOScan</code> và Frontend trỏ tới release của <code>DOS/DOScan-Frontend</code>. Đây là phần hỗ trợ đã thêm trong bản fork, không phải hành vi mặc định chỉ cần env của Blockscout upstream.</td>
       </tr>
+      <tr>
+        <td>Token metadata updater và NFT retry</td>
+        <td>Backend Indexer</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td>Cataloged token updater được bật lại. NFT metadata được retry một lần khi gặp HTTP 404/500 và thử <code>baseURI + tokenId</code> nếu <code>tokenURI</code> lỗi VM.</td>
+      </tr>
+      <tr>
+        <td>Partial contract reverification</td>
+        <td>Backend API</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td><code>CONTRACT_ENABLE_PARTIAL_REVERIFICATION=true</code> cho phép gửi lại source để cải thiện contract đang chỉ được xác minh partial match.</td>
+      </tr>
+      <tr>
+        <td>Indexer và NFT media metrics</td>
+        <td>Backend Indexer</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td>Bật các metric về NFT chưa upload CDN, metadata lỗi, NFT chưa fetch và token balance còn thiếu. <code>/public-metrics</code> tiếp tục được cập nhật mỗi giờ.</td>
+      </tr>
     </tbody>
   </table>
+  <div class="callout"><strong>Không bật mù các integration thiếu điều kiện:</strong> Account người dùng cần Auth0/Keycloak, email provider và frontend auth; async CSV cần Gokapi; SolidityScan, Noves và Blockaid cần API key; BENS cần protocol DOS; Multichain Search và Avalanche ICM cần service riêng; market price cần DOS được provider hỗ trợ. Các tính năng này không được tính là "có thể bật bằng env hiện tại".</div>
   <div class="verdict"><strong class="good">Reown và Metadata đã được xử lý:</strong> Reown Dashboard đã allowlist <code>https://doscan.io</code>. Metadata Service được proxy an toàn qua <code>https://doscan.io/metadata-api</code> trên Mainnet và <code>https://test.doscan.io/metadata-api</code> trên Testnet; Caddy loại bỏ <code>Cookie</code> và <code>Authorization</code> trước khi chuyển request tới dịch vụ bên ngoài. <a href="https://github.com/DOS/DOScan/pull/122">PR #122</a> khôi phục endpoint same-origin cho Testnet và thêm deployment guard chống rollback database do outage third-party. <a href="https://github.com/DOS/DOScan/actions/runs/30343254663">Deploy run #30343254663</a> cùng Playwright ngày 28/07/2026 xác nhận không còn lỗi Metadata CORS.</div>
   <div class="verdict">
     <strong class="good">NFT Media Handler đã chạy trên Mainnet và Testnet:</strong>
@@ -423,8 +445,8 @@ NFT_MEDIA_HANDLER_BACKFILL_ENABLED=true</pre>
       </tr>
       <tr>
         <td><code>NEXT_PUBLIC_HAS_USER_OPS=true</code></td>
-        <td>Mainnet GCP đã triển khai User Ops Indexer và endpoint <code>/api/v2/proxy/account-abstraction/operations</code> trả HTTP 200. Testnet đang override frontend và backend thành <code>false</code>.</td>
-        <td><span class="good">Đang bật trên Mainnet</span>. <span class="warn">Testnet đang tắt</span>, cần đồng bộ riêng nếu muốn hai môi trường gần giống nhau.</td>
+        <td>Mainnet GCP đã có User Ops Indexer và endpoint <code>/api/v2/proxy/account-abstraction/operations</code>. Testnet được bổ sung service riêng và dùng chung feature flag với Mainnet.</td>
+        <td><span class="good">Đã bật trên Mainnet và Testnet</span>. Nếu Testnet chưa có UserOperation thì trang vẫn hợp lệ ở trạng thái rỗng.</td>
       </tr>
       <tr>
         <td><code>NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=blockscout</code></td>
@@ -448,8 +470,8 @@ NFT_MEDIA_HANDLER_BACKFILL_ENABLED=true</pre>
       </tr>
       <tr>
         <td><code>NEXT_PUBLIC_NETWORK_EXPLORERS</code> trỏ về chính doscan.io</td>
-        <td>Chức năng này dành cho explorer khác. Mainnet đã xóa cấu hình tự tham chiếu, nhưng Testnet vẫn trỏ vòng về chính <code>test.doscan.io</code>.</td>
-        <td><span class="good">Mainnet đã xóa</span>. <span class="warn">Testnet vẫn còn</span> và nên được dọn trong lần đồng bộ env tiếp theo.</td>
+        <td>Chức năng này dành cho explorer khác. Cấu hình tự tham chiếu từng còn sót ở Testnet và tạo liên kết vòng về chính <code>test.doscan.io</code>.</td>
+        <td><span class="good">Đã xóa khỏi Mainnet và Testnet</span>. Chỉ cấu hình lại khi có explorer độc lập.</td>
       </tr>
     </tbody>
   </table>
@@ -480,7 +502,7 @@ NEXT_PUBLIC_DEFI_DROPDOWN_ITEMS=[{'text':'Swap','icon':'swap','dappId':'doswap'}
 NEXT_PUBLIC_HIDE_NATIVE_COIN_PRICE=true
 NEXT_PUBLIC_HOMEPAGE_STATS=['total_blocks','average_block_time','total_txs','wallet_addresses','gas_tracker']
 NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=none</pre>
-  <p>Đồng thời đã bỏ tài khoản người dùng Blockscout, bridged tokens kiểu OmniBridge và BENS name service. Mainnet đã bỏ self-referencing network explorer nhưng Testnet vẫn còn cấu hình tự tham chiếu. DEX Pools đã được bật lại trên cả hai môi trường. User Ops hiện chỉ được giữ bật trên Mainnet vì Testnet đang có override tắt rõ ràng.</p>
+  <p>Đồng thời đã bỏ tài khoản người dùng Blockscout, bridged tokens kiểu OmniBridge và BENS name service. Self-referencing network explorer đã được xóa khỏi cả hai môi trường. DEX Pools và User Ops được bật trên cả Mainnet lẫn Testnet.</p>
 
   <h3>Giai đoạn 2 - Tính năng chiến lược cho Avalanche</h3>
   <ol>
@@ -501,7 +523,7 @@ NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=none</pre>
     <li><a href="https://build.avax.network/docs/tooling/avalanche-sdk/client/accounts/local/addresses">Avalanche: địa chỉ EVM 0x và địa chỉ X/P-Chain Bech32</a></li>
     <li><a href="https://github.com/blockscout/blockscout-rs/tree/main/interchain-indexer">Blockscout Interchain Indexer</a></li>
   </ul>
-  <p class="muted">Audit ban đầu thực hiện ngày 24/07/2026 và cập nhật trạng thái Frontend/Backend ngày 28/07/2026. Frontend dùng image <code>metados/blockscout-frontend:2.9.5</code>; Backend dùng Blockscout 11.2.3 tại production GCP. Trạng thái trong bảng được đối chiếu từ env chung, override Mainnet/Testnet, Docker Compose, workflow deploy và kiểm tra live. Account Abstraction Testnet được ghi là tắt đúng theo cấu hình hiện tại.</p>
+  <p class="muted">Audit ban đầu thực hiện ngày 24/07/2026 và cập nhật cấu hình Frontend/Backend ngày 28/07/2026. Frontend dùng image <code>metados/blockscout-frontend:2.9.5</code>; Backend dùng Blockscout 11.2.3 tại production GCP. Trạng thái trong bảng được đối chiếu từ env chung, override Mainnet/Testnet, Docker Compose, source v11.2.3 và tài liệu Blockscout chính thức. Các bằng chứng deploy live mới sẽ được ghi sau khi workflow cấu hình hoàn tất.</p>
 </main>
 </body>
 </html>
