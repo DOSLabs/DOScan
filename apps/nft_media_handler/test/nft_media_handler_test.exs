@@ -13,34 +13,34 @@ defmodule NFTMediaHandlerTest do
   end
 
   defmodule HTTPServer do
-    def start(response_body, owner) do
+    def start(response_body, response_content_type, owner) do
       {:ok, socket} =
         :gen_tcp.listen(0, [:binary, packet: :raw, active: false, reuseaddr: true])
 
       {:ok, port} = :inet.port(socket)
-      pid = spawn_link(fn -> accept(socket, response_body, owner) end)
+      pid = spawn_link(fn -> accept(socket, response_body, response_content_type, owner) end)
       {socket, pid, port}
     end
 
-    defp accept(socket, response_body, owner) do
+    defp accept(socket, response_body, response_content_type, owner) do
       case :gen_tcp.accept(socket) do
         {:ok, client} ->
-          spawn_link(fn -> respond(client, response_body, owner) end)
-          accept(socket, response_body, owner)
+          spawn_link(fn -> respond(client, response_body, response_content_type, owner) end)
+          accept(socket, response_body, response_content_type, owner)
 
         {:error, :closed} ->
           :ok
       end
     end
 
-    defp respond(client, response_body, owner) do
+    defp respond(client, response_body, response_content_type, owner) do
       {:ok, request} = receive_request(client, "")
       [request_line | _headers] = String.split(request, "\r\n")
       [method, path | _rest] = String.split(request_line, " ")
 
       case method do
         "GET" ->
-          send_response(client, "video/mp4", response_body)
+          send_response(client, response_content_type, response_body)
 
         "PUT" ->
           send(owner, {:uploaded, path})
@@ -95,7 +95,7 @@ defmodule NFTMediaHandlerTest do
   test "video processing reports only uploaded JPEG thumbnails" do
     fixture_path = Path.join([__DIR__, "fixtures", "video.mp4.b64"])
     video = fixture_path |> File.read!() |> Base.decode64!(ignore: :whitespace)
-    {socket, _server_pid, port} = HTTPServer.start(video, self())
+    {socket, _server_pid, port} = HTTPServer.start(video, "video/mp4", self())
 
     on_exit(fn -> :gen_tcp.close(socket) end)
 
@@ -132,6 +132,46 @@ defmodule NFTMediaHandlerTest do
 
     assert Enum.all?(uploaded_paths, &String.ends_with?(&1, ".jpg"))
     refute Enum.any?(uploaded_paths, &String.contains?(&1, "original"))
+  end
+
+  test "image processing reports and uploads the original object" do
+    fixture_path = Path.join([__DIR__, "fixtures", "image.png.b64"])
+    image = fixture_path |> File.read!() |> Base.decode64!(ignore: :whitespace)
+    {socket, _server_pid, port} = HTTPServer.start(image, "image/png", self())
+
+    on_exit(fn -> :gen_tcp.close(socket) end)
+
+    Application.put_env(:ex_aws, :access_key_id, "test-access-key")
+    Application.put_env(:ex_aws, :secret_access_key, "test-secret-key")
+
+    Application.put_env(:ex_aws, :s3,
+      scheme: "http://",
+      host: "127.0.0.1",
+      port: port,
+      region: "us-east-1",
+      bucket_name: "test-bucket"
+    )
+
+    url = "http://127.0.0.1:#{port}/probe.png"
+
+    assert {[
+              "/testnet/nft-media/" <> file_pattern,
+              uploaded_sizes,
+              true
+            ], {"image", "png"}} =
+             NFTMediaHandler.prepare_and_upload_by_url(url, "/testnet/nft-media")
+
+    assert file_pattern =~ "{}.png"
+    assert uploaded_sizes == []
+
+    uploaded_paths =
+      for _ <- 1..(length(uploaded_sizes) + 1) do
+        assert_receive {:uploaded, path}, 5_000
+        path
+      end
+
+    assert Enum.all?(uploaded_paths, &String.ends_with?(&1, ".png"))
+    assert Enum.count(uploaded_paths, &String.contains?(&1, "original")) == 1
   end
 
   test "thumbnail URL loading omits missing video originals and preserves image originals" do
