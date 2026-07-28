@@ -157,6 +157,7 @@ jobs:
               NFT_MEDIA_SECRETS="${SRC}/common-blockscout-nft-media.env"
               DEPLOYMENT_STARTED=0
               TOUCHED_SERVICES=""
+              BACKEND_ENV_CHANGED=0
               EDGE_TOUCHED=0
               L1_CADDY_CONFIG_CHANGED=0
 
@@ -230,8 +231,13 @@ jobs:
                 cd "${L1_PATH}"
                 l1_rc=0
                 for service in ${TOUCHED_SERVICES}; do
-                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
-                    docker compose up -d --no-deps "${service}" || l1_rc=1
+                  if [ "${service}" = "backend" ] && [ "${BACKEND_ENV_CHANGED}" -eq 1 ]; then
+                    sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                      docker compose up -d --force-recreate --no-deps "${service}" || l1_rc=1
+                  else
+                    sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                      docker compose up -d --no-deps "${service}" || l1_rc=1
+                  fi
                 done
                 if grep -qw caddy <<<"${TOUCHED_SERVICES}" || [ "${L1_CADDY_CONFIG_CHANGED}" -eq 1 ]; then
                   sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
@@ -311,10 +317,25 @@ jobs:
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
                 docker compose config --hash="*" > "${SRC}/old-service-hashes"
 
+              if ! sudo cmp -s "${SRC}/docker-compose/envs/common-blockscout.env" \
+                   "${L1_PATH}/envs/common-blockscout.env" ||
+                 ! sudo cmp -s "${SRC}/docker-compose/envs/common-blockscout-mainnet.env" \
+                   "${L1_PATH}/envs/common-blockscout-mainnet.env"; then
+                BACKEND_ENV_CHANGED=1
+              fi
+
               if [ "$(grep -Ec "^NFT_MEDIA_HANDLER_AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)=.+$" "${NFT_MEDIA_SECRETS}")" -ne 2 ]; then
                 echo "NFT media credential file is missing required values" >&2
                 exit 1
               fi
+              CURRENT_NFT_MEDIA_SECRETS="$(mktemp /tmp/doscan-current-nft-media-secrets.XXXXXX)"
+              sudo grep -E "^NFT_MEDIA_HANDLER_AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)=" \
+                "${BLOCKSCOUT_SECRETS}" > "${CURRENT_NFT_MEDIA_SECRETS}" || true
+              if ! cmp -s "${CURRENT_NFT_MEDIA_SECRETS}" "${NFT_MEDIA_SECRETS}"; then
+                BACKEND_ENV_CHANGED=1
+              fi
+              rm -f "${CURRENT_NFT_MEDIA_SECRETS}"
+
               MERGED_BLOCKSCOUT_SECRETS="$(mktemp /tmp/doscan-blockscout-secrets.XXXXXX)"
               sudo awk -F= \
                 "\$1 !~ /^NFT_MEDIA_HANDLER_AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)$/" \
@@ -362,6 +383,9 @@ jobs:
                   !($1 in old) || old[$1] != $2 { print $1 }
                 '"'"' "${SRC}/old-service-hashes" "${SRC}/new-service-hashes"
               )"
+              if [ "${BACKEND_ENV_CHANGED}" -eq 1 ] && ! grep -qw backend <<<"${TOUCHED_SERVICES}"; then
+                TOUCHED_SERVICES="${TOUCHED_SERVICES} backend"
+              fi
 
               for service in ${TOUCHED_SERVICES}; do
                 case "${service}" in
@@ -375,8 +399,13 @@ jobs:
                 esac
                 sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
                   docker compose pull "${service}"
-                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
-                  docker compose up -d --no-deps "${service}"
+                if [ "${service}" = "backend" ] && [ "${BACKEND_ENV_CHANGED}" -eq 1 ]; then
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                    docker compose up -d --force-recreate --no-deps "${service}"
+                else
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                    docker compose up -d --no-deps "${service}"
+                fi
               done
 
               if grep -qw caddy <<<"${TOUCHED_SERVICES}" || [ "${L1_CADDY_CONFIG_CHANGED}" -eq 1 ]; then
