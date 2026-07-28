@@ -26,6 +26,7 @@ ALLOWED_DIFFERENT_KEYS = {
     "MICROSERVICE_ACCOUNT_ABSTRACTION_ENABLED",
     "MICROSERVICE_ACCOUNT_ABSTRACTION_URL",
     "NEW_TAGS",
+    "NFT_MEDIA_HANDLER_BUCKET_FOLDER",
     "SECRET_KEY_BASE",
     "SUBNETWORK",
 }
@@ -85,6 +86,19 @@ def main() -> int:
 
     mainnet = common | mainnet_override
     testnet = common | testnet_override
+
+    expected_nft_media_folders = {
+        MAINNET_FILE.name: (mainnet_override, "mainnet/nft-media"),
+        TESTNET_FILE.name: (testnet_override, "testnet/nft-media"),
+    }
+    for file_name, (overrides, expected_folder) in expected_nft_media_folders.items():
+        actual_folder = overrides.get("NFT_MEDIA_HANDLER_BUCKET_FOLDER")
+        if actual_folder != expected_folder:
+            errors.append(
+                f"NFT_MEDIA_HANDLER_BUCKET_FOLDER in {file_name} must be "
+                f"{expected_folder!r}, got {actual_folder!r}"
+            )
+
     for key in sorted(mainnet.keys() | testnet.keys()):
         if mainnet.get(key) != testnet.get(key) and not is_allowed_difference(key):
             errors.append(f"Unexpected Mainnet/Testnet difference: {key}")

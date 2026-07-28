@@ -89,6 +89,25 @@ jobs:
       - name: Package deployment configuration
         run: |
           set -euo pipefail
+          umask 077
+          trap 'rm -f /tmp/common-blockscout-nft-media.env' EXIT
+
+          nft_media_json="$(
+            gcloud secrets versions access latest \
+              --project="${GCP_PROJECT_ID}" \
+              --secret="doscan-nft-media-hmac"
+          )"
+          jq -e \
+            '.bucket == "doscan" and .host == "storage.googleapis.com"' \
+            <<<"${nft_media_json}" >/dev/null
+          nft_media_access_key_id="$(jq -er '.accessId' <<<"${nft_media_json}")"
+          nft_media_secret_access_key="$(jq -er '.secret' <<<"${nft_media_json}")"
+          printf 'NFT_MEDIA_HANDLER_AWS_ACCESS_KEY_ID=%s\nNFT_MEDIA_HANDLER_AWS_SECRET_ACCESS_KEY=%s\n' \
+            "${nft_media_access_key_id}" \
+            "${nft_media_secret_access_key}" \
+            > /tmp/common-blockscout-nft-media.env
+          unset nft_media_json nft_media_access_key_id nft_media_secret_access_key
+
           tar -czf /tmp/doscan-config.tgz \
             docker-compose/docker-compose-mainnet.yml \
             docker-compose/Caddyfile-gcp-mainnet \
@@ -100,7 +119,9 @@ jobs:
             docker-compose/envs/common-frontend.env \
             docker-compose/envs/common-frontend-scan.env \
             docker-compose/envs/common-smart-contract-verifier.env \
-            docker-compose/envs/common-visualizer.env
+            docker-compose/envs/common-visualizer.env \
+            -C /tmp common-blockscout-nft-media.env
+          rm -f /tmp/common-blockscout-nft-media.env
 
       - name: Upload configuration through IAP
         run: |
@@ -111,6 +132,10 @@ jobs:
             --tunnel-through-iap \
             /tmp/doscan-config.tgz \
             "${GCP_INSTANCE}:/tmp/doscan-config-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
+
+      - name: Remove local package containing NFT media credentials
+        if: always()
+        run: rm -f /tmp/doscan-config.tgz /tmp/common-blockscout-nft-media.env
 
       - name: Apply configuration and verify services
         run: |
@@ -129,6 +154,7 @@ jobs:
               EDGE_PATH="/opt/doscan"
               SHARED_ENV_PATH="/opt/doscan/envs"
               BLOCKSCOUT_SECRETS="${SHARED_ENV_PATH}/common-blockscout-secrets.env"
+              NFT_MEDIA_SECRETS="${SRC}/common-blockscout-nft-media.env"
               DEPLOYMENT_STARTED=0
               TOUCHED_SERVICES=""
               EDGE_TOUCHED=0
@@ -284,6 +310,18 @@ jobs:
               cd "${L1_PATH}"
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
                 docker compose config --hash="*" > "${SRC}/old-service-hashes"
+
+              if [ "$(grep -Ec "^NFT_MEDIA_HANDLER_AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)=.+$" "${NFT_MEDIA_SECRETS}")" -ne 2 ]; then
+                echo "NFT media credential file is missing required values" >&2
+                exit 1
+              fi
+              MERGED_BLOCKSCOUT_SECRETS="$(mktemp /tmp/doscan-blockscout-secrets.XXXXXX)"
+              sudo awk -F= \
+                "\$1 !~ /^NFT_MEDIA_HANDLER_AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)$/" \
+                "${BLOCKSCOUT_SECRETS}" > "${MERGED_BLOCKSCOUT_SECRETS}"
+              cat "${NFT_MEDIA_SECRETS}" >> "${MERGED_BLOCKSCOUT_SECRETS}"
+              sudo install -m 0600 "${MERGED_BLOCKSCOUT_SECRETS}" "${BLOCKSCOUT_SECRETS}"
+              rm -f "${MERGED_BLOCKSCOUT_SECRETS}"
 
               EDGE_CONFIG_CHANGED=0
               EDGE_CADDY_CONFIG_CHANGED=0
@@ -451,6 +489,25 @@ jobs:
       - name: Package testnet deployment configuration
         run: |
           set -euo pipefail
+          umask 077
+          trap 'rm -f /tmp/common-blockscout-nft-media.env' EXIT
+
+          nft_media_json="$(
+            gcloud secrets versions access latest \
+              --project="${GCP_PROJECT_ID}" \
+              --secret="doscan-nft-media-hmac"
+          )"
+          jq -e \
+            '.bucket == "doscan" and .host == "storage.googleapis.com"' \
+            <<<"${nft_media_json}" >/dev/null
+          nft_media_access_key_id="$(jq -er '.accessId' <<<"${nft_media_json}")"
+          nft_media_secret_access_key="$(jq -er '.secret' <<<"${nft_media_json}")"
+          printf 'NFT_MEDIA_HANDLER_AWS_ACCESS_KEY_ID=%s\nNFT_MEDIA_HANDLER_AWS_SECRET_ACCESS_KEY=%s\n' \
+            "${nft_media_access_key_id}" \
+            "${nft_media_secret_access_key}" \
+            > /tmp/common-blockscout-nft-media.env
+          unset nft_media_json nft_media_access_key_id nft_media_secret_access_key
+
           tar -czf /tmp/doscan-testnet-config.tgz \
             docker-compose/docker-compose-testnet.yml \
             docker-compose/Caddyfile-gcp-testnet \
@@ -459,7 +516,9 @@ jobs:
             docker-compose/envs/common-frontend.env \
             docker-compose/envs/common-frontend-testnet.env \
             docker-compose/envs/common-smart-contract-verifier.env \
-            docker-compose/envs/common-visualizer.env
+            docker-compose/envs/common-visualizer.env \
+            -C /tmp common-blockscout-nft-media.env
+          rm -f /tmp/common-blockscout-nft-media.env
 
       - name: Upload testnet configuration through IAP
         run: |
@@ -470,6 +529,10 @@ jobs:
             --tunnel-through-iap \
             /tmp/doscan-testnet-config.tgz \
             "${GCP_TESTNET_INSTANCE}:/tmp/doscan-testnet-config-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
+
+      - name: Remove local testnet package containing NFT media credentials
+        if: always()
+        run: rm -f /tmp/doscan-testnet-config.tgz /tmp/common-blockscout-nft-media.env
 
       - name: Apply testnet configuration and verify services
         run: |
@@ -486,6 +549,7 @@ jobs:
               DEPLOY_PATH="/opt/doscan-testnet"
               BACKUP="${DEPLOY_PATH}/backups/github-${{ github.run_id }}-${{ github.run_attempt }}"
               SECRETS_ENV="${DEPLOY_PATH}/envs/common-blockscout-secrets.env"
+              NFT_MEDIA_SECRETS="${SRC}/common-blockscout-nft-media.env"
               DEPLOYMENT_STARTED=0
 
               cleanup() {
@@ -586,6 +650,18 @@ jobs:
               sudo test -s "${BACKUP}/blockscout.dump"
               sudo test -s "${BACKUP}/stats.dump"
               DEPLOYMENT_STARTED=1
+
+              if [ "$(grep -Ec "^NFT_MEDIA_HANDLER_AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)=.+$" "${NFT_MEDIA_SECRETS}")" -ne 2 ]; then
+                echo "NFT media credential file is missing required values" >&2
+                exit 1
+              fi
+              MERGED_BLOCKSCOUT_SECRETS="$(mktemp /tmp/doscan-testnet-blockscout-secrets.XXXXXX)"
+              sudo awk -F= \
+                "\$1 !~ /^NFT_MEDIA_HANDLER_AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)$/" \
+                "${SECRETS_ENV}" > "${MERGED_BLOCKSCOUT_SECRETS}"
+              cat "${NFT_MEDIA_SECRETS}" >> "${MERGED_BLOCKSCOUT_SECRETS}"
+              sudo install -m 0600 "${MERGED_BLOCKSCOUT_SECRETS}" "${SECRETS_ENV}"
+              rm -f "${MERGED_BLOCKSCOUT_SECRETS}"
 
               sudo install -m 0644 "${SRC}/docker-compose/docker-compose-testnet.yml" "${DEPLOY_PATH}/docker-compose.yml"
               sudo install -m 0644 "${SRC}/docker-compose/Caddyfile-gcp-testnet" "${DEPLOY_PATH}/Caddyfile-gcp-testnet"
