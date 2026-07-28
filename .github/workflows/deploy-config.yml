@@ -158,6 +158,7 @@ jobs:
               DEPLOYMENT_STARTED=0
               TOUCHED_SERVICES=""
               BACKEND_ENV_CHANGED=0
+              FRONTEND_ENV_CHANGED=0
               EDGE_TOUCHED=0
               L1_CADDY_CONFIG_CHANGED=0
 
@@ -231,7 +232,8 @@ jobs:
                 cd "${L1_PATH}"
                 l1_rc=0
                 for service in ${TOUCHED_SERVICES}; do
-                  if [ "${service}" = "backend" ] && [ "${BACKEND_ENV_CHANGED}" -eq 1 ]; then
+                  if { [ "${service}" = "backend" ] && [ "${BACKEND_ENV_CHANGED}" -eq 1 ]; } ||
+                     { [ "${service}" = "frontend" ] && [ "${FRONTEND_ENV_CHANGED}" -eq 1 ]; }; then
                     sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
                       docker compose up -d --force-recreate --no-deps "${service}" || l1_rc=1
                   else
@@ -324,6 +326,13 @@ jobs:
                 BACKEND_ENV_CHANGED=1
               fi
 
+              if ! sudo cmp -s "${SRC}/docker-compose/envs/common-frontend.env" \
+                   "${SHARED_ENV_PATH}/common-frontend.env" ||
+                 ! sudo cmp -s "${SRC}/docker-compose/envs/common-frontend-scan.env" \
+                   "${L1_PATH}/envs/common-frontend-scan.env"; then
+                FRONTEND_ENV_CHANGED=1
+              fi
+
               if [ "$(grep -Ec "^NFT_MEDIA_HANDLER_AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)=.+$" "${NFT_MEDIA_SECRETS}")" -ne 2 ]; then
                 echo "NFT media credential file is missing required values" >&2
                 exit 1
@@ -386,6 +395,9 @@ jobs:
               if [ "${BACKEND_ENV_CHANGED}" -eq 1 ] && ! grep -qw backend <<<"${TOUCHED_SERVICES}"; then
                 TOUCHED_SERVICES="${TOUCHED_SERVICES} backend"
               fi
+              if [ "${FRONTEND_ENV_CHANGED}" -eq 1 ] && ! grep -qw frontend <<<"${TOUCHED_SERVICES}"; then
+                TOUCHED_SERVICES="${TOUCHED_SERVICES} frontend"
+              fi
 
               for service in ${TOUCHED_SERVICES}; do
                 case "${service}" in
@@ -399,7 +411,8 @@ jobs:
                 esac
                 sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
                   docker compose pull "${service}"
-                if [ "${service}" = "backend" ] && [ "${BACKEND_ENV_CHANGED}" -eq 1 ]; then
+                if { [ "${service}" = "backend" ] && [ "${BACKEND_ENV_CHANGED}" -eq 1 ]; } ||
+                   { [ "${service}" = "frontend" ] && [ "${FRONTEND_ENV_CHANGED}" -eq 1 ]; }; then
                   sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
                     docker compose up -d --force-recreate --no-deps "${service}"
                 else
@@ -477,6 +490,7 @@ jobs:
                   docker compose exec -T frontend curl -fsS http://localhost:3000/assets/envs.js
               )"
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://doscan.io/metadata-api\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
 
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/stats >/dev/null
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/public-metrics >/dev/null
@@ -485,6 +499,7 @@ jobs:
                   "https://doscan.io/assets/envs.js?deploy=${{ github.run_id }}-${{ github.run_attempt }}"
               )"
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://doscan.io/metadata-api\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
 
               # A third-party metadata outage must not roll back a healthy deployment.
               DEPLOYMENT_STARTED=0
@@ -655,7 +670,44 @@ jobs:
                   return 1
                 fi
 
-                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose up -d
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose up -d || restore_rc=1
+                if [ "${FRONTEND_ENV_CHANGED:-0}" -eq 1 ]; then
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    docker compose up -d --force-recreate --no-deps frontend || restore_rc=1
+                  restored_frontend_env=""
+                  frontend_env_restored=0
+                  for attempt in $(seq 1 12); do
+                    if restored_frontend_env="$(
+                      sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                        docker compose exec -T frontend curl -fsS http://localhost:3000/assets/envs.js
+                    )"; then
+                      frontend_env_restored=1
+                      break
+                    fi
+                    sleep 5
+                  done
+                  if [ "${frontend_env_restored}" -ne 1 ]; then
+                    restore_rc=1
+                  fi
+                  restored_dex_value="$(
+                    sudo awk -F= \
+                      '$1 == "NEXT_PUBLIC_DEX_POOLS_ENABLED" { value = $2 } END { print value }' \
+                      "${DEPLOY_PATH}/envs/common-frontend.env" \
+                      "${DEPLOY_PATH}/envs/common-frontend-testnet.env"
+                  )"
+                  if [ "${restored_dex_value}" = "true" ]; then
+                    grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${restored_frontend_env}" ||
+                      restore_rc=1
+                  else
+                    if grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${restored_frontend_env}"; then
+                      restore_rc=1
+                    fi
+                  fi
+                fi
+                if [ "${restore_rc}" -ne 0 ]; then
+                  echo "TESTNET ROLLBACK FAILED; restored frontend runtime is unhealthy" >&2
+                  return 1
+                fi
                 for attempt in $(seq 1 30); do
                   if curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null; then
                     echo "Testnet rollback completed successfully" >&2
@@ -697,6 +749,14 @@ jobs:
               if ! sudo grep -Eq "^SECRET_KEY_BASE=.+" "${SECRETS_ENV}"; then
                 echo "Existing Testnet SECRET_KEY_BASE is missing; refusing deployment" >&2
                 exit 1
+              fi
+
+              FRONTEND_ENV_CHANGED=0
+              if ! sudo cmp -s "${SRC}/docker-compose/envs/common-frontend.env" \
+                   "${DEPLOY_PATH}/envs/common-frontend.env" ||
+                 ! sudo cmp -s "${SRC}/docker-compose/envs/common-frontend-testnet.env" \
+                   "${DEPLOY_PATH}/envs/common-frontend-testnet.env"; then
+                FRONTEND_ENV_CHANGED=1
               fi
 
               current_volume="$(
@@ -743,7 +803,8 @@ jobs:
               STATELESS_SERVICES="backend frontend smart-contract-verifier visualizer sig-provider stats caddy"
               for service in ${STATELESS_SERVICES}; do
                 sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose pull "${service}"
-                if [ "${service}" = "caddy" ]; then
+                if [ "${service}" = "caddy" ] ||
+                   { [ "${service}" = "frontend" ] && [ "${FRONTEND_ENV_CHANGED}" -eq 1 ]; }; then
                   sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
                     docker compose up -d --force-recreate --no-deps "${service}"
                 else
@@ -774,6 +835,7 @@ jobs:
                   docker compose exec -T frontend curl -fsS http://localhost:3000/assets/envs.js
               )"
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://test.doscan.io/metadata-api\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
 
               # External GCS, Cloudflare, RPC, or metadata failures must not trigger a destructive database restore.
               DEPLOYMENT_STARTED=0
@@ -802,6 +864,7 @@ jobs:
                   "https://test.doscan.io/assets/envs.js?deploy=${{ github.run_id }}-${{ github.run_attempt }}"
               )"
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://test.doscan.io/metadata-api\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
               metadata_response="$(
                 curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                   "https://test.doscan.io/metadata-api/api/v1/metadata?addresses=0x9f2aCCb76DEFE1735Fb55c41e1741c54a2d0fEa7&chainId=3939&tagsLimit=1"
