@@ -499,7 +499,7 @@ jobs:
                   docker compose exec -T frontend curl -fsS http://localhost:3000/assets/envs.js
               )"
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://doscan.io/metadata-api\"" <<<"${frontend_env}"
-              grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://doscan.io/contracts-info-api\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
 
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/stats >/dev/null
@@ -509,10 +509,10 @@ jobs:
                   "https://doscan.io/assets/envs.js?deploy=${{ github.run_id }}-${{ github.run_attempt }}"
               )"
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://doscan.io/metadata-api\"" <<<"${frontend_env}"
-              grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://doscan.io/contracts-info-api\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
               curl --fail --silent --show-error --retry 6 --retry-delay 5 \
-                https://doscan.io/contracts-info-api/api/v1/chains/7979/pools >/dev/null
+                https://doscan.io/api/v1/chains/7979/pools >/dev/null
 
               # A third-party metadata outage must not roll back a healthy deployment.
               DEPLOYMENT_STARTED=0
@@ -858,7 +858,7 @@ jobs:
                   docker compose exec -T frontend curl -fsS http://localhost:3000/assets/envs.js
               )"
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://test.doscan.io/metadata-api\"" <<<"${frontend_env}"
-              grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://test.doscan.io/contracts-info-api\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://test.doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
 
               # External GCS, Cloudflare, RPC, or metadata failures must not trigger a destructive database restore.
@@ -888,10 +888,10 @@ jobs:
                   "https://test.doscan.io/assets/envs.js?deploy=${{ github.run_id }}-${{ github.run_attempt }}"
               )"
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://test.doscan.io/metadata-api\"" <<<"${frontend_env}"
-              grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://test.doscan.io/contracts-info-api\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://test.doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
               curl --fail --silent --show-error --retry 6 --retry-delay 5 \
-                https://test.doscan.io/contracts-info-api/api/v1/chains/3939/pools >/dev/null
+                https://test.doscan.io/api/v1/chains/3939/pools >/dev/null
               metadata_response="$(
                 curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                   "https://test.doscan.io/metadata-api/api/v1/metadata?addresses=0x9f2aCCb76DEFE1735Fb55c41e1741c54a2d0fEa7&chainId=3939&tagsLimit=1"

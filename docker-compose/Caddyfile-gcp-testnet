@@ -15,6 +15,13 @@
 	handle /api/v1/pages/main {
 		reverse_proxy stats:8050
 	}
+	handle /api/v1/chains/* {
+		reverse_proxy https://contracts-info.services.blockscout.com {
+			header_up Host contracts-info.services.blockscout.com
+			header_up -Cookie
+			header_up -Authorization
+		}
+	}
 	handle /api/* {
 		reverse_proxy backend:4000
 	}
@@ -30,13 +37,6 @@
 	handle_path /metadata-api/* {
 		reverse_proxy https://metadata.services.blockscout.com {
 			header_up Host metadata.services.blockscout.com
-			header_up -Cookie
-			header_up -Authorization
-		}
-	}
-	handle_path /contracts-info-api/* {
-		reverse_proxy https://contracts-info.services.blockscout.com {
-			header_up Host contracts-info.services.blockscout.com
 			header_up -Cookie
 			header_up -Authorization
 		}
