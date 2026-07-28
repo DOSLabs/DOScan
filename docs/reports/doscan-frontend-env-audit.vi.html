@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="utf-8">
@@ -136,23 +136,130 @@
 <main>
   <section class="hero">
     <div class="eyebrow">DOScan Production Audit</div>
-    <h1>Env Blockscout Frontend nào đáng bật cho DOS Chain?</h1>
-    <p class="lead">Đối chiếu env đang chạy thật trên prod với Blockscout Frontend v2.9.5, Blockscout Backend 11.2.3 và đặc tính Avalanche L1 dùng Subnet-EVM.</p>
+    <h1>Các tính năng Blockscout đang bật trên DOS Chain</h1>
+    <p class="lead">Đối chiếu cấu hình Frontend và Backend của Mainnet/Testnet với Blockscout Frontend v2.9.5, Blockscout Backend 11.2.3 và đặc tính Avalanche L1 dùng Subnet-EVM.</p>
     <div class="grid">
-      <div class="metric"><strong>71</strong><span>env frontend đang chạy sau deploy</span></div>
-      <div class="metric"><strong>9</strong><span>cấu hình hữu ích đã triển khai</span></div>
-      <div class="metric"><strong>6</strong><span>cấu hình sai hoặc vô ích đã dọn</span></div>
+      <div class="metric"><strong>14</strong><span>nhóm tính năng hữu ích đã cấu hình</span></div>
+      <div class="metric"><strong>13</strong><span>nhóm bật trên cả Mainnet và Testnet</span></div>
+      <div class="metric"><strong>1</strong><span>lệch đáng chú ý: Account Abstraction</span></div>
     </div>
-    <div class="verdict"><strong>Đã triển khai đến ngày 28/07/2026:</strong> Hot Contracts, SEO nâng cao, chi tiết phí giao dịch, nhóm phí giao dịch, menu DeFi, DOS Faucet đúng app, ẩn giá DOS chưa có dữ liệu, dọn widget homepage rỗng và NFT Media Handler dùng Google Cloud Storage. Tính năng đáng đầu tư tiếp theo riêng cho Avalanche L1 là Cross-chain Transactions cho ICM/Teleporter/ICTT, nhưng cần triển khai thêm Interchain Indexer chứ không chỉ thêm env.</div>
+    <div class="verdict"><strong>Trạng thái ngày 28/07/2026:</strong> Pools, Hot Contracts, NFT Media Handler, Metadata proxy, Stats, contract verification, contract visualizer, signature provider, SEO, phí giao dịch nâng cao, Marketplace và menu DeFi đã được cấu hình. Account Abstraction đang bật trên Mainnet nhưng bị tắt rõ ràng trên Testnet. Cross-chain Transactions cho ICM/Teleporter/ICTT vẫn cần Interchain Indexer, không thể chỉ bật bằng env.</div>
   </section>
 
   <h2>0. Trạng thái triển khai</h2>
   <div class="verdict">
     <strong class="good">Đã deploy thành công lên production GCP.</strong>
-    <p>PR <a href="https://github.com/DOS/DOScan/pull/79">DOS/DOScan #79</a> đã merge tại commit <code>b5b876c68c62b7d2b6caaf88369b6b742d590487</code>. Cấu hình GCP hoàn chỉnh trên <a href="https://github.com/DOS/DOScan/pull/78">PR #78</a> đã merge tại commit <code>97dd9129c72e0276997d0020661e2369b3e2caa4</code>. Workflow <a href="https://github.com/DOS/DOScan/actions/runs/30162709398">Deploy Config #30162709398</a> hoàn tất thành công.</p>
-    <p>Đợt deploy frontend ban đầu chỉ recreate <code>doscan-l1-frontend-1</code> với <code>--no-deps</code>. Đợt deploy cấu hình tự động cuối không recreate container nào. Backend, database, AvalancheGo và DOS Chain không bị restart; các container chính giữ <code>RestartCount=0</code>.</p>
-    <p>Kiểm tra live bằng Playwright sau merge: homepage, <code>/hot-contracts</code>, <code>/ops</code> và <code>/apps</code> đều tải đúng. Sau khi khắc phục regression Metadata Service ngày 28/07/2026, trang NFT Testnet và trang address Mainnet đều không còn console error. Menu DeFi, DOS Faucet, Hot Contracts, User Operations, Gas fee và Fee per gas đều hiển thị.</p>
+    <p>Cấu hình GCP nền tảng đã merge qua <a href="https://github.com/DOS/DOScan/pull/78">PR #78</a> và <a href="https://github.com/DOS/DOScan/pull/79">PR #79</a>. Chuỗi sửa deploy Pools nằm trong <a href="https://github.com/DOS/DOScan/pull/126">PR #126</a> đến <a href="https://github.com/DOS/DOScan/pull/130">PR #130</a>. Workflow <a href="https://github.com/DOS/DOScan/actions/runs/30356142285">Deploy Config #30356142285</a> hoàn tất thành công cho cả Mainnet và Testnet.</p>
+    <p>Kiểm tra live sau deploy xác nhận <code>/pools</code> ở hai môi trường trả HTTP 200, runtime env bật DEX Pools, API same-origin trả HTTP 200 và trình duyệt không có console error. Trang hiện báo chưa có pool vì Contract Info chưa trả dữ liệu pool cho chain 7979 và 3939.</p>
+    <p><code>/hot-contracts</code> và API Hot Contracts hoạt động nhưng chưa có kết quả. Backend log xác nhận module trì hoãn khởi động vì chain chưa đủ 30 ngày tuổi. Đây là giới hạn dữ liệu hiện tại của logic upstream, không phải frontend bị tắt. Theo block thứ hai ngày 08/07/2026, mốc 30 ngày rơi vào khoảng 07/08/2026 UTC.</p>
   </div>
+
+  <h2>0A. Danh sách tính năng đang bật ở Frontend và Backend</h2>
+  <table>
+    <thead>
+      <tr><th>Tính năng</th><th>Lớp</th><th>Mainnet</th><th>Testnet</th><th>Giá trị và trạng thái thực tế</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>DEX Pools</td>
+        <td>Frontend + proxy</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td><code>NEXT_PUBLIC_DEX_POOLS_ENABLED=true</code>. Route <code>/pools</code> và <code>/api/v1/chains/{chainId}/pools</code> hoạt động. Chưa có pool được Contract Info index.</td>
+      </tr>
+      <tr>
+        <td>Hot Contracts</td>
+        <td>Frontend + Backend</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td><code>NEXT_PUBLIC_HOT_CONTRACTS_ENABLED=true</code>. API trả HTTP 200 nhưng danh sách 30 ngày còn rỗng do chain chưa đủ 30 ngày.</td>
+      </tr>
+      <tr>
+        <td>Account Abstraction / User Operations</td>
+        <td>Frontend + Backend microservice</td>
+        <td class="good">Đã bật</td>
+        <td class="warn">Đang tắt</td>
+        <td>Mainnet đặt <code>NEXT_PUBLIC_HAS_USER_OPS=true</code> và <code>MICROSERVICE_ACCOUNT_ABSTRACTION_ENABLED=true</code>. Testnet override cả hai thành <code>false</code>. Đây không phải tính năng tài khoản người dùng, watchlist hoặc private tag.</td>
+      </tr>
+      <tr>
+        <td>NFT Media Handler trên GCS</td>
+        <td>Backend</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td>Dùng bucket <code>gs://doscan</code>, tách prefix <code>mainnet/nft-media</code> và <code>testnet/nft-media</code>. Tạo original cùng thumbnail 60, 250 và 500 px.</td>
+      </tr>
+      <tr>
+        <td>Metadata Service proxy</td>
+        <td>Frontend + Caddy</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td>Dùng endpoint same-origin <code>/metadata-api</code>, loại bỏ thông tin xác thực trước khi proxy để tránh CORS và rò rỉ credential.</td>
+      </tr>
+      <tr>
+        <td>Stats và biểu đồ</td>
+        <td>Backend microservice + Frontend</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td>Stats service, database riêng và route <code>/stats-api</code> được cấu hình. Homepage chỉ giữ các chỉ số có dữ liệu.</td>
+      </tr>
+      <tr>
+        <td>Smart Contract Verifier</td>
+        <td>Backend microservice</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td>Verifier riêng hỗ trợ luồng xác minh source contract. Backend cũng bật tra cứu bytecode qua <code>eth_bytecode_db</code>.</td>
+      </tr>
+      <tr>
+        <td>Sol2UML Contract Visualizer</td>
+        <td>Backend microservice + Frontend</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td><code>MICROSERVICE_VISUALIZE_SOL2UML_ENABLED=true</code>. Frontend dùng Visualizer API same-origin theo từng môi trường.</td>
+      </tr>
+      <tr>
+        <td>Signature Provider</td>
+        <td>Backend microservice</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td><code>MICROSERVICE_SIG_PROVIDER_ENABLED=true</code>, dùng để giải mã function selector và event signature dễ đọc hơn.</td>
+      </tr>
+      <tr>
+        <td>SEO nâng cao</td>
+        <td>Frontend</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td><code>NEXT_PUBLIC_SEO_ENHANCED_DATA_ENABLED=true</code>, giúp bot tìm kiếm đọc tốt hơn các trang token, contract và địa chỉ.</td>
+      </tr>
+      <tr>
+        <td>Phí giao dịch nâng cao</td>
+        <td>Frontend</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td>Hiển thị <code>fee_per_gas</code> và gom nhóm các trường phí EIP-1559.</td>
+      </tr>
+      <tr>
+        <td>Marketplace, menu DeFi và DOS Faucet</td>
+        <td>Frontend</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td>Marketplace, DOSwap, DOS Bridge và DOS Faucet được cấu hình từ env chung. Testnet kế thừa các env này trừ khi có override riêng.</td>
+      </tr>
+      <tr>
+        <td>Advanced Filter và Gas Tracker</td>
+        <td>Frontend</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td>Bộ lọc giao dịch nâng cao và gas tracker theo đơn vị gwei được bật trong env chung.</td>
+      </tr>
+      <tr>
+        <td>Footer link theo release của fork DOS</td>
+        <td>Frontend</td>
+        <td class="good">Đã bật</td>
+        <td class="good">Đã bật</td>
+        <td>Kiểm tra live xác nhận Backend trỏ tới release của <code>DOS/DOScan</code> và Frontend trỏ tới release của <code>DOS/DOScan-Frontend</code>. Đây là phần hỗ trợ đã thêm trong bản fork, không phải hành vi mặc định chỉ cần env của Blockscout upstream.</td>
+      </tr>
+    </tbody>
+  </table>
   <div class="verdict"><strong class="good">Reown và Metadata đã được xử lý:</strong> Reown Dashboard đã allowlist <code>https://doscan.io</code>. Metadata Service được proxy an toàn qua <code>https://doscan.io/metadata-api</code> trên Mainnet và <code>https://test.doscan.io/metadata-api</code> trên Testnet; Caddy loại bỏ <code>Cookie</code> và <code>Authorization</code> trước khi chuyển request tới dịch vụ bên ngoài. <a href="https://github.com/DOS/DOScan/pull/122">PR #122</a> khôi phục endpoint same-origin cho Testnet và thêm deployment guard chống rollback database do outage third-party. <a href="https://github.com/DOS/DOScan/actions/runs/30343254663">Deploy run #30343254663</a> cùng Playwright ngày 28/07/2026 xác nhận không còn lỗi Metadata CORS.</div>
   <div class="verdict">
     <strong class="good">NFT Media Handler đã chạy trên Mainnet và Testnet:</strong>
@@ -164,7 +271,7 @@
   <p><strong>Có.</strong> DOS Chain là Avalanche L1 chạy Subnet-EVM, nên địa chỉ, giao dịch, token ERC, smart contract, EIP-1559 gas và wallet interaction đều dùng mô hình EVM. Avalanche ghi rõ Avalanche L1 có thể dùng Subnet-EVM và chọn EVM-style Chain ID. Địa chỉ EVM vẫn là dạng <code>0x...</code>; Bech32 chỉ dành cho X-Chain/P-Chain.</p>
   <div class="callout"><strong>Giới hạn quan trọng:</strong> Tính năng EVM phổ thông phù hợp, nhưng các env dành riêng cho Ethereum Beacon Chain, Base Flashblocks, Optimism/Arbitrum/ZK rollup, Celo, TAC, SUAVE hoặc validator UI của Stability/Blackfort/Zilliqa không phù hợp với DOS Chain.</div>
 
-  <h2>2. Nên bật hoặc cấu hình ngay</h2>
+  <h2>2. Các tính năng Frontend đã bật</h2>
 
   <div class="priority">
     <div class="num">1</div>
@@ -172,7 +279,7 @@
       <h3>Hot Contracts</h3>
       <span class="tag now">Đã bật trên prod</span><span class="tag now">Phù hợp Avalanche L1</span>
       <p>Thêm trang xếp hạng smart contract theo số giao dịch và gas sử dụng trong 5 phút, 1 giờ, 1 ngày, 1 tuần hoặc 1 tháng. Hữu ích để nhìn nhanh dapp nào đang có hoạt động thật, phát hiện contract tăng tải và theo dõi hệ sinh thái.</p>
-      <p><strong>Bằng chứng prod:</strong> endpoint <code>/api/v2/stats/hot-smart-contracts?scale=1d</code> trả HTTP 200. Backend đã có API, hiện chỉ thiếu env frontend.</p>
+      <p><strong>Bằng chứng prod:</strong> endpoint <code>/api/v2/stats/hot-smart-contracts</code> trả HTTP 200 và env frontend đã bật. Danh sách hiện rỗng vì module upstream trì hoãn dữ liệu dài hạn cho đến khi chain đủ 30 ngày tuổi. Theo yêu cầu hiện tại, không sửa source để thay đổi hành vi này.</p>
       <pre>NEXT_PUBLIC_HOT_CONTRACTS_ENABLED=true</pre>
     </div>
   </div>
@@ -184,7 +291,7 @@
       <span class="tag now">Đã bật trên prod</span><span class="tag now">Không phụ thuộc chain</span>
       <p>Blockscout sẽ dựng title và nội dung chính ngay trên server trước khi gửi HTML. Google và các bot đọc được tên token/trang tốt hơn, thay vì phải chờ JavaScript. Có lợi trực tiếp cho khả năng tìm kiếm của token, contract và địa chỉ trên DOS Chain.</p>
       <pre>NEXT_PUBLIC_SEO_ENHANCED_DATA_ENABLED=true</pre>
-      <p class="muted"><code>NEXT_PUBLIC_OG_ENHANCED_DATA_ENABLED</code> không cần thêm vì source v2.9.4 đang bật mặc định nếu không đặt thành <code>false</code>.</p>
+      <p class="muted"><code>NEXT_PUBLIC_OG_ENHANCED_DATA_ENABLED</code> không cần thêm vì source v2.9.5 đang bật mặc định nếu không đặt thành <code>false</code>.</p>
     </div>
   </div>
 
@@ -218,7 +325,7 @@ NEXT_PUBLIC_VIEWS_TX_GROUPED_FEES=true</pre>
     <div>
       <h3>Sửa nút DOS Faucet</h3>
       <span class="tag now">Đã sửa trên prod</span>
-      <p>Env hiện tại dùng <code>?address={address}</code>, nhưng frontend v2.9.4 chỉ thay placeholder <code>{chainId}</code>, không thay <code>{address}</code>. Vì vậy nút có thể gửi nguyên chuỗi <code>{address}</code> sang faucet. Dùng <code>dapp_id</code để mở đúng app Marketplace hoặc dùng URL sạch.</p>
+      <p>Env cũ dùng <code>?address=&#123;address&#125;</code>, nhưng frontend v2.9.5 chỉ thay placeholder <code>&#123;chainId&#125;</code>, không thay <code>&#123;address&#125;</code>. Vì vậy nút có thể gửi nguyên chuỗi placeholder sang faucet. Cấu hình hiện tại dùng <code>dapp_id</code> để mở đúng app Marketplace và URL sạch.</p>
       <pre>NEXT_PUBLIC_GAS_REFUEL_PROVIDER_CONFIG={
   'name':'DOS Faucet',
   'dapp_id':'dos-faucet',
@@ -295,12 +402,6 @@ NFT_MEDIA_HANDLER_BACKFILL_ENABLED=true</pre>
         <td>Cần Safe Transaction Service hỗ trợ chain 7979 hoặc tự host. Không nên trỏ bừa sang service của chain khác.</td>
       </tr>
       <tr>
-        <td><code>NEXT_PUBLIC_DEX_POOLS_ENABLED=true</code></td>
-        <td>Danh sách pool, token pair, DEX và liên kết thanh khoản.</td>
-        <td class="good">Phù hợp nếu DOSwap có pool on-chain.</td>
-        <td>Contract Info API phải index chain 7979 và DOSwap. Hiện endpoint pool trả danh sách rỗng, còn verified-addresses báo <code>Unknown chain id</code>.</td>
-      </tr>
-      <tr>
         <td><code>NEXT_PUBLIC_ROLLBAR_CLIENT_TOKEN=...</code> hoặc OpenTelemetry</td>
         <td>Phát hiện lỗi frontend thật trên trình duyệt người dùng, đo lỗi API và thời gian phản hồi.</td>
         <td class="good">Không phụ thuộc chain.</td>
@@ -322,8 +423,8 @@ NFT_MEDIA_HANDLER_BACKFILL_ENABLED=true</pre>
       </tr>
       <tr>
         <td><code>NEXT_PUBLIC_HAS_USER_OPS=true</code></td>
-        <td>Audit prod cũ không có route đúng. Stack GCP mới đã triển khai User Ops Indexer và endpoint <code>/api/v2/proxy/account-abstraction/operations</code> hiện trả HTTP 200.</td>
-        <td><span class="good">Giữ bật trên GCP</span>. Playwright xác nhận trang <code>/ops</code> hoạt động.</td>
+        <td>Mainnet GCP đã triển khai User Ops Indexer và endpoint <code>/api/v2/proxy/account-abstraction/operations</code> trả HTTP 200. Testnet đang override frontend và backend thành <code>false</code>.</td>
+        <td><span class="good">Đang bật trên Mainnet</span>. <span class="warn">Testnet đang tắt</span>, cần đồng bộ riêng nếu muốn hai môi trường gần giống nhau.</td>
       </tr>
       <tr>
         <td><code>NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=blockscout</code></td>
@@ -342,13 +443,13 @@ NFT_MEDIA_HANDLER_BACKFILL_ENABLED=true</pre>
       </tr>
       <tr>
         <td><code>NEXT_PUBLIC_DEX_POOLS_ENABLED=true</code></td>
-        <td>Contract Info API cho chain 7979 trả pool rỗng; verified-addresses trả <code>Unknown chain id</code>.</td>
-        <td><span class="good">Đã tắt</span>. Chỉ bật lại nếu Contract Info Service hỗ trợ chain 7979.</td>
+        <td>Proxy Contract Info same-origin cho chain 7979 và 3939 trả HTTP 200. Hai trang Pools hoạt động nhưng service chưa trả pool nào.</td>
+        <td><span class="good">Đã bật trên Mainnet và Testnet</span>. Trạng thái rỗng là thiếu dữ liệu index, không phải UI bị tắt.</td>
       </tr>
       <tr>
         <td><code>NEXT_PUBLIC_NETWORK_EXPLORERS</code> trỏ về chính doscan.io</td>
-        <td>Chức năng này dành cho explorer khác, nhưng cấu hình hiện tại chỉ tạo liên kết vòng về chính DOScan.</td>
-        <td><span class="good">Đã xóa</span>. Chỉ cấu hình lại khi có explorer độc lập.</td>
+        <td>Chức năng này dành cho explorer khác. Mainnet đã xóa cấu hình tự tham chiếu, nhưng Testnet vẫn trỏ vòng về chính <code>test.doscan.io</code>.</td>
+        <td><span class="good">Mainnet đã xóa</span>. <span class="warn">Testnet vẫn còn</span> và nên được dọn trong lần đồng bộ env tiếp theo.</td>
       </tr>
     </tbody>
   </table>
@@ -379,7 +480,7 @@ NEXT_PUBLIC_DEFI_DROPDOWN_ITEMS=[{'text':'Swap','icon':'swap','dappId':'doswap'}
 NEXT_PUBLIC_HIDE_NATIVE_COIN_PRICE=true
 NEXT_PUBLIC_HOMEPAGE_STATS=['total_blocks','average_block_time','total_txs','wallet_addresses','gas_tracker']
 NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=none</pre>
-  <p>Đồng thời đã bỏ account, bridged tokens, BENS name service, DEX pools và self-referencing network explorer. User Ops được giữ lại vì stack GCP mới đã có indexer và endpoint backend hoạt động.</p>
+  <p>Đồng thời đã bỏ tài khoản người dùng Blockscout, bridged tokens kiểu OmniBridge và BENS name service. Mainnet đã bỏ self-referencing network explorer nhưng Testnet vẫn còn cấu hình tự tham chiếu. DEX Pools đã được bật lại trên cả hai môi trường. User Ops hiện chỉ được giữ bật trên Mainnet vì Testnet đang có override tắt rõ ràng.</p>
 
   <h3>Giai đoạn 2 - Tính năng chiến lược cho Avalanche</h3>
   <ol>
@@ -387,7 +488,7 @@ NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=none</pre>
     <li>Tích hợp DOS Chain 7979, Avalanche C-Chain 43114 và bridge contract thật.</li>
     <li>Bật Cross-chain Transactions và thay tab bridged token giả lập hiện tại.</li>
     <li>Làm API public DOS.Me theo wallet address rồi bật address username tag.</li>
-    <li>Đăng ký hoặc tự host Contract Info API cho chain 7979 để bật pool DOSwap và verified token đúng nghĩa.</li>
+    <li>Đăng ký dữ liệu DOSwap cho chain 7979 và 3939 trong Contract Info để trang Pools đang bật có dữ liệu thật.</li>
   </ol>
 
   <h2>7. Nguồn và phạm vi kiểm chứng</h2>
@@ -400,7 +501,7 @@ NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=none</pre>
     <li><a href="https://build.avax.network/docs/tooling/avalanche-sdk/client/accounts/local/addresses">Avalanche: địa chỉ EVM 0x và địa chỉ X/P-Chain Bech32</a></li>
     <li><a href="https://github.com/blockscout/blockscout-rs/tree/main/interchain-indexer">Blockscout Interchain Indexer</a></li>
   </ul>
-  <p class="muted">Audit ban đầu thực hiện ngày 24/07/2026. Frontend được kiểm tra trên image <code>metados/blockscout-frontend:2.9.5</code>. NFT Media Handler được deploy và kiểm tra lại ngày 28/07/2026 trên Blockscout Backend 11.2.3 tại production GCP. Bản sao env trước deploy đã được giữ lại trên VM để rollback nếu cần.</p>
+  <p class="muted">Audit ban đầu thực hiện ngày 24/07/2026 và cập nhật trạng thái Frontend/Backend ngày 28/07/2026. Frontend dùng image <code>metados/blockscout-frontend:2.9.5</code>; Backend dùng Blockscout 11.2.3 tại production GCP. Trạng thái trong bảng được đối chiếu từ env chung, override Mainnet/Testnet, Docker Compose, workflow deploy và kiểm tra live. Account Abstraction Testnet được ghi là tắt đúng theo cấu hình hiện tại.</p>
 </main>
 </body>
 </html>
