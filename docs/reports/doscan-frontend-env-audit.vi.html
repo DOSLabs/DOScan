@@ -149,7 +149,8 @@
   <h2>0. Trạng thái triển khai</h2>
   <div class="verdict">
     <strong class="good">Đã deploy thành công lên production GCP.</strong>
-    <p>Cấu hình GCP nền tảng đã merge qua <a href="https://github.com/DOS/DOScan/pull/78">PR #78</a> và <a href="https://github.com/DOS/DOScan/pull/79">PR #79</a>. Chuỗi sửa deploy Pools nằm trong <a href="https://github.com/DOS/DOScan/pull/126">PR #126</a> đến <a href="https://github.com/DOS/DOScan/pull/130">PR #130</a>. Workflow <a href="https://github.com/DOS/DOScan/actions/runs/30356142285">Deploy Config #30356142285</a> hoàn tất thành công cho cả Mainnet và Testnet.</p>
+    <p>Cấu hình GCP nền tảng đã merge qua <a href="https://github.com/DOS/DOScan/pull/78">PR #78</a> và <a href="https://github.com/DOS/DOScan/pull/79">PR #79</a>. Chuỗi sửa deploy Pools nằm trong <a href="https://github.com/DOS/DOScan/pull/126">PR #126</a> đến <a href="https://github.com/DOS/DOScan/pull/130">PR #130</a>. <a href="https://github.com/DOS/DOScan/pull/133">PR #133</a> đồng bộ các tính năng backend/frontend khả dụng cho hai môi trường. Các PR <a href="https://github.com/DOS/DOScan/pull/135">#135</a> và <a href="https://github.com/DOS/DOScan/pull/136">#136</a> sửa giới hạn expression của GitHub Actions và ràng buộc đúng archive theo từng run. Workflow mới nhất <a href="https://github.com/DOS/DOScan/actions/runs/30378112152">Deploy Config #30378112152</a> hoàn tất thành công cho cả Mainnet và Testnet.</p>
+    <p>Kiểm tra live sau deploy xác nhận trang <code>/ops</code>, API <code>/api/v2/proxy/account-abstraction/status</code>, API <code>/api/v2/proxy/account-abstraction/operations</code>, <code>/public-metrics</code> và <code>/pools</code> đều trả HTTP 200 ở hai môi trường. Mainnet đã có UserOperation thật; Testnet hiển thị đúng trạng thái rỗng. Runtime probe trong workflow xác nhận backend kết nối được Rust Smart Contract Verifier và Metadata Service. Trình duyệt không ghi nhận console error trên trang User Operations Mainnet hoặc Testnet.</p>
     <p>Kiểm tra live sau deploy xác nhận <code>/pools</code> ở hai môi trường trả HTTP 200, runtime env bật DEX Pools, API same-origin trả HTTP 200 và trình duyệt không có console error. Trang hiện báo chưa có pool vì Contract Info chưa trả dữ liệu pool cho chain 7979 và 3939.</p>
     <p><code>/hot-contracts</code> và API Hot Contracts hoạt động nhưng chưa có kết quả. Backend log xác nhận module trì hoãn khởi động vì chain chưa đủ 30 ngày tuổi. Đây là giới hạn dữ liệu hiện tại của logic upstream, không phải frontend bị tắt. Theo block thứ hai ngày 08/07/2026, mốc 30 ngày rơi vào khoảng 07/08/2026 UTC.</p>
   </div>
@@ -193,7 +194,7 @@
         <td>Frontend + Backend + Caddy</td>
         <td class="good">Đã bật</td>
         <td class="good">Đã bật</td>
-        <td>Frontend dùng endpoint same-origin <code>/metadata-api</code>. Backend cấu hình <code>MICROSERVICE_METADATA_ENABLED=true</code> để preload tag vào address, block và transaction API. Endpoint upstream đã trả HTTP 200 cho cả chain 7979 và 3939 trong kiểm tra trước deploy; trạng thái tích hợp backend live sẽ được xác nhận sau workflow.</td>
+        <td>Frontend dùng endpoint same-origin <code>/metadata-api</code>. Backend bật <code>MICROSERVICE_METADATA_ENABLED=true</code> để preload tag vào address, block và transaction API. Workflow production đã xác nhận backend kết nối được Metadata Service; endpoint upstream trả HTTP 200 cho cả chain 7979 và 3939.</td>
       </tr>
       <tr>
         <td>Stats và biểu đồ</td>
@@ -523,7 +524,7 @@ NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=none</pre>
     <li><a href="https://build.avax.network/docs/tooling/avalanche-sdk/client/accounts/local/addresses">Avalanche: địa chỉ EVM 0x và địa chỉ X/P-Chain Bech32</a></li>
     <li><a href="https://github.com/blockscout/blockscout-rs/tree/main/interchain-indexer">Blockscout Interchain Indexer</a></li>
   </ul>
-  <p class="muted">Audit ban đầu thực hiện ngày 24/07/2026 và cập nhật cấu hình Frontend/Backend ngày 28/07/2026. Frontend dùng image <code>metados/blockscout-frontend:2.9.5</code>; Backend dùng Blockscout 11.2.3 tại production GCP. Trạng thái trong bảng được đối chiếu từ env chung, override Mainnet/Testnet, Docker Compose, source v11.2.3 và tài liệu Blockscout chính thức. Các bằng chứng deploy live mới sẽ được ghi sau khi workflow cấu hình hoàn tất.</p>
+  <p class="muted">Audit ban đầu thực hiện ngày 24/07/2026 và cập nhật trạng thái production ngày 28/07/2026. Frontend dùng image <code>metados/blockscout-frontend:2.9.5</code>; Backend dùng Blockscout 11.2.3 tại production GCP. Trạng thái trong bảng được đối chiếu từ env chung, override Mainnet/Testnet, Docker Compose, source v11.2.3, tài liệu Blockscout chính thức, workflow production #30378112152, public API và kiểm tra trình duyệt live.</p>
 </main>
 </body>
 </html>
