@@ -429,6 +429,23 @@ jobs:
                 sleep 5
               done
 
+              verify_nft_media_runtime() {
+                probe_key="healthchecks/github-${{ github.run_id }}-${{ github.run_attempt }}.txt"
+                for probe_attempt in $(seq 1 5); do
+                  if probe_output="$(
+                    sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                      docker compose exec -T backend bin/blockscout rpc \
+                      "folder = Application.fetch_env!(:nft_media_handler, :r2_folder); key = Path.join(folder, ~s(${probe_key})); body = ~s(doscan-nft-media-runtime); try do true = is_pid(Process.whereis(NFTMediaHandler.Dispatcher)); {:ok, _} = ExAws.S3.put_object(~s(doscan), key, body) |> ExAws.request(); {:ok, %{body: ^body}} = ExAws.S3.get_object(~s(doscan), key) |> ExAws.request(); IO.puts(~s(NFT_MEDIA_RUNTIME_OK)) after ExAws.S3.delete_object(~s(doscan), key) |> ExAws.request() end"
+                  )" && grep -q "NFT_MEDIA_RUNTIME_OK" <<<"${probe_output}"; then
+                    return 0
+                  fi
+                  sleep 5
+                done
+                echo "NFT media runtime probe failed after 5 attempts" >&2
+                return 1
+              }
+              verify_nft_media_runtime
+
               cd "${EDGE_PATH}"
               sudo docker compose config -q
               if [ "${EDGE_CONFIG_CHANGED}" -eq 1 ] || [ "${EDGE_CADDY_CONFIG_CHANGED}" -eq 1 ]; then
@@ -731,6 +748,26 @@ jobs:
                 fi
                 sleep 5
               done
+
+              # External GCS failures must not trigger a destructive database restore.
+              DEPLOYMENT_STARTED=0
+              verify_nft_media_runtime() {
+                probe_key="healthchecks/github-${{ github.run_id }}-${{ github.run_attempt }}.txt"
+                for probe_attempt in $(seq 1 5); do
+                  if probe_output="$(
+                    sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                      docker compose exec -T backend bin/blockscout rpc \
+                      "folder = Application.fetch_env!(:nft_media_handler, :r2_folder); key = Path.join(folder, ~s(${probe_key})); body = ~s(doscan-nft-media-runtime); try do true = is_pid(Process.whereis(NFTMediaHandler.Dispatcher)); {:ok, _} = ExAws.S3.put_object(~s(doscan), key, body) |> ExAws.request(); {:ok, %{body: ^body}} = ExAws.S3.get_object(~s(doscan), key) |> ExAws.request(); IO.puts(~s(NFT_MEDIA_RUNTIME_OK)) after ExAws.S3.delete_object(~s(doscan), key) |> ExAws.request() end"
+                  )" && grep -q "NFT_MEDIA_RUNTIME_OK" <<<"${probe_output}"; then
+                    return 0
+                  fi
+                  sleep 5
+                done
+                echo "NFT media runtime probe failed after 5 attempts" >&2
+                return 1
+              }
+              verify_nft_media_runtime
+              DEPLOYMENT_STARTED=1
 
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://test.doscan.io/ >/dev/null
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://test.doscan.io/api/v2/stats >/dev/null
