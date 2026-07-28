@@ -332,6 +332,15 @@ jobs:
                    "${L1_PATH}/envs/common-frontend-scan.env"; then
                 FRONTEND_ENV_CHANGED=1
               fi
+              CURRENT_FRONTEND_ENV="$(
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                  docker compose exec -T frontend curl -fsS http://localhost:3000/assets/envs.js 2>/dev/null || true
+              )"
+              if grep -Fqx "NEXT_PUBLIC_DEX_POOLS_ENABLED=true" \
+                   "${SRC}/docker-compose/envs/common-frontend.env" &&
+                 ! grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${CURRENT_FRONTEND_ENV}"; then
+                FRONTEND_ENV_CHANGED=1
+              fi
 
               if [ "$(grep -Ec "^NFT_MEDIA_HANDLER_AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)=.+$" "${NFT_MEDIA_SECRETS}")" -ne 2 ]; then
                 echo "NFT media credential file is missing required values" >&2
@@ -691,7 +700,7 @@ jobs:
                   fi
                   restored_dex_value="$(
                     sudo awk -F= \
-                      '$1 == "NEXT_PUBLIC_DEX_POOLS_ENABLED" { value = $2 } END { print value }' \
+                      '"'"'$1 == "NEXT_PUBLIC_DEX_POOLS_ENABLED" { value = $2 } END { print value }'"'"' \
                       "${DEPLOY_PATH}/envs/common-frontend.env" \
                       "${DEPLOY_PATH}/envs/common-frontend-testnet.env"
                   )"
@@ -751,11 +760,21 @@ jobs:
                 exit 1
               fi
 
+              cd "${DEPLOY_PATH}"
               FRONTEND_ENV_CHANGED=0
               if ! sudo cmp -s "${SRC}/docker-compose/envs/common-frontend.env" \
                    "${DEPLOY_PATH}/envs/common-frontend.env" ||
                  ! sudo cmp -s "${SRC}/docker-compose/envs/common-frontend-testnet.env" \
                    "${DEPLOY_PATH}/envs/common-frontend-testnet.env"; then
+                FRONTEND_ENV_CHANGED=1
+              fi
+              CURRENT_FRONTEND_ENV="$(
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                  docker compose exec -T frontend curl -fsS http://localhost:3000/assets/envs.js 2>/dev/null || true
+              )"
+              if grep -Fqx "NEXT_PUBLIC_DEX_POOLS_ENABLED=true" \
+                   "${SRC}/docker-compose/envs/common-frontend.env" &&
+                 ! grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${CURRENT_FRONTEND_ENV}"; then
                 FRONTEND_ENV_CHANGED=1
               fi
 
