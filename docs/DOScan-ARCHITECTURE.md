@@ -141,12 +141,19 @@ SUBNETWORK=Mainnet
 
 | Domain | Backend | CORS |
 |--------|---------|------|
-| `doscan.io`, `www.doscan.io` | Frontend (:3000) default, Backend (:4000) for `/api/*`, `/socket/*`, `/auth/*`, `/sitemap.xml`, `/metrics`; Visualizer (:8050) for `/visualize/*` | - |
+| `doscan.io`, `www.doscan.io` | Frontend (:3000) default, Backend (:4000) for `/api/*`, `/socket/*`, `/auth/*`, `/sitemap.xml`, `/metrics`; Visualizer (:8050) for `/visualize/*`; Blockscout Metadata Service for `/metadata-api/*` | - |
 | `api.doscan.io` | Backend (:4000) all paths | - |
 | `stats.doscan.io` | Stats (:8050) | `https://doscan.io` |
 | `viz.doscan.io` | Visualizer (:8050) | `https://doscan.io` |
 
 All domains use Cloudflare Origin SSL certificates (`/etc/caddy/certs/origin.pem`).
+
+The frontend must call the Blockscout Metadata Service through the same-origin
+`/metadata-api` route. Mainnet uses `https://doscan.io/metadata-api` and Testnet
+uses `https://test.doscan.io/metadata-api`. Caddy strips the route prefix and
+removes `Cookie` and `Authorization` before forwarding requests to
+`https://metadata.services.blockscout.com`. Direct browser requests to the
+external service are not allowed for DOS Chain origins and fail CORS.
 
 ### AvalancheGo Archive Node Config
 
