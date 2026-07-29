@@ -11,6 +11,7 @@ on:
       - "docker-compose/Caddyfile-gcp-mainnet"
       - "docker-compose/Caddyfile-gcp-testnet"
       - "docker-compose/Caddyfile-gcp-edge"
+      - "docker-compose/configs/interchain-indexer-*.json"
       - "docker-compose/envs/common-blockscout.env"
       - "docker-compose/envs/common-blockscout-mainnet.env"
       - "docker-compose/envs/common-blockscout-testnet.env"
@@ -220,6 +221,13 @@ jobs:
                 echo "Deployment failed; restoring configuration from ${BACKUP}" >&2
                 set +e
                 restore_rc=0
+
+                cd "${L1_PATH}"
+                rollback_services=""
+                for service in ${TOUCHED_SERVICES}; do
+                  if grep -q "^${service} " "${SRC}/old-service-hashes"; then rollback_services="${rollback_services} ${service}"; else sudo docker compose rm -sf "${service}" || restore_rc=1; fi
+                done
+                TOUCHED_SERVICES="${rollback_services}"
 
                 sudo cp -a "${BACKUP}/compose.yml" "${L1_PATH}/compose.yml" || restore_rc=1
                 sudo cp -a "${BACKUP}/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet" || restore_rc=1
