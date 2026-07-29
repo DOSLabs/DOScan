@@ -139,11 +139,11 @@
     <h1>Các tính năng Blockscout đang bật trên DOS Chain</h1>
     <p class="lead">Đối chiếu cấu hình Frontend và Backend của Mainnet/Testnet với Blockscout Frontend v2.9.5, Blockscout Backend 11.2.3 và đặc tính Avalanche L1 dùng Subnet-EVM.</p>
     <div class="grid">
-      <div class="metric"><strong>18</strong><span>nhóm tính năng hữu ích đã cấu hình</span></div>
+      <div class="metric"><strong>19</strong><span>nhóm tính năng hữu ích đã cấu hình</span></div>
       <div class="metric"><strong>18</strong><span>nhóm bật trên cả Mainnet và Testnet</span></div>
       <div class="metric"><strong>0</strong><span>lệch ở các feature flag dùng chung</span></div>
     </div>
-    <div class="verdict"><strong>Trạng thái production ngày 28/07/2026:</strong> các feature flag dùng chung đã được đồng bộ cho Mainnet và Testnet. Account Abstraction, Metadata backend, Web3 wallet helpers, Rust Smart Contract Verifier, token metadata updater, NFT retry, partial reverification và indexer metrics đều đã deploy. Pending transaction và internal transaction vẫn tắt riêng trên Testnet vì RPC 3939 thực tế không cung cấp <code>txpool_content</code> và <code>debug_traceBlockByNumber</code>.</div>
+    <div class="verdict"><strong>Trạng thái production ngày 29/07/2026:</strong> các feature flag dùng chung đã được đồng bộ cho Mainnet và Testnet. Mainnet đã có thêm Cross-chain Transactions cùng Blockscout Interchain Indexer cho Avalanche ICM/Teleporter và ICTT. Testnet chưa bật tính năng liên chuỗi vì chưa cấu hình cặp Fuji/DOS Testnet tương ứng. Pending transaction và internal transaction vẫn tắt riêng trên Testnet vì RPC 3939 thực tế không cung cấp <code>txpool_content</code> và <code>debug_traceBlockByNumber</code>.</div>
   </section>
 
   <h2>0. Trạng thái triển khai</h2>
@@ -153,6 +153,7 @@
     <p><a href="https://github.com/DOS/DOScan/actions/runs/30378112152">Deploy Config #30378112152</a> hoàn tất thành công cho cả Mainnet và Testnet. Kiểm tra live xác nhận <code>/pools</code>, <code>/ops</code>, Account Abstraction status và operations, Metadata proxy, Contract Info proxy cùng <code>/public-metrics</code> đều hoạt động. Runtime probe xác nhận backend kết nối được Rust Smart Contract Verifier và Metadata Service. Browser xác nhận nút <code>Add DOS Chain</code>, <code>Connect</code>, trang DEX tracker và User Operations đều render đúng, không có console error từ ứng dụng.</p>
     <p>Mainnet đã có UserOperation thật; Testnet hiển thị đúng trạng thái rỗng. <code>/pools</code> hiện báo chưa có pool vì Contract Info chưa trả dữ liệu cho chain 7979 và 3939. Đây là trạng thái rỗng hợp lệ, không còn là lỗi 404.</p>
     <p><code>/hot-contracts</code> và API Hot Contracts hoạt động nhưng chưa có kết quả. Backend log xác nhận module trì hoãn khởi động vì chain chưa đủ 30 ngày tuổi. Đây là giới hạn dữ liệu hiện tại của logic upstream, không phải frontend bị tắt. Theo block thứ hai ngày 08/07/2026, mốc 30 ngày rơi vào khoảng 07/08/2026 UTC.</p>
+    <p><a href="https://github.com/DOS/DOScan/pull/139">PR #139</a> triển khai Blockscout Interchain Indexer v1.6.0 cho Avalanche C-Chain 43114 và DOS Chain 7979. <a href="https://github.com/DOS/DOScan/pull/140">PR #140</a> tách RPC ICM đang được xử lý riêng khỏi deploy gate của explorer. <a href="https://github.com/DOS/DOScan/actions/runs/30413862805">Deploy Config #30413862805</a> hoàn tất thành công cho cả Mainnet và Testnet. Mainnet container báo <code>healthy</code>, worker <code>avalanche</code> báo <code>running</code>, còn Testnet giữ nguyên cấu hình không bật cross-chain.</p>
   </div>
 
   <h2>0A. Giám sát outage của Metadata upstream</h2>
@@ -175,6 +176,13 @@
         <td class="good">Đã bật</td>
         <td class="good">Đã bật</td>
         <td><code>NEXT_PUBLIC_DEX_POOLS_ENABLED=true</code>. Route <code>/pools</code> và <code>/api/v1/chains/{chainId}/pools</code> hoạt động. Chưa có pool được Contract Info index.</td>
+      </tr>
+      <tr>
+        <td>Cross-chain Transactions</td>
+        <td>Frontend + Rust microservice + Caddy</td>
+        <td class="good">Đã bật</td>
+        <td>Chưa bật</td>
+        <td><code>NEXT_PUBLIC_CROSS_CHAIN_TXS_ENABLED=true</code> và Blockscout Interchain Indexer v1.6.0. Mainnet hiển thị message ICM/Teleporter, source transaction, destination transaction, lifecycle và ICTT token transfer giữa DOS Chain 7979 với Avalanche C-Chain 43114.</td>
       </tr>
       <tr>
         <td>Hot Contracts</td>
@@ -409,18 +417,26 @@ NFT_MEDIA_HANDLER_BACKFILL_ENABLED=true</pre>
     </div>
   </div>
 
+  <h2>2B. Cross-chain Transactions cho Avalanche ICM và ICTT</h2>
+  <div class="verdict">
+    <strong class="good">Đã deploy trên Mainnet và đã xác minh giao dịch thật ở cả hai chiều.</strong>
+    <p>Blockscout Interchain Indexer v1.6.0 được cấu hình với <code>indexer_type=icm_ictt</code>, DOS Chain 7979, Avalanche C-Chain 43114 và TeleporterMessenger <code>0x253b2784c75e510dD0fF1da844684a1aC0aa5fcf</code>. Service dùng database riêng <code>interchain_indexer</code>, không ghi vào schema Blockscout chính. API được route same-origin qua <code>https://doscan.io</code>.</p>
+    <p><strong>Có, DOScan xem được cả hai chiều.</strong> Tab <a href="https://doscan.io/txs?tab=txs_cross_chain">Cross-chain txns</a> hiển thị message, chain nguồn, chain đích, source transaction, destination transaction, sender, recipient, protocol, trạng thái và token transfer. Detail page hiển thị lifecycle <code>Initiated</code> đến <code>Completed</code> cùng payload.</p>
+    <ul>
+      <li><strong>DOS sang Avalanche:</strong> source transaction <a href="https://doscan.io/tx/0xdaf2a6b814a102214a329f5c45bbb920ce7ced42f8839f060a83525d23750722"><code>0xdaf2...0722</code></a> trên DOS được ghép với destination transaction <a href="https://subnets.avax.network/c-chain/tx/0x7a259353da20ea4901d412036f41a6b7e34e2aaeab13d2ed2c09019a7facea8c"><code>0x7a25...ea8c</code></a> trên Avalanche. Message <a href="https://doscan.io/cross-chain-tx/0xe9017de0034351e62454a36fb5cb2df35d805cb537aa54119c90d41a95b47077"><code>0xe901...7077</code></a> hoàn tất và ghi nhận 0,01 WDOS thành 0,01 DOS.</li>
+      <li><strong>Avalanche sang DOS:</strong> source transaction <a href="https://subnets.avax.network/c-chain/tx/0xa5455a919896dcac09d6cc7301f6b125d8da28592fcba00d13d7143b75ae15b7"><code>0xa545...15b7</code></a> trên Avalanche được ghép với destination transaction <a href="https://doscan.io/tx/0x3153c9a20ca4fb1458615b60e95ec863a19b2bc73030942e0ed13deac8386a4a"><code>0x3153...a4a</code></a> trên DOS. Message <a href="https://doscan.io/cross-chain-tx/0xbf0dd9c2e29711ba7cb2515831f5acf7c0aae2e64ebdb2fe25f0508123969928"><code>0xbf0d...9928</code></a> hoàn tất và ghi nhận 0,005 DOS thành 0,005 WDOS.</li>
+    </ul>
+    <p><strong>Phù hợp với Avalanche L1:</strong> đây không phải tính năng bridge EVM chung được bật theo suy đoán. Indexer này của Blockscout có logic riêng cho Avalanche Teleporter/ICM và ICTT, đúng giao thức DOS Chain đang dùng để liên lạc với C-Chain.</p>
+    <p><strong>Vận hành:</strong> worker <code>avalanche</code> phải ở trạng thái <code>running</code> thì container và deploy gate mới được coi là khỏe. C-Chain đang backfill lịch sử từ block 42.526.120 theo batch 2.048 block và interval 250 ms. Realtime vẫn chạy song song, nên giao dịch mới không phải chờ toàn bộ lịch sử. Sau khi backfill hoàn tất cần tăng interval về khoảng 10 giây để giảm tải RPC lâu dài.</p>
+    <div class="callout"><strong>Phạm vi hiện tại:</strong> chỉ Mainnet được bật. Testnet cần cấu hình đúng Fuji, DOS Testnet, Teleporter/ICTT contract và RPC riêng trước khi bật, không được dùng lẫn dữ liệu Mainnet.</div>
+  </div>
+
   <h2>3. Tính năng rất đáng làm nhưng cần thêm backend/service</h2>
   <table>
     <thead>
       <tr><th>Tính năng</th><th>Lợi ích</th><th>Mức phù hợp Avalanche L1</th><th>Điều kiện để bật</th></tr>
     </thead>
     <tbody>
-      <tr>
-        <td><code>NEXT_PUBLIC_CROSS_CHAIN_TXS_ENABLED=true</code><br><code>NEXT_PUBLIC_INTERCHAIN_INDEXER_API_HOST=...</code></td>
-        <td>Hiển thị Avalanche ICM/Teleporter message, ICTT token transfer, trạng thái cross-chain, thống kê theo chain và bridged token.</td>
-        <td class="good">Phù hợp nhất. Blockscout Interchain Indexer hiện tập trung vào Avalanche Teleporter/ICM và ICTT.</td>
-        <td>Triển khai Blockscout <code>interchain-indexer</code>, cấu hình DOS Chain 7979, Avalanche C-Chain 43114, BNB nếu bridge dùng BNB, RPC và contract Teleporter/ICTT.</td>
-      </tr>
       <tr>
         <td><code>NEXT_PUBLIC_ADDRESS_USERNAME_TAG=...</code></td>
         <td>Hiện username DOS.Me như public tag ngay trên trang địa chỉ và dẫn sang profile DOS.Me.</td>
@@ -521,13 +537,12 @@ NEXT_PUBLIC_HOMEPAGE_STATS=['total_blocks','average_block_time','total_txs','wal
 NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=none</pre>
   <p>Đồng thời đã bỏ tài khoản người dùng Blockscout, bridged tokens kiểu OmniBridge và BENS name service. Self-referencing network explorer đã được xóa khỏi cả hai môi trường. DEX Pools, User Ops và Web3 wallet helpers được bật trên cả Mainnet lẫn Testnet.</p>
 
-  <h3>Giai đoạn 2 - Tính năng chiến lược cho Avalanche</h3>
+  <h3>Giai đoạn 2 - Đang triển khai các tính năng chiến lược cho Avalanche</h3>
+  <p><span class="good">Đã hoàn tất ngày 29/07/2026:</span> Blockscout Interchain Indexer, tích hợp DOS Chain 7979 với Avalanche C-Chain 43114, bật Cross-chain Transactions trên Mainnet và xác minh message thật ở cả hai chiều.</p>
   <ol>
-    <li>Triển khai Blockscout Interchain Indexer cho Avalanche ICM/Teleporter/ICTT.</li>
-    <li>Tích hợp DOS Chain 7979, Avalanche C-Chain 43114 và bridge contract thật.</li>
-    <li>Bật Cross-chain Transactions và thay tab bridged token giả lập hiện tại.</li>
     <li>Làm API public DOS.Me theo wallet address rồi bật address username tag.</li>
     <li>Đăng ký dữ liệu DOSwap cho chain 7979 và 3939 trong Contract Info để trang Pools đang bật có dữ liệu thật.</li>
+    <li>Sau khi C-Chain historical backfill hoàn tất, tăng poll interval của Interchain Indexer từ 250 ms lên khoảng 10 giây.</li>
   </ol>
 
   <h2>7. Nguồn và phạm vi kiểm chứng</h2>
@@ -541,8 +556,10 @@ NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=none</pre>
     <li><a href="https://build.avax.network/docs/tooling/avalanche-cli/create-avalanche-l1">Avalanche: tạo EVM-based L1 bằng Subnet-EVM</a></li>
     <li><a href="https://build.avax.network/docs/tooling/avalanche-sdk/client/accounts/local/addresses">Avalanche: địa chỉ EVM 0x và địa chỉ X/P-Chain Bech32</a></li>
     <li><a href="https://github.com/blockscout/blockscout-rs/tree/main/interchain-indexer">Blockscout Interchain Indexer</a></li>
+    <li><a href="https://github.com/blockscout/blockscout-rs/releases/tag/interchain-indexer/v1.6.0">Blockscout Interchain Indexer v1.6.0</a></li>
+    <li><a href="https://github.com/DOS/DOScan/actions/runs/30413862805">DOScan Deploy Config #30413862805</a></li>
   </ul>
-  <p class="muted">Audit ban đầu thực hiện ngày 24/07/2026 và chốt bằng chứng production ngày 28/07/2026. Frontend dùng image <code>metados/blockscout-frontend:2.9.5</code>; Backend dùng Blockscout 11.2.3 tại production GCP. Trạng thái trong bảng được đối chiếu từ env chung, override Mainnet/Testnet, Docker Compose, source v11.2.3, tài liệu chính thức, deploy run <code>30378112152</code>, HTTP probe, Google Cloud Monitoring time series và browser kiểm tra giao diện thật.</p>
+  <p class="muted">Audit ban đầu thực hiện ngày 24/07/2026 và cập nhật bằng chứng production đến ngày 29/07/2026. Frontend dùng image <code>metados/blockscout-frontend:2.9.5</code>; Backend dùng Blockscout 11.2.3; Interchain Indexer dùng v1.6.0 tại production GCP. Trạng thái trong bảng được đối chiếu từ env chung, override Mainnet/Testnet, Docker Compose, source chính thức, deploy run <code>30413862805</code>, HTTP probe, API production, container readiness và browser kiểm tra giao diện thật.</p>
 </main>
 </body>
 </html>
