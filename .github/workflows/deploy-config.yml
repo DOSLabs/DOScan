@@ -535,7 +535,7 @@ jobs:
                   curl --fail --silent --show-error \
                     https://doscan.io/api/v2/tokens/0x1111111111111111111111111111111111111111
                 )"
-                if jq -e --arg icon "${expected_token_icon}" '.icon_url == $icon' <<<"${token_info}" >/dev/null; then
+                if [ "$(jq -r .icon_url <<<"${token_info}")" = "${expected_token_icon}" ]; then
                   break
                 fi
                 if [ "${attempt}" -eq 30 ]; then
