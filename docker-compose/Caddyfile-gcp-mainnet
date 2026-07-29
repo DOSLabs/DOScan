@@ -25,6 +25,10 @@
 	handle /api/v1/pages/main {
 		reverse_proxy stats:8050
 	}
+	@interchain_indexer path /api/v1/interchain/* /api/v1/stats/common /api/v1/stats/daily /api/v1/stats/chains /api/v1/stats/chain/*
+	handle @interchain_indexer {
+		reverse_proxy interchain-indexer:8050
+	}
 	handle /api/v1/chains/* {
 		reverse_proxy https://contracts-info.services.blockscout.com {
 			header_up Host contracts-info.services.blockscout.com

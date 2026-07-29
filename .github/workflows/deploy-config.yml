@@ -111,6 +111,8 @@ jobs:
           tar -czf /tmp/doscan-config.tgz \
             docker-compose/docker-compose-mainnet.yml \
             docker-compose/Caddyfile-gcp-mainnet \
+            docker-compose/configs/interchain-indexer-chains.json \
+            docker-compose/configs/interchain-indexer-bridges.json \
             docker-compose/Caddyfile-gcp-edge \
             docker-compose/docker-compose-gcp-edge.yml \
             docker-compose/docker-compose-gcp-edge.override.yml \
@@ -202,7 +204,7 @@ jobs:
                     frontend)
                       sudo docker compose exec -T caddy wget -qO- http://frontend:3000 >/dev/null || return 1
                       ;;
-                    smart-contract-verifier|visualizer|sig-provider|user-ops-indexer|stats)
+                    smart-contract-verifier|visualizer|sig-provider|user-ops-indexer|interchain-indexer|stats)
                       sudo docker compose exec -T caddy wget -qO- "http://${service}:8050/health" >/dev/null || return 1
                       ;;
                   esac
@@ -229,7 +231,7 @@ jobs:
                 else
                   sudo rm -f "${EDGE_PATH}/compose.rpc-override.yml" || restore_rc=1
                 fi
-                sudo cp -a "${BACKUP}/envs/." "${L1_PATH}/envs/" || restore_rc=1
+                for dir in envs configs; do sudo cp -a "${BACKUP}/${dir}/." "${L1_PATH}/${dir}/" || restore_rc=1; done
                 sudo cp -a "${BACKUP}/shared-envs/." "${SHARED_ENV_PATH}/" || restore_rc=1
 
                 if [ "${restore_rc}" -ne 0 ]; then
@@ -301,7 +303,7 @@ jobs:
               trap finish EXIT
 
               tar -xzf "${ARCHIVE}" -C "${SRC}"
-              sudo mkdir -p "${BACKUP}" "${L1_PATH}/envs" "${EDGE_PATH}" "${SHARED_ENV_PATH}"
+              sudo mkdir -p "${BACKUP}" "${L1_PATH}/envs" "${L1_PATH}/configs" "${EDGE_PATH}" "${SHARED_ENV_PATH}"
 
               sudo cp -a "${L1_PATH}/compose.yml" "${BACKUP}/compose.yml"
               sudo cp -a "${L1_PATH}/Caddyfile-gcp-mainnet" "${BACKUP}/Caddyfile-gcp-mainnet"
@@ -311,7 +313,7 @@ jobs:
               if sudo test -f "${EDGE_PATH}/compose.rpc-override.yml"; then
                 sudo cp -a "${EDGE_PATH}/compose.rpc-override.yml" "${BACKUP}/compose.rpc-override.yml"
               fi
-              sudo cp -a "${L1_PATH}/envs" "${BACKUP}/envs"
+              for dir in envs configs; do sudo cp -a "${L1_PATH}/${dir}" "${BACKUP}/${dir}"; done
               sudo cp -a "${SHARED_ENV_PATH}" "${BACKUP}/shared-envs"
               DEPLOYMENT_STARTED=1
 
@@ -388,6 +390,7 @@ jobs:
 
               sudo install -m 0644 "${SRC}/docker-compose/docker-compose-mainnet.yml" "${L1_PATH}/compose.yml"
               sudo install -m 0644 "${SRC}/docker-compose/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet"
+              for file in interchain-indexer-{chains,bridges}.json; do sudo install -m 0644 "${SRC}/docker-compose/configs/${file}" "${L1_PATH}/configs/${file}"; done
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-blockscout.env" "${L1_PATH}/envs/common-blockscout.env"
               sudo install -m 0644 "${SRC}/docker-compose/docker-compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml"
               sudo install -m 0644 "${SRC}/docker-compose/Caddyfile-gcp-edge" "${EDGE_PATH}/Caddyfile"
@@ -524,9 +527,11 @@ jobs:
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://doscan.io/metadata-api\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_CROSS_CHAIN_TXS_ENABLED: \"true\"" <<<"${frontend_env}"
               verify_frontend_wallets
               curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                 https://doscan.io/api/v1/chains/7979/pools >/dev/null
+              for path in interchain/chains stats/common; do curl -fsS --retry 6 --retry-delay 5 "https://doscan.io/api/v1/${path}" >/dev/null; done
 
               DEPLOYMENT_STARTED=0
               metadata_response="$(
