@@ -7,6 +7,10 @@ Blockscout reads the environment-specific list through `TOKEN_LIST_URL` when
 the backend starts and refreshes it every 24 hours. Entries use the Token Lists
 schema and may provide:
 
+Blockscout does not ship per-chain token-list files in its `docker-compose`
+directory. Each deployment owns and hosts its list at any stable HTTP(S) URL;
+this repository keeps the DOS Chain list beside its deployment configuration.
+
 - `chainId`
 - `address`
 - `name`
