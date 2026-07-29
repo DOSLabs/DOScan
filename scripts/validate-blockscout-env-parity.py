@@ -31,6 +31,7 @@ ALLOWED_DIFFERENT_KEYS = {
     "NFT_MEDIA_HANDLER_BUCKET_FOLDER",
     "SECRET_KEY_BASE",
     "SUBNETWORK",
+    "TOKEN_LIST_URL",
 }
 
 ALLOWED_DIFFERENT_PREFIXES = ("CUSTOM_CONTRACT_ADDRESSES_",)
@@ -180,6 +181,28 @@ def main() -> int:
                 f"NFT_MEDIA_HANDLER_BUCKET_FOLDER in {file_name} must be "
                 f"{expected_folder!r}, got {actual_folder!r}"
             )
+
+    expected_mainnet_token_list_url = (
+        "https://raw.githubusercontent.com/DOS/DOScan/main/"
+        "docker-compose/token-lists/mainnet.json"
+    )
+    actual_mainnet_token_list_url = mainnet_override.get("TOKEN_LIST_URL")
+    if actual_mainnet_token_list_url != expected_mainnet_token_list_url:
+        errors.append(
+            f"TOKEN_LIST_URL in {MAINNET_FILE.name} must be "
+            f"{expected_mainnet_token_list_url!r}, "
+            f"got {actual_mainnet_token_list_url!r}"
+        )
+    if "TOKEN_LIST_URL" in common:
+        errors.append(
+            f"TOKEN_LIST_URL must not be set in {COMMON_FILE.name}; "
+            "token lists are network-specific"
+        )
+    if testnet.get("TOKEN_LIST_URL") is not None:
+        errors.append(
+            f"TOKEN_LIST_URL must not be set in {TESTNET_FILE.name} "
+            "until Testnet has a verified token deployment"
+        )
 
     for key in sorted(mainnet.keys() | testnet.keys()):
         if mainnet.get(key) != testnet.get(key) and not is_allowed_difference(key):
