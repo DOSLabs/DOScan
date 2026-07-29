@@ -145,6 +145,44 @@ services:
       USER_OPS_INDEXER__DATABASE__RUN_MIGRATIONS: "true"
       USER_OPS_INDEXER__SERVER__HTTP__ADDR: "0.0.0.0:8050"
 
+  interchain-indexer:
+    image: ghcr.io/blockscout/interchain-indexer:v1.6.0@sha256:020e0753da3bb5340406feaabdae1950a0d651e5b175aee4565d6e3e7baed920
+    pull_policy: always
+    platform: linux/amd64
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    environment:
+      INTERCHAIN_INDEXER__DATABASE__CONNECT__URL: postgresql://postgres:@db:5432/interchain_indexer
+      INTERCHAIN_INDEXER__DATABASE__CREATE_DATABASE: "true"
+      INTERCHAIN_INDEXER__DATABASE__RUN_MIGRATIONS: "true"
+      INTERCHAIN_INDEXER__CHAINS_CONFIG: /app/config/dos-chains.json
+      INTERCHAIN_INDEXER__BRIDGES_CONFIG: /app/config/dos-bridges.json
+      INTERCHAIN_INDEXER__API__USE_PAGINATION_TOKEN: "true"
+      INTERCHAIN_INDEXER__TOKEN_INFO__BLOCKSCOUT_TOKEN_INFO__URL: https://contracts-info.services.blockscout.com
+      INTERCHAIN_INDEXER__TOKEN_INFO__BLOCKSCOUT_TOKEN_INFO__IGNORE_CHAINS: "7979"
+      INTERCHAIN_INDEXER__AVALANCHE_INDEXER__BATCH_SIZE: "2048"
+      INTERCHAIN_INDEXER__AVALANCHE_INDEXER__PULL_INTERVAL_MS: "250"
+      INTERCHAIN_INDEXER__METRICS__ENABLED: "true"
+      INTERCHAIN_INDEXER__METRICS__ADDR: 0.0.0.0:6060
+    volumes:
+      - ./configs/interchain-indexer-chains.json:/app/config/dos-chains.json:ro
+      - ./configs/interchain-indexer-bridges.json:/app/config/dos-bridges.json:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/8050;
+          printf "GET /api/v1/status/indexers HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3;
+          grep -Eq "\"name\":\"avalanche\"[^}]*\"state\":\"running\"" <&3'
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
   stats:
     image: ghcr.io/blockscout/stats@sha256:1091cacba9287b6930575fac2aa3512dec3a8e81de58316ca63a6c20e1ddc457
     pull_policy: always
