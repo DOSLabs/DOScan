@@ -151,9 +151,9 @@
     <strong class="good">Đã deploy thành công lên production GCP.</strong>
     <p>Cấu hình GCP nền tảng đã merge qua <a href="https://github.com/DOS/DOScan/pull/78">PR #78</a> và <a href="https://github.com/DOS/DOScan/pull/79">PR #79</a>. Chuỗi sửa Pools nằm trong <a href="https://github.com/DOS/DOScan/pull/126">PR #126</a> đến <a href="https://github.com/DOS/DOScan/pull/130">PR #130</a>. <a href="https://github.com/DOS/DOScan/pull/132">PR #132</a> bật Web3 wallet helpers và xóa self-link Testnet. <a href="https://github.com/DOS/DOScan/pull/133">PR #133</a> đồng bộ các backend/frontend feature khả dụng cùng User Ops Indexer Testnet. Các PR <a href="https://github.com/DOS/DOScan/pull/134">#134</a> đến <a href="https://github.com/DOS/DOScan/pull/136">#136</a> sửa guard deploy, giới hạn expression của GitHub Actions và ràng buộc đúng archive theo từng run.</p>
     <p><a href="https://github.com/DOS/DOScan/actions/runs/30378112152">Deploy Config #30378112152</a> hoàn tất thành công cho cả Mainnet và Testnet. Kiểm tra live xác nhận <code>/pools</code>, <code>/ops</code>, Account Abstraction status và operations, Metadata proxy, Contract Info proxy cùng <code>/public-metrics</code> đều hoạt động. Runtime probe xác nhận backend kết nối được Rust Smart Contract Verifier và Metadata Service. Browser xác nhận nút <code>Add DOS Chain</code>, <code>Connect</code>, trang DEX tracker và User Operations đều render đúng, không có console error từ ứng dụng.</p>
-    <p>Mainnet đã có UserOperation thật; Testnet hiển thị đúng trạng thái rỗng. <code>/pools</code> hiện báo chưa có pool vì Contract Info chưa trả dữ liệu cho chain 7979 và 3939. Đây là trạng thái rỗng hợp lệ, không còn là lỗi 404.</p>
+    <p>Mainnet đã có UserOperation thật; Testnet hiển thị đúng trạng thái rỗng. <code>/pools</code> hiện báo chưa có pool vì Contract Info chưa trả dữ liệu cho chain 7979 và 3939. Đây là trạng thái rỗng hợp lệ, không còn là lỗi 404. Chưa thể đăng ký DOSwap vì DOSwap vẫn được tài liệu hệ sinh thái xác định là DEX tương lai, chưa có Factory/Pair contract chính thức hoặc verified được ghi nhận trên DOS Chain mới. Không được tạo dữ liệu pool giả chỉ để lấp giao diện.</p>
     <p><code>/hot-contracts</code> và API Hot Contracts hoạt động nhưng chưa có kết quả. Backend log xác nhận module trì hoãn khởi động vì chain chưa đủ 30 ngày tuổi. Đây là giới hạn dữ liệu hiện tại của logic upstream, không phải frontend bị tắt. Theo block thứ hai ngày 08/07/2026, mốc 30 ngày rơi vào khoảng 07/08/2026 UTC.</p>
-    <p><a href="https://github.com/DOS/DOScan/pull/139">PR #139</a> triển khai Blockscout Interchain Indexer v1.6.0 cho Avalanche C-Chain 43114 và DOS Chain 7979. <a href="https://github.com/DOS/DOScan/pull/140">PR #140</a> tách RPC ICM đang được xử lý riêng khỏi deploy gate của explorer. <a href="https://github.com/DOS/DOScan/actions/runs/30413862805">Deploy Config #30413862805</a> hoàn tất thành công cho cả Mainnet và Testnet. Mainnet container báo <code>healthy</code>, worker <code>avalanche</code> báo <code>running</code>, còn Testnet giữ nguyên cấu hình không bật cross-chain.</p>
+    <p><a href="https://github.com/DOS/DOScan/pull/139">PR #139</a> triển khai Blockscout Interchain Indexer v1.6.0 cho Avalanche C-Chain 43114 và DOS Chain 7979. Run <a href="https://github.com/DOS/DOScan/actions/runs/30413286554">Deploy Config #30413286554</a> bị fail ở Mainnet vì gate còn kiểm tra RPC ICM <code>main.doschain.com</code> đang trả HTTP 503. Workflow đã kích hoạt rollback, nhưng health check cuối của rollback gặp connection reset và báo cần phục hồi thủ công. <a href="https://github.com/DOS/DOScan/pull/140">PR #140</a> tách endpoint đang hoãn này khỏi deploy gate của explorer nhưng vẫn giữ hai archive RPC làm kiểm tra bắt buộc. Run kế tiếp <a href="https://github.com/DOS/DOScan/actions/runs/30413862805">Deploy Config #30413862805</a> hoàn tất thành công cho cả Mainnet và Testnet. Kiểm tra live sau deploy xác nhận Stats và Account Abstraction trả HTTP 200, worker <code>avalanche</code> báo <code>running</code>, API Interchain trả sáu message thật, còn Testnet giữ nguyên cấu hình không bật cross-chain.</p>
   </div>
 
   <h2>0A. Giám sát outage của Metadata upstream</h2>
@@ -175,7 +175,7 @@
         <td>Frontend + proxy</td>
         <td class="good">Đã bật</td>
         <td class="good">Đã bật</td>
-        <td><code>NEXT_PUBLIC_DEX_POOLS_ENABLED=true</code>. Route <code>/pools</code> và <code>/api/v1/chains/{chainId}/pools</code> hoạt động. Chưa có pool được Contract Info index.</td>
+        <td><code>NEXT_PUBLIC_DEX_POOLS_ENABLED=true</code>. Route <code>/pools</code> và <code>/api/v1/chains/{chainId}/pools</code> hoạt động. Contract Info trả HTTP 200 với danh sách rỗng. Chưa có Factory/Pair contract chính thức hoặc verified của DOSwap được ghi nhận trên chain mới nên chưa có pool thật để index.</td>
       </tr>
       <tr>
         <td>Cross-chain Transactions</td>
@@ -266,7 +266,7 @@
         <td>Frontend</td>
         <td class="good">Đã bật</td>
         <td class="good">Đã bật</td>
-        <td>Marketplace, DOSwap, DOS Bridge và DOS Faucet được cấu hình từ env chung. Đây là link điều hướng, không phải bằng chứng các dapp đích đã sẵn sàng end-to-end. OverMint hiện tắt và DOSwap chưa triển khai, nên readiness của từng dapp phải được theo dõi như service độc lập.</td>
+        <td>Marketplace, DOSwap, DOS Bridge và DOS Faucet được cấu hình từ env chung. Đây là link điều hướng, không phải bằng chứng các dapp đích đã sẵn sàng end-to-end. OverMint hiện tắt. DOSwap vẫn là DEX tương lai; ngày 29/07/2026, <code>doswap.io</code> redirect sang bridge cũ và đích trả Cloudflare 522. Readiness của từng dapp phải được theo dõi như service độc lập.</td>
       </tr>
       <tr>
         <td>Advanced Filter và Gas Tracker</td>
@@ -497,8 +497,8 @@ NFT_MEDIA_HANDLER_BACKFILL_ENABLED=true</pre>
       </tr>
       <tr>
         <td><code>NEXT_PUBLIC_DEX_POOLS_ENABLED=true</code></td>
-        <td>Proxy Contract Info same-origin cho chain 7979 và 3939 trả HTTP 200. Hai trang Pools hoạt động nhưng service chưa trả pool nào.</td>
-        <td><span class="good">Đã bật trên Mainnet và Testnet</span>. Trạng thái rỗng là thiếu dữ liệu index, không phải UI bị tắt.</td>
+        <td>Proxy Contract Info same-origin cho chain 7979 và 3939 trả HTTP 200. Hai trang Pools hoạt động nhưng service chưa trả pool nào. API verified contracts của Mainnet chỉ trả hai contract và không có DEX Factory/Pair.</td>
+        <td><span class="good">Đã bật trên Mainnet và Testnet</span>. Trạng thái rỗng là đúng với dữ liệu on-chain hiện tại, không phải UI bị tắt. Chỉ đăng ký sau khi DOSwap deploy DEX contract và có thanh khoản thật.</td>
       </tr>
       <tr>
         <td><code>NEXT_PUBLIC_NETWORK_EXPLORERS</code> trỏ về chính doscan.io</td>
@@ -541,7 +541,7 @@ NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=none</pre>
   <p><span class="good">Đã hoàn tất ngày 29/07/2026:</span> Blockscout Interchain Indexer, tích hợp DOS Chain 7979 với Avalanche C-Chain 43114, bật Cross-chain Transactions trên Mainnet và xác minh message thật ở cả hai chiều.</p>
   <ol>
     <li>Làm API public DOS.Me theo wallet address rồi bật address username tag.</li>
-    <li>Đăng ký dữ liệu DOSwap cho chain 7979 và 3939 trong Contract Info để trang Pools đang bật có dữ liệu thật.</li>
+    <li>Sau khi DOSwap deploy Factory/Pair contract và tạo thanh khoản thật trên chain 7979 hoặc 3939, gửi contract cùng block bắt đầu cho Contract Info để index. Hiện chưa đủ điều kiện thực hiện.</li>
     <li>Sau khi C-Chain historical backfill hoàn tất, tăng poll interval của Interchain Indexer từ 250 ms lên khoảng 10 giây.</li>
   </ol>
 
@@ -557,6 +557,8 @@ NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=none</pre>
     <li><a href="https://build.avax.network/docs/tooling/avalanche-sdk/client/accounts/local/addresses">Avalanche: địa chỉ EVM 0x và địa chỉ X/P-Chain Bech32</a></li>
     <li><a href="https://github.com/blockscout/blockscout-rs/tree/main/interchain-indexer">Blockscout Interchain Indexer</a></li>
     <li><a href="https://github.com/blockscout/blockscout-rs/releases/tag/interchain-indexer/v1.6.0">Blockscout Interchain Indexer v1.6.0</a></li>
+    <li><a href="https://github.com/DOS/DOS-Chain/blob/main/docs/strategy/DOS-Chain-Business-Strategy.md">DOS Chain Business Strategy: DOSwap là DEX tương lai</a></li>
+    <li><a href="https://github.com/DOS/DOScan/actions/runs/30413286554">DOScan Deploy Config #30413286554 bị fail</a></li>
     <li><a href="https://github.com/DOS/DOScan/actions/runs/30413862805">DOScan Deploy Config #30413862805</a></li>
   </ul>
   <p class="muted">Audit ban đầu thực hiện ngày 24/07/2026 và cập nhật bằng chứng production đến ngày 29/07/2026. Frontend dùng image <code>metados/blockscout-frontend:2.9.5</code>; Backend dùng Blockscout 11.2.3; Interchain Indexer dùng v1.6.0 tại production GCP. Trạng thái trong bảng được đối chiếu từ env chung, override Mainnet/Testnet, Docker Compose, source chính thức, deploy run <code>30413862805</code>, HTTP probe, API production, container readiness và browser kiểm tra giao diện thật.</p>
