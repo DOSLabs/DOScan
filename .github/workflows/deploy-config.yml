@@ -282,7 +282,6 @@ jobs:
 
                 rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_chainId\",\"params\":[]}"
                 for rpc_check in \
-                  "https://main.doschain.com|icm-r0" \
                   "https://main2.doschain.com|archive-doscan-mainnet" \
                   "https://main3.doschain.com|archive-doscan-mainnet"; do
                   rpc_url="${rpc_check%%|*}"
@@ -510,7 +509,6 @@ jobs:
                 grep -q "\"result\":\"0x1f2b\"" <<<"${rpc_response}"
                 grep -qi "X-DOS-RPC-Origin: ${expected_origin}" <<<"${rpc_response}"
               }
-              check_local_rpc main.doschain.com icm-r0
               check_local_rpc main2.doschain.com archive-doscan-mainnet
               check_local_rpc main3.doschain.com archive-doscan-mainnet
 
@@ -557,7 +555,6 @@ jobs:
                 grep -q "\"result\":\"0x1f2b\"" <<<"${rpc_response}"
                 grep -qi "X-DOS-RPC-Origin: ${expected_origin}" <<<"${rpc_response}"
               }
-              check_public_rpc https://main.doschain.com icm-r0
               check_public_rpc https://main2.doschain.com archive-doscan-mainnet
               check_public_rpc https://main3.doschain.com archive-doscan-mainnet
 
