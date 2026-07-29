@@ -76,6 +76,9 @@ jobs:
             'TOKEN_LIST_URL=https://raw.githubusercontent.com/DOS/DOScan/main/docker-compose/token-lists/mainnet.json' \
             docker-compose/envs/common-blockscout-mainnet.env
 
+      - name: Validate Mainnet and Testnet environment parity
+        run: python scripts/validate-blockscout-env-parity.py
+
   changes:
     name: Detect dependency changes
     runs-on: ubuntu-latest
