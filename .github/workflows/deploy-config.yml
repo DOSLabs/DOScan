@@ -222,12 +222,10 @@ jobs:
                 set +e
                 restore_rc=0
 
-                cd "${L1_PATH}"
-                rollback_services=""
+                cd "${L1_PATH}"; rollback_services=""
                 for service in ${TOUCHED_SERVICES}; do
                   if grep -q "^${service} " "${SRC}/old-service-hashes"; then rollback_services="${rollback_services} ${service}"; else sudo docker compose rm -sf "${service}" || restore_rc=1; fi
-                done
-                TOUCHED_SERVICES="${rollback_services}"
+                done; TOUCHED_SERVICES="${rollback_services}"
 
                 sudo cp -a "${BACKUP}/compose.yml" "${L1_PATH}/compose.yml" || restore_rc=1
                 sudo cp -a "${BACKUP}/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet" || restore_rc=1
@@ -539,7 +537,7 @@ jobs:
               verify_frontend_wallets
               curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                 https://doscan.io/api/v1/chains/7979/pools >/dev/null
-              for path in interchain/chains stats/common; do curl -fsS --retry 6 --retry-delay 5 "https://doscan.io/api/v1/${path}" >/dev/null; done
+              curl -fsS --retry 6 --retry-delay 5 https://doscan.io/api/v1/status/indexers | grep -Eq '"'"'"name":"avalanche"[^}]*"state":"running"'"'"'
 
               DEPLOYMENT_STARTED=0
               metadata_response="$(

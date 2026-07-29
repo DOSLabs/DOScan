@@ -25,7 +25,7 @@
 	handle /api/v1/pages/main {
 		reverse_proxy stats:8050
 	}
-	@interchain_indexer path /api/v1/interchain/* /api/v1/stats/common /api/v1/stats/daily /api/v1/stats/chains /api/v1/stats/chain/*
+	@interchain_indexer path /api/v1/interchain/* /api/v1/status/indexers /api/v1/stats/common /api/v1/stats/daily /api/v1/stats/chains /api/v1/stats/chain/*
 	handle @interchain_indexer {
 		reverse_proxy interchain-indexer:8050
 	}
