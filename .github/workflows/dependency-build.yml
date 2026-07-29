@@ -13,6 +13,9 @@ on:
       - "apps/**/yarn.lock"
       - "docker/Dockerfile"
       - "docker/oldUI.Dockerfile"
+      - "docker-compose/envs/common-blockscout-mainnet.env"
+      - "docker-compose/envs/common-blockscout-testnet.env"
+      - "docker-compose/token-lists/**"
       - ".github/workflows/dependency-build.yml"
   workflow_dispatch:
 
@@ -29,6 +32,50 @@ env:
   MIX_ENV: prod
 
 jobs:
+  token-lists:
+    name: Validate DOS Chain token lists
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate schema, networks, assets, and environment URLs
+        run: |
+          set -euo pipefail
+
+          schema_url="https://raw.githubusercontent.com/Uniswap/token-lists/01705f94a307270b6c0fe5f55c7e66f7b92373cc/src/tokenlist.schema.json"
+          curl --fail --silent --show-error "${schema_url}" > "$RUNNER_TEMP/tokenlist.schema.json"
+          npx --yes ajv-cli@5.0.0 validate \
+            --spec=draft7 \
+            --strict=false \
+            -s "$RUNNER_TEMP/tokenlist.schema.json" \
+            -d docker-compose/token-lists/mainnet.json
+
+          jq --exit-status \
+            '
+              (.timestamp | fromdateiso8601 > 0) and
+              (.tokens | length > 0) and
+              (.tokens | all(
+                (.chainId == 7979) and
+                (.logoURI | test("^https://raw\\.githubusercontent\\.com/DOS/DOScan/main/docker-compose/token-lists/assets/[a-z0-9._-]+\\.(svg|png)$"))
+              )) and
+              (([.tokens[].address | ascii_downcase] | unique | length) == (.tokens | length))
+            ' \
+            docker-compose/token-lists/mainnet.json >/dev/null
+
+          while IFS= read -r logo_url; do
+            asset_path="${logo_url#https://raw.githubusercontent.com/DOS/DOScan/main/}"
+            test -s "${asset_path}"
+            if grep -Eqi '<script|onload=|href=' "${asset_path}"; then
+              echo "::error::Token logo contains executable or external content: ${asset_path}"
+              exit 1
+            fi
+          done < <(jq --raw-output '.tokens[].logoURI' docker-compose/token-lists/mainnet.json)
+
+          grep -Fxq \
+            'TOKEN_LIST_URL=https://raw.githubusercontent.com/DOS/DOScan/main/docker-compose/token-lists/mainnet.json' \
+            docker-compose/envs/common-blockscout-mainnet.env
+
   changes:
     name: Detect dependency changes
     runs-on: ubuntu-latest
@@ -268,6 +315,7 @@ jobs:
   dependency-build-gate:
     name: Dependency build gate
     needs:
+      - token-lists
       - changes
       - elixir-compile
       - production-docker
@@ -278,12 +326,18 @@ jobs:
       - name: Verify dependency build results
         env:
           RELEVANT: ${{ needs.changes.outputs.relevant }}
+          TOKEN_LISTS_RESULT: ${{ needs.token-lists.result }}
           CHANGES_RESULT: ${{ needs.changes.result }}
           COMPILE_RESULT: ${{ needs.elixir-compile.result }}
           PRODUCTION_RESULT: ${{ needs.production-docker.result }}
           OLD_UI_RESULT: ${{ needs.old-ui-docker.result }}
         run: |
           set -euo pipefail
+
+          if [ "$TOKEN_LISTS_RESULT" != "success" ]; then
+            echo "::error::DOS Chain token list validation failed."
+            exit 1
+          fi
 
           if [ "$CHANGES_RESULT" != "success" ]; then
             echo "::error::Dependency change detection failed."

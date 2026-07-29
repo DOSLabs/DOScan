@@ -524,6 +524,27 @@ jobs:
 
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/stats >/dev/null
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/public-metrics >/dev/null
+              expected_token_icon="https://raw.githubusercontent.com/DOS/DOScan/main/docker-compose/token-lists/assets/wdos.svg"
+              token_icon_headers="$(
+                curl --fail --silent --show-error --head --retry 6 --retry-delay 5 \
+                  "${expected_token_icon}"
+              )"
+              grep -Eqi '^content-type: image/svg\+xml' <<<"${token_icon_headers}"
+              for attempt in $(seq 1 30); do
+                token_info="$(
+                  curl --fail --silent --show-error \
+                    https://doscan.io/api/v2/tokens/0x1111111111111111111111111111111111111111
+                )"
+                if jq -e --arg icon "${expected_token_icon}" '.icon_url == $icon' <<<"${token_info}" >/dev/null; then
+                  break
+                fi
+                if [ "${attempt}" -eq 30 ]; then
+                  echo "Mainnet WDOS token icon was not imported from TOKEN_LIST_URL" >&2
+                  echo "${token_info}" >&2
+                  exit 1
+                fi
+                sleep 5
+              done
               frontend_env="$(
                 curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                   "https://doscan.io/assets/envs.js?deploy=${DEPLOY_ID}"
