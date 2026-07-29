@@ -427,7 +427,7 @@ NFT_MEDIA_HANDLER_BACKFILL_ENABLED=true</pre>
       <li><strong>Avalanche sang DOS:</strong> source transaction <a href="https://subnets.avax.network/c-chain/tx/0xa5455a919896dcac09d6cc7301f6b125d8da28592fcba00d13d7143b75ae15b7"><code>0xa545...15b7</code></a> trên Avalanche được ghép với destination transaction <a href="https://doscan.io/tx/0x3153c9a20ca4fb1458615b60e95ec863a19b2bc73030942e0ed13deac8386a4a"><code>0x3153...a4a</code></a> trên DOS. Message <a href="https://doscan.io/cross-chain-tx/0xbf0dd9c2e29711ba7cb2515831f5acf7c0aae2e64ebdb2fe25f0508123969928"><code>0xbf0d...9928</code></a> hoàn tất và ghi nhận 0,005 DOS thành 0,005 WDOS.</li>
     </ul>
     <p><strong>Phù hợp với Avalanche L1:</strong> đây không phải tính năng bridge EVM chung được bật theo suy đoán. Indexer này của Blockscout có logic riêng cho Avalanche Teleporter/ICM và ICTT, đúng giao thức DOS Chain đang dùng để liên lạc với C-Chain.</p>
-    <p><strong>Vận hành:</strong> worker <code>avalanche</code> phải ở trạng thái <code>running</code> thì container và deploy gate mới được coi là khỏe. C-Chain đang backfill lịch sử từ block 42.526.120 theo batch 2.048 block và interval 250 ms. Realtime vẫn chạy song song, nên giao dịch mới không phải chờ toàn bộ lịch sử. Sau khi backfill hoàn tất cần tăng interval về khoảng 10 giây để giảm tải RPC lâu dài.</p>
+    <p><strong>Vận hành:</strong> worker <code>avalanche</code> phải ở trạng thái <code>running</code> thì container và deploy gate mới được coi là khỏe. C-Chain backfill lịch sử từ block 42.526.120 theo batch 2.048 block và dùng poll interval mặc định upstream 10.000 ms. Realtime vẫn chạy song song, nên giao dịch mới không phải chờ toàn bộ lịch sử.</p>
     <div class="callout"><strong>Phạm vi hiện tại:</strong> chỉ Mainnet được bật. Testnet cần cấu hình đúng Fuji, DOS Testnet, Teleporter/ICTT contract và RPC riêng trước khi bật, không được dùng lẫn dữ liệu Mainnet.</div>
   </div>
 
@@ -542,7 +542,6 @@ NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=none</pre>
   <ol>
     <li>Làm API public DOS.Me theo wallet address rồi bật address username tag.</li>
     <li>Đăng ký dữ liệu DOSwap cho chain 7979 và 3939 trong Contract Info để trang Pools đang bật có dữ liệu thật.</li>
-    <li>Sau khi C-Chain historical backfill hoàn tất, tăng poll interval của Interchain Indexer từ 250 ms lên khoảng 10 giây.</li>
   </ol>
 
   <h2>7. Nguồn và phạm vi kiểm chứng</h2>
