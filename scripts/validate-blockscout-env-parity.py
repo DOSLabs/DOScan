@@ -183,8 +183,8 @@ def main() -> int:
             )
 
     expected_mainnet_token_list_url = (
-        "https://raw.githubusercontent.com/DOS/DOScan/main/"
-        "docker-compose/token-lists/mainnet.json"
+        "https://raw.githubusercontent.com/DOS/DOScan-Frontend-Configs/main/"
+        "configs/token-lists/mainnet.json"
     )
     actual_mainnet_token_list_url = mainnet_override.get("TOKEN_LIST_URL")
     if actual_mainnet_token_list_url != expected_mainnet_token_list_url:
