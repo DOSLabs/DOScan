@@ -488,6 +488,8 @@ jobs:
               }
               verify_nft_media_runtime
 
+              sudo docker network inspect doscan-beta >/dev/null 2>&1 ||
+                sudo docker network create doscan-beta >/dev/null
               cd "${EDGE_PATH}"
               sudo docker compose config -q
               if [ "${EDGE_CONFIG_CHANGED}" -eq 1 ] || [ "${EDGE_CADDY_CONFIG_CHANGED}" -eq 1 ]; then

@@ -173,9 +173,18 @@ services:
       - caddy_config:/config
     ports:
       - 127.0.0.1:14080:80
+    networks:
+      default:
+        aliases:
+          - beta-origin
 
 volumes:
   postgres_data:
   redis_data:
   caddy_data:
   caddy_config:
+
+networks:
+  default:
+    external: true
+    name: doscan-beta

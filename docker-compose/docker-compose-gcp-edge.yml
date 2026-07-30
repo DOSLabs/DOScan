@@ -7,6 +7,7 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - doscan_l1
+      - doscan_beta
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - ./certs:/etc/caddy/certs:ro
@@ -24,3 +25,6 @@ networks:
   doscan_l1:
     external: true
     name: doscan-l1_default
+  doscan_beta:
+    external: true
+    name: doscan-beta

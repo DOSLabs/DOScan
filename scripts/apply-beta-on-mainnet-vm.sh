@@ -28,6 +28,7 @@ cd "${beta_path}"
 export DOSCAN_BLOCKSCOUT_SECRETS_ENV="${blockscout_secrets}"
 export DOSCAN_BASE_ENV_DIR="${shared_env_path}"
 
+docker network inspect doscan-beta >/dev/null 2>&1 || docker network create doscan-beta >/dev/null
 docker compose config -q
 docker compose pull
 
@@ -43,17 +44,37 @@ done
 
 docker compose up -d --remove-orphans
 
-for attempt in $(seq 1 48); do
+for attempt in $(seq 1 72); do
   if curl -fsS http://127.0.0.1:14080/api/v2/stats >/dev/null &&
-     curl -fsS http://127.0.0.1:14080/public-metrics >/dev/null; then
+     curl -fsS http://127.0.0.1:14080/public-metrics >/dev/null &&
+     curl -fsS http://127.0.0.1:14080/api/v1/lines >/dev/null &&
+     curl -fsS http://127.0.0.1:14080/api/v2/proxy/account-abstraction/status >/dev/null; then
     break
   fi
-  if [ "${attempt}" -eq 48 ]; then
+  if [ "${attempt}" -eq 72 ]; then
     echo "DOScan beta did not become healthy in time" >&2
     docker compose ps
     exit 1
   fi
   sleep 5
+done
+
+for service_url in \
+  http://smart-contract-verifier:8050/health \
+  http://visualizer:8050/health \
+  http://sig-provider:8050/health; do
+  docker compose exec -T backend curl -fsS "${service_url}" >/dev/null
+done
+
+running_services="$(docker compose ps --status running --services)"
+for required_service in \
+  redis-db db backend frontend smart-contract-verifier visualizer \
+  sig-provider user-ops-indexer stats caddy; do
+  if ! grep -qx "${required_service}" <<<"${running_services}"; then
+    echo "Required beta service is not running: ${required_service}" >&2
+    docker compose ps
+    exit 1
+  fi
 done
 
 rpc_body='{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'
