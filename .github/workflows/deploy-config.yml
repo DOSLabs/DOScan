@@ -560,11 +560,15 @@ jobs:
               curl -fsS --retry 6 --retry-delay 5 https://doscan.io/api/v1/status/indexers | grep -Eq '"'"'"name":"avalanche"[^}]*"state":"running"'"'"'
 
               DEPLOYMENT_STARTED=0
-              metadata_response="$(
-                curl --fail --silent --show-error --retry 6 --retry-delay 5 \
-                  "https://doscan.io/metadata-api/api/v1/metadata?addresses=0x0000000000000000000000000000000000000000&chainId=7979&tagsLimit=1"
-              )"
-              grep -q '"addresses"' <<<"${metadata_response}"
+              for metadata_url in \
+                "https://doscan.io/metadata-api/api/v1/metadata" \
+                "https://doscan.io/api/v1/metadata"; do
+                metadata_response="$(
+                  curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                    "${metadata_url}?addresses=0x0000000000000000000000000000000000000000&chainId=7979&tagsLimit=1"
+                )"
+                grep -q '"addresses"' <<<"${metadata_response}"
+              done
 
               check_public_rpc() {
                 rpc_url="$1"
@@ -992,11 +996,15 @@ jobs:
               fi
               curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                 https://test.doscan.io/api/v1/chains/3939/pools >/dev/null
-              metadata_response="$(
-                curl --fail --silent --show-error --retry 6 --retry-delay 5 \
-                  "https://test.doscan.io/metadata-api/api/v1/metadata?addresses=0x9f2aCCb76DEFE1735Fb55c41e1741c54a2d0fEa7&chainId=3939&tagsLimit=1"
-              )"
-              grep -q '"addresses"' <<<"${metadata_response}"
+              for metadata_url in \
+                "https://test.doscan.io/metadata-api/api/v1/metadata" \
+                "https://test.doscan.io/api/v1/metadata"; do
+                metadata_response="$(
+                  curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                    "${metadata_url}?addresses=0x9f2aCCb76DEFE1735Fb55c41e1741c54a2d0fEa7&chainId=3939&tagsLimit=1"
+                )"
+                grep -q '"addresses"' <<<"${metadata_response}"
+              done
               rpc_response="$(
                 curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                   -D - -H "Content-Type: application/json" --data "${rpc_body}" https://test.doschain.com/
