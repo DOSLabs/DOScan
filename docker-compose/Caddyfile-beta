@@ -1,5 +1,5 @@
 # HTTP-only origin for beta.doscan.io.
-# The VM edge Caddy terminates TLS and proxies to 127.0.0.1:14080.
+# The VM edge Caddy terminates TLS and proxies over the shared doscan-beta network.
 
 :80 {
 	encode zstd gzip
