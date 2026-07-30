@@ -15,7 +15,6 @@ on:
       - "docker/oldUI.Dockerfile"
       - "docker-compose/envs/common-blockscout-mainnet.env"
       - "docker-compose/envs/common-blockscout-testnet.env"
-      - "docker-compose/token-lists/**"
       - ".github/workflows/dependency-build.yml"
   workflow_dispatch:
 
@@ -33,47 +32,40 @@ env:
 
 jobs:
   token-lists:
-    name: Validate DOS Chain token lists
+    name: Validate DOS Chain token list reference
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Validate schema, networks, assets, and environment URLs
+      - name: Validate hosted list, WDOS metadata, asset, and environment URL
         run: |
           set -euo pipefail
 
-          schema_url="https://raw.githubusercontent.com/Uniswap/token-lists/01705f94a307270b6c0fe5f55c7e66f7b92373cc/src/tokenlist.schema.json"
-          curl --fail --silent --show-error "${schema_url}" > "$RUNNER_TEMP/tokenlist.schema.json"
-          npx --yes ajv-cli@5.0.0 validate \
-            --spec=draft7 \
-            --strict=false \
-            -s "$RUNNER_TEMP/tokenlist.schema.json" \
-            -d docker-compose/token-lists/mainnet.json
-
+          token_list_url="https://raw.githubusercontent.com/DOS/DOScan-Frontend-Configs/main/configs/token-lists/mainnet.json"
+          expected_icon_url="https://raw.githubusercontent.com/DOS/DOScan-Frontend-Configs/main/configs/token-icons/WDOS.svg"
+          curl --fail --silent --show-error --location \
+            "${token_list_url}" --output "${RUNNER_TEMP}/dos-mainnet-token-list.json"
           jq --exit-status \
+            --arg icon "${expected_icon_url}" \
             '
-              (.timestamp | fromdateiso8601 > 0) and
-              (.tokens | length > 0) and
-              (.tokens | all(
+              any(.tokens[];
                 (.chainId == 7979) and
-                (.logoURI | test("^https://raw\\.githubusercontent\\.com/DOS/DOScan/main/docker-compose/token-lists/assets/[a-z0-9._-]+\\.(svg|png)$"))
-              )) and
-              (([.tokens[].address | ascii_downcase] | unique | length) == (.tokens | length))
-            ' \
-            docker-compose/token-lists/mainnet.json >/dev/null
-
-          while IFS= read -r logo_url; do
-            asset_path="${logo_url#https://raw.githubusercontent.com/DOS/DOScan/main/}"
-            test -s "${asset_path}"
-            if grep -Eqi '<script|onload=|href=' "${asset_path}"; then
-              echo "::error::Token logo contains executable or external content: ${asset_path}"
-              exit 1
-            fi
-          done < <(jq --raw-output '.tokens[].logoURI' docker-compose/token-lists/mainnet.json)
+                ((.address | ascii_downcase) == "0x1111111111111111111111111111111111111111") and
+                (.name == "Wrapped DOS") and
+                (.symbol == "WDOS") and
+                (.decimals == 18) and
+                (.logoURI == $icon)
+              )
+            ' "${RUNNER_TEMP}/dos-mainnet-token-list.json" >/dev/null
+          icon_type="$(
+            curl --fail --silent --show-error --location --output /dev/null \
+              --write-out "%{content_type}" "${expected_icon_url}"
+          )"
+          [ "${icon_type%%;*}" = "image/svg+xml" ]
 
           grep -Fxq \
-            'TOKEN_LIST_URL=https://raw.githubusercontent.com/DOS/DOScan/main/docker-compose/token-lists/mainnet.json' \
+            "TOKEN_LIST_URL=${token_list_url}" \
             docker-compose/envs/common-blockscout-mainnet.env
 
       - name: Validate Mainnet and Testnet environment parity
