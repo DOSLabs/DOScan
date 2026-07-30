@@ -1021,26 +1021,73 @@ jobs:
       github.ref == 'refs/heads/main' &&
       github.event_name == 'workflow_dispatch' &&
       inputs.environment == 'beta'
-    runs-on: [self-hosted, beta]
+    runs-on: ubuntu-latest
     environment: beta
     permissions:
       contents: read
-    env:
-      BETA_BLOCKSCOUT_DATABASE_URL: ${{ secrets.BETA_BLOCKSCOUT_DATABASE_URL }}
-      BETA_STATS_DATABASE_URL: ${{ secrets.BETA_STATS_DATABASE_URL }}
-      BETA_USER_OPS_DATABASE_URL: ${{ secrets.BETA_USER_OPS_DATABASE_URL }}
+      id-token: write
     steps:
-      - name: Pull latest and restart services
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate beta configuration
         run: |
           set -euo pipefail
-          REPO="$HOME/Projects/DOScan"
-          DEPLOY="$REPO/docker-compose"
+          secrets_file="$(mktemp)"
+          trap 'rm -f "${secrets_file}"' EXIT
+          DOSCAN_BLOCKSCOUT_SECRETS_ENV="${secrets_file}" \
+            DOSCAN_BASE_ENV_DIR="${PWD}/docker-compose/envs" \
+            docker compose -f docker-compose/docker-compose-beta.yml config -q
+          docker run --rm \
+            -v "${PWD}/docker-compose/Caddyfile-beta:/etc/caddy/Caddyfile:ro" \
+            caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9 \
+            caddy validate --config /etc/caddy/Caddyfile
 
-          cd "$REPO"
-          git pull --ff-only origin main
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
 
-          cd "$DEPLOY"
-          docker compose -f docker-compose-beta.yml -p doscan pull
-          docker compose -f docker-compose-beta.yml -p doscan up -d --remove-orphans
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
 
-          echo "Beta deployment completed"
+      - name: Package and upload beta configuration
+        run: |
+          set -euo pipefail
+          archive="/tmp/doscan-beta-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
+          tar -czf "${archive}" \
+            docker-compose/docker-compose-beta.yml \
+            docker-compose/Caddyfile-beta \
+            docker-compose/envs/common-blockscout.env \
+            docker-compose/envs/common-blockscout-beta.env \
+            docker-compose/envs/common-frontend-beta.env \
+            scripts/apply-beta-on-mainnet-vm.sh
+          gcloud compute scp \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${GCP_ZONE}" \
+            --tunnel-through-iap \
+            "${archive}" \
+            "${GCP_INSTANCE}:${archive}"
+          rm -f "${archive}"
+
+      - name: Apply beta configuration and verify services
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "${GCP_INSTANCE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${GCP_ZONE}" \
+            --tunnel-through-iap \
+            --command="
+              set -euo pipefail
+              deploy_id='${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}'
+              archive='/tmp/doscan-beta-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz'
+              src=\"\$(mktemp -d /tmp/doscan-beta-deploy.XXXXXX)\"
+              trap 'rm -rf \"\${src}\" \"\${archive}\"' EXIT
+              tar -xzf \"\${archive}\" -C \"\${src}\"
+              sudo bash \"\${src}/scripts/apply-beta-on-mainnet-vm.sh\" \"\${src}\" \"\${deploy_id}\"
+            "
+
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 \
+            https://beta.doscan.io/api/v2/stats >/dev/null

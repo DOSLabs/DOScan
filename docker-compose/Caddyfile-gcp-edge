@@ -1,3 +1,8 @@
+beta.doscan.io {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+	reverse_proxy host.docker.internal:14080
+}
+
 doscan.io, www.doscan.io {
 	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
 	reverse_proxy doscan-l1-caddy-1:80

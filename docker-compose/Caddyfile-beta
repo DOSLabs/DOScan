@@ -1,75 +1,45 @@
-# DOS Chain Beta - Reverse Proxy
-# HTTP only - Cloudflare Tunnel handles HTTPS
-# Runs locally on WSL2, exposed via cloudflared Windows Service
+# HTTP-only origin for beta.doscan.io.
+# The VM edge Caddy terminates TLS and proxies to 127.0.0.1:14080.
 
-# Stats + Viz subdomains (port 8080 — tunnel routes here)
-:8080 {
-	header Access-Control-Allow-Origin "https://beta.doscan.io"
-	header Access-Control-Allow-Methods "GET, POST, OPTIONS"
-	header Access-Control-Allow-Headers "Content-Type"
-
-	@options method OPTIONS
-	respond @options 204
-
-	@stats host beta-stats.doscan.io
-	reverse_proxy @stats stats:8050
-
-	@viz host beta-viz.doscan.io
-	reverse_proxy @viz visualizer:8050
-
-	# Fallback
-	reverse_proxy stats:8050
-}
-
-# Main site (port 80 — beta.doscan.io + beta-api.doscan.io)
 :80 {
-	# Backend API
+	encode zstd gzip
+
+	header >Cross-Origin-Opener-Policy "same-origin-allow-popups"
+
+	handle /api/v1/counters {
+		reverse_proxy stats:8050
+	}
+	handle /api/v1/lines {
+		reverse_proxy stats:8050
+	}
+	handle /api/v1/pages/main {
+		reverse_proxy stats:8050
+	}
 	handle /api/* {
 		reverse_proxy backend:4000
 	}
-
-	# WebSocket
 	handle /socket/* {
 		reverse_proxy backend:4000
 	}
-
-	# Sitemap
 	handle /sitemap.xml {
 		reverse_proxy backend:4000
 	}
-
-	# Auth
 	handle /auth/* {
 		reverse_proxy backend:4000
 	}
-
-	# Metrics
 	handle /metrics {
 		reverse_proxy backend:4000
 	}
-
-	# Stats API (path-based fallback)
+	handle /public-metrics {
+		reverse_proxy backend:4000
+	}
 	handle /stats-api/* {
 		uri strip_prefix /stats-api
-		header Access-Control-Allow-Origin "https://beta.doscan.io"
-		header Access-Control-Allow-Methods "GET, OPTIONS"
-		header Access-Control-Allow-Headers "Content-Type"
-		@statsoptions method OPTIONS
-		respond @statsoptions 204
 		reverse_proxy stats:8050
 	}
-
-	# Visualizer API (path-based fallback)
 	handle /visualize/* {
-		header Access-Control-Allow-Origin "https://beta.doscan.io"
-		header Access-Control-Allow-Methods "GET, POST, OPTIONS"
-		header Access-Control-Allow-Headers "Content-Type"
-		@vizpathoptions method OPTIONS
-		respond @vizpathoptions 204
 		reverse_proxy visualizer:8050
 	}
-
-	# Frontend (default)
 	handle {
 		reverse_proxy frontend:3000
 	}
