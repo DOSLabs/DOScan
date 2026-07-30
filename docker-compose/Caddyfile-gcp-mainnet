@@ -36,6 +36,14 @@
 			header_up -Authorization
 		}
 	}
+	@metadata_api path /api/v1/metadata /api/v1/tags:search /api/v1/public-tag-types /api/v1/addresses:submit
+	handle @metadata_api {
+		reverse_proxy https://metadata.services.blockscout.com {
+			header_up Host metadata.services.blockscout.com
+			header_up -Cookie
+			header_up -Authorization
+		}
+	}
 	handle /api/* {
 		reverse_proxy backend:4000
 	}
