@@ -3,13 +3,13 @@
 
 	header >Cross-Origin-Opener-Policy "same-origin-allow-popups"
 
-	# Invalidate browser HTTP caches once for the v2.9.5 frontend rollout.
+	# Invalidate browser HTTP caches once for the v2.10.0 frontend rollout.
 	@pre_relaunch_cache {
-		not header_regexp Cookie "(^|;\s*)dos_chain_epoch=20260725(;|$)"
+		not header_regexp Cookie "(^|;\s*)dos_chain_epoch=20260803(;|$)"
 	}
 	header @pre_relaunch_cache {
 		Clear-Site-Data "\"cache\""
-		+Set-Cookie "dos_chain_epoch=20260725; Path=/; Max-Age=31536000; Secure; SameSite=Lax"
+		+Set-Cookie "dos_chain_epoch=20260803; Path=/; Max-Age=31536000; Secure; SameSite=Lax"
 	}
 
 	# Turbopack chunk names may remain stable across builds, so they must be revalidated.
