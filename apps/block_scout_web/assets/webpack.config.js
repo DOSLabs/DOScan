@@ -84,10 +84,17 @@ const appJs =
       path: path.resolve(__dirname, '../priv/static/js')
     },
     optimization: {
+      concatenateModules: false,
       minimizer: [new TerserJSPlugin(jsOptimizationParams), new CssMinimizerPlugin()],
     },
     module: {
       rules: [
+        {
+          test: /\.m?js$/,
+          resolve: {
+            fullySpecified: false
+          }
+        },
         {
           test: /\.css$/,
           use: ["style-loader", "css-loader"],
@@ -146,14 +153,18 @@ const appJs =
       ]
     },
     resolve: {
+      alias: {
+        'process/browser': require.resolve('process/browser.js')
+      },
       fallback: {
         "os": require.resolve("os-browserify/browser"),
         "https": require.resolve("https-browserify"),
         "http": require.resolve("stream-http"),
-        "crypto": require.resolve("crypto-browserify"),
         "util": require.resolve("util/"),
         "stream": require.resolve("stream-browserify"),
         "assert": require.resolve("assert/"),
+        "buffer": require.resolve("buffer/"),
+        "process": require.resolve("process/browser.js"),
       }
     },
     plugins: [

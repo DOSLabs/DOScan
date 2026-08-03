@@ -1,0 +1,1095 @@
+name: Deploy Config
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docker-compose/docker-compose-mainnet.yml"
+      - "docker-compose/docker-compose-testnet.yml"
+      - "docker-compose/docker-compose-gcp-edge.yml"
+      - "docker-compose/docker-compose-gcp-edge.override.yml"
+      - "docker-compose/Caddyfile-gcp-mainnet"
+      - "docker-compose/Caddyfile-gcp-testnet"
+      - "docker-compose/Caddyfile-gcp-edge"
+      - "docker-compose/configs/interchain-indexer-*.json"
+      - "docker-compose/envs/common-blockscout.env"
+      - "docker-compose/envs/common-blockscout-mainnet.env"
+      - "docker-compose/envs/common-blockscout-testnet.env"
+      - "docker-compose/envs/common-frontend.env"
+      - "docker-compose/envs/common-frontend-scan.env"
+      - "docker-compose/envs/common-frontend-testnet.env"
+      - "docker-compose/envs/common-smart-contract-verifier.env"
+      - "docker-compose/envs/common-visualizer.env"
+      - "scripts/validate-blockscout-env-parity.py"
+      - ".github/workflows/deploy-config.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deploy target
+        required: true
+        type: choice
+        options:
+          - mainnet
+          - testnet
+          - beta
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-config-${{ inputs.environment || 'mainnet' }}
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: dos--ai
+  GCP_ZONE: asia-southeast1-b
+  GCP_INSTANCE: doscan-mainnet
+  GCP_SERVICE_ACCOUNT: doscan-deploy@dos--ai.iam.gserviceaccount.com
+  GCP_WORKLOAD_IDENTITY_PROVIDER: projects/535583621422/locations/global/workloadIdentityPools/github/providers/doscan-provider
+  GCP_TESTNET_ZONE: asia-southeast1-a
+  GCP_TESTNET_INSTANCE: dos-testnet-r0
+
+jobs:
+  deploy-mainnet:
+    if: >
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'mainnet'))
+    runs-on: ubuntu-latest
+    environment: mainnet
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate Mainnet and Testnet environment parity
+        run: python scripts/validate-blockscout-env-parity.py
+
+      - name: Validate Caddy configuration
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "${PWD}/docker-compose/Caddyfile-gcp-edge:/etc/caddy/Caddyfile:ro" \
+            caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9 \
+            caddy adapt --config /etc/caddy/Caddyfile >/dev/null
+          docker run --rm \
+            -v "${PWD}/docker-compose/Caddyfile-gcp-mainnet:/etc/caddy/Caddyfile:ro" \
+            caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9 \
+            caddy validate --config /etc/caddy/Caddyfile
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Package deployment configuration
+        run: |
+          set -euo pipefail
+          umask 077
+          trap 'rm -f /tmp/common-blockscout-nft-media.env' EXIT
+
+          nft_media_json="$(
+            gcloud secrets versions access latest \
+              --project="${GCP_PROJECT_ID}" \
+              --secret="doscan-nft-media-hmac"
+          )"
+          jq -e \
+            '.bucket == "doscan" and .host == "storage.googleapis.com"' \
+            <<<"${nft_media_json}" >/dev/null
+          nft_media_access_key_id="$(jq -er '.accessId' <<<"${nft_media_json}")"
+          nft_media_secret_access_key="$(jq -er '.secret' <<<"${nft_media_json}")"
+          printf 'NFT_MEDIA_HANDLER_AWS_ACCESS_KEY_ID=%s\nNFT_MEDIA_HANDLER_AWS_SECRET_ACCESS_KEY=%s\n' \
+            "${nft_media_access_key_id}" \
+            "${nft_media_secret_access_key}" \
+            > /tmp/common-blockscout-nft-media.env
+          unset nft_media_json nft_media_access_key_id nft_media_secret_access_key
+
+          tar -czf /tmp/doscan-config.tgz \
+            docker-compose/docker-compose-mainnet.yml \
+            docker-compose/Caddyfile-gcp-mainnet \
+            docker-compose/configs/interchain-indexer-chains.json \
+            docker-compose/configs/interchain-indexer-bridges.json \
+            docker-compose/Caddyfile-gcp-edge \
+            docker-compose/docker-compose-gcp-edge.yml \
+            docker-compose/docker-compose-gcp-edge.override.yml \
+            docker-compose/envs/common-blockscout.env \
+            docker-compose/envs/common-blockscout-mainnet.env \
+            docker-compose/envs/common-frontend.env \
+            docker-compose/envs/common-frontend-scan.env \
+            docker-compose/envs/common-smart-contract-verifier.env \
+            docker-compose/envs/common-visualizer.env \
+            -C /tmp common-blockscout-nft-media.env
+          rm -f /tmp/common-blockscout-nft-media.env
+
+      - name: Upload configuration through IAP
+        run: |
+          set -euo pipefail
+          gcloud compute scp \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${GCP_ZONE}" \
+            --tunnel-through-iap \
+            /tmp/doscan-config.tgz \
+            "${GCP_INSTANCE}:/tmp/doscan-config-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
+
+      - name: Remove local package containing NFT media credentials
+        if: always()
+        run: rm -f /tmp/doscan-config.tgz /tmp/common-blockscout-nft-media.env
+
+      - name: Apply configuration and verify services
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "${GCP_INSTANCE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${GCP_ZONE}" \
+            --tunnel-through-iap \
+            --command='
+              set -euo pipefail
+
+              RUN_ID='"${GITHUB_RUN_ID}"'
+              RUN_ATTEMPT='"${GITHUB_RUN_ATTEMPT}"'
+              DEPLOY_ID="${RUN_ID}-${RUN_ATTEMPT}"
+              ARCHIVE="/tmp/doscan-config-${DEPLOY_ID}.tgz"
+              test -s "${ARCHIVE}"
+              SRC="$(mktemp -d /tmp/doscan-deploy.XXXXXX)"
+              BACKUP="/opt/doscan-l1/backups/github-${DEPLOY_ID}"
+              L1_PATH="/opt/doscan-l1"
+              EDGE_PATH="/opt/doscan"
+              SHARED_ENV_PATH="/opt/doscan/envs"
+              BLOCKSCOUT_SECRETS="${SHARED_ENV_PATH}/common-blockscout-secrets.env"
+              NFT_MEDIA_SECRETS="${SRC}/common-blockscout-nft-media.env"
+              DEPLOYMENT_STARTED=0
+              TOUCHED_SERVICES=""
+              BACKEND_ENV_CHANGED=0
+              FRONTEND_ENV_CHANGED=0
+              EDGE_TOUCHED=0
+              L1_CADDY_CONFIG_CHANGED=0
+
+              cleanup() {
+                rm -rf "${SRC}" "${ARCHIVE}"
+              }
+
+              verify_frontend_wallets() {
+                [ $(grep -Pxc "NEXT_PUBLIC_WEB3_WALLETS: \x22\[\x27metamask\x27,\x27rabby\x27,\x27coinbase\x27,\x27token_pocket\x27\]\x22,"<<<"$frontend_env") = 1 ]
+              }
+
+              verify_touched_services() {
+                cd "${L1_PATH}"
+                for service in ${TOUCHED_SERVICES}; do
+                  healthy=0
+                  for attempt in $(seq 1 24); do
+                    container_id="$(
+                      sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                        docker compose ps -q "${service}"
+                    )"
+                    if [ -n "${container_id}" ] &&
+                       [ "$(sudo docker inspect -f '"'"'{{.State.Running}}'"'"' "${container_id}")" = "true" ]; then
+                      health_status="$(sudo docker inspect -f '"'"'{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}'"'"' "${container_id}")"
+                      if [ "${health_status}" = "none" ] || [ "${health_status}" = "healthy" ]; then
+                        healthy=1
+                        break
+                      fi
+                    fi
+                    sleep 5
+                  done
+                  if [ "${healthy}" -ne 1 ]; then
+                    echo "Service did not become healthy: ${service}" >&2
+                    return 1
+                  fi
+
+                  case "${service}" in
+                    frontend)
+                      sudo docker compose exec -T caddy wget -qO- http://frontend:3000 >/dev/null || return 1
+                      ;;
+                    smart-contract-verifier|visualizer|sig-provider|user-ops-indexer|interchain-indexer|stats)
+                      sudo docker compose exec -T caddy wget -qO- "http://${service}:8050/health" >/dev/null || return 1
+                      ;;
+                  esac
+                done
+
+                if grep -Eqw '"'"'backend|user-ops-indexer'"'"' <<<"${TOUCHED_SERVICES}"; then
+                  curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                    https://doscan.io/api/v2/proxy/account-abstraction/status >/dev/null || return 1
+                fi
+              }
+
+              rollback() {
+                echo "Deployment failed; restoring configuration from ${BACKUP}" >&2
+                set +e
+                restore_rc=0
+
+                cd "${L1_PATH}"; rollback_services=""
+                for service in ${TOUCHED_SERVICES}; do
+                  if grep -q "^${service} " "${SRC}/old-service-hashes"; then rollback_services="${rollback_services} ${service}"; else sudo docker compose rm -sf "${service}" || restore_rc=1; fi
+                done; TOUCHED_SERVICES="${rollback_services}"
+
+                sudo cp -a "${BACKUP}/compose.yml" "${L1_PATH}/compose.yml" || restore_rc=1
+                sudo cp -a "${BACKUP}/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet" || restore_rc=1
+                sudo cp -a "${BACKUP}/compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml" || restore_rc=1
+                sudo cp -a "${BACKUP}/Caddyfile-gcp-edge" "${EDGE_PATH}/Caddyfile" || restore_rc=1
+                sudo cp -a "${BACKUP}/compose.override.yml" "${EDGE_PATH}/compose.override.yml" || restore_rc=1
+                if sudo test -f "${BACKUP}/compose.rpc-override.yml"; then
+                  sudo cp -a "${BACKUP}/compose.rpc-override.yml" "${EDGE_PATH}/compose.rpc-override.yml" || restore_rc=1
+                else
+                  sudo rm -f "${EDGE_PATH}/compose.rpc-override.yml" || restore_rc=1
+                fi
+                for dir in envs configs; do sudo cp -a "${BACKUP}/${dir}/." "${L1_PATH}/${dir}/" || restore_rc=1; done
+                sudo cp -a "${BACKUP}/shared-envs/." "${SHARED_ENV_PATH}/" || restore_rc=1
+
+                if [ "${restore_rc}" -ne 0 ]; then
+                  echo "ROLLBACK FAILED; one or more configuration files could not be restored from ${BACKUP}" >&2
+                  return 1
+                fi
+
+                cd "${L1_PATH}"
+                l1_rc=0
+                for service in ${TOUCHED_SERVICES}; do
+                  if { [ "${service}" = "backend" ] && [ "${BACKEND_ENV_CHANGED}" -eq 1 ]; } ||
+                     { [ "${service}" = "frontend" ] && [ "${FRONTEND_ENV_CHANGED}" -eq 1 ]; }; then
+                    sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                      docker compose up -d --force-recreate --no-deps "${service}" || l1_rc=1
+                  else
+                    sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                      docker compose up -d --no-deps "${service}" || l1_rc=1
+                  fi
+                done
+                if grep -qw caddy <<<"${TOUCHED_SERVICES}" || [ "${L1_CADDY_CONFIG_CHANGED}" -eq 1 ]; then
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                    docker compose up -d --force-recreate --no-deps caddy || l1_rc=1
+                fi
+
+                cd "${EDGE_PATH}"
+                edge_rc=0
+                if [ "${EDGE_TOUCHED}" -eq 1 ]; then
+                  sudo docker compose up -d --force-recreate --no-deps caddy || edge_rc=1
+                fi
+
+                if [ "${l1_rc}" -ne 0 ] || [ "${edge_rc}" -ne 0 ] ||
+                   ! curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null ||
+                   ! curl -fsS http://127.0.0.1:13080/public-metrics >/dev/null ||
+                   ! curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                     https://doscan.io/api/v2/stats >/dev/null ||
+                   ! curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                     https://doscan.io/public-metrics >/dev/null ||
+                   ! verify_touched_services; then
+                  echo "ROLLBACK FAILED; manual recovery is required from ${BACKUP}" >&2
+                  return 1
+                fi
+
+                rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_chainId\",\"params\":[]}"
+                for rpc_check in \
+                  "https://main2.doschain.com|archive-doscan-mainnet" \
+                  "https://main3.doschain.com|archive-doscan-mainnet"; do
+                  rpc_url="${rpc_check%%|*}"
+                  expected_origin="${rpc_check##*|}"
+                  rpc_response="$(curl --fail --silent --show-error --retry 3 --retry-delay 5 \
+                    -D - -H "Content-Type: application/json" --data "${rpc_body}" "${rpc_url}")" || return 1
+                  grep -q "\"result\":\"0x1f2b\"" <<<"${rpc_response}" || return 1
+                  grep -qi "X-DOS-RPC-Origin: ${expected_origin}" <<<"${rpc_response}" || return 1
+                done
+
+                echo "Rollback completed successfully from ${BACKUP}" >&2
+                return 0
+              }
+
+              finish() {
+                rc=$?
+                trap - EXIT
+                if [ "${rc}" -ne 0 ] && [ "${DEPLOYMENT_STARTED}" -eq 1 ]; then
+                  rollback || rc=2
+                fi
+                cleanup
+                exit "${rc}"
+              }
+              trap finish EXIT
+
+              tar -xzf "${ARCHIVE}" -C "${SRC}"
+              sudo mkdir -p "${BACKUP}" "${L1_PATH}/envs" "${L1_PATH}/configs" "${EDGE_PATH}" "${SHARED_ENV_PATH}"
+
+              sudo cp -a "${L1_PATH}/compose.yml" "${BACKUP}/compose.yml"
+              sudo cp -a "${L1_PATH}/Caddyfile-gcp-mainnet" "${BACKUP}/Caddyfile-gcp-mainnet"
+              sudo cp -a "${EDGE_PATH}/compose.yml" "${BACKUP}/compose-gcp-edge.yml"
+              sudo cp -a "${EDGE_PATH}/Caddyfile" "${BACKUP}/Caddyfile-gcp-edge"
+              sudo cp -a "${EDGE_PATH}/compose.override.yml" "${BACKUP}/compose.override.yml"
+              if sudo test -f "${EDGE_PATH}/compose.rpc-override.yml"; then
+                sudo cp -a "${EDGE_PATH}/compose.rpc-override.yml" "${BACKUP}/compose.rpc-override.yml"
+              fi
+              for dir in envs configs; do sudo cp -a "${L1_PATH}/${dir}" "${BACKUP}/${dir}"; done
+              sudo cp -a "${SHARED_ENV_PATH}" "${BACKUP}/shared-envs"
+              DEPLOYMENT_STARTED=1
+
+              if ! sudo test -s "${BLOCKSCOUT_SECRETS}"; then
+                sudo awk -F= \
+                  '"'"'$1 ~ /^(ACCOUNT_CLOAK_KEY|DATABASE_URL|RELEASE_COOKIE|SECRET_KEY_BASE)$/ {print}'"'"' \
+                  "${SHARED_ENV_PATH}/common-blockscout.env" |
+                  sudo tee "${BLOCKSCOUT_SECRETS}" >/dev/null
+                sudo chmod 0600 "${BLOCKSCOUT_SECRETS}"
+              fi
+
+              cd "${L1_PATH}"
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                docker compose config --hash="*" > "${SRC}/old-service-hashes"
+
+              if ! sudo cmp -s "${SRC}/docker-compose/envs/common-blockscout.env" \
+                   "${L1_PATH}/envs/common-blockscout.env" ||
+                 ! sudo cmp -s "${SRC}/docker-compose/envs/common-blockscout-mainnet.env" \
+                   "${L1_PATH}/envs/common-blockscout-mainnet.env"; then
+                BACKEND_ENV_CHANGED=1
+              fi
+
+              if ! sudo cmp -s "${SRC}/docker-compose/envs/common-frontend.env" \
+                   "${SHARED_ENV_PATH}/common-frontend.env" ||
+                 ! sudo cmp -s "${SRC}/docker-compose/envs/common-frontend-scan.env" \
+                   "${L1_PATH}/envs/common-frontend-scan.env"; then
+                FRONTEND_ENV_CHANGED=1
+              fi
+              CURRENT_FRONTEND_ENV="$(
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                  docker compose exec -T frontend curl -fsS http://localhost:3000/assets/envs.js 2>/dev/null || true
+              )"
+              if grep -Fqx "NEXT_PUBLIC_DEX_POOLS_ENABLED=true" \
+                   "${SRC}/docker-compose/envs/common-frontend.env" &&
+                 ! grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${CURRENT_FRONTEND_ENV}"; then
+                FRONTEND_ENV_CHANGED=1
+              fi
+
+              if [ "$(grep -Ec "^NFT_MEDIA_HANDLER_AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)=.+$" "${NFT_MEDIA_SECRETS}")" -ne 2 ]; then
+                echo "NFT media credential file is missing required values" >&2
+                exit 1
+              fi
+              CURRENT_NFT_MEDIA_SECRETS="$(mktemp /tmp/doscan-current-nft-media-secrets.XXXXXX)"
+              sudo grep -E "^NFT_MEDIA_HANDLER_AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)=" \
+                "${BLOCKSCOUT_SECRETS}" > "${CURRENT_NFT_MEDIA_SECRETS}" || true
+              if ! cmp -s "${CURRENT_NFT_MEDIA_SECRETS}" "${NFT_MEDIA_SECRETS}"; then
+                BACKEND_ENV_CHANGED=1
+              fi
+              rm -f "${CURRENT_NFT_MEDIA_SECRETS}"
+
+              MERGED_BLOCKSCOUT_SECRETS="$(mktemp /tmp/doscan-blockscout-secrets.XXXXXX)"
+              sudo awk -F= \
+                "\$1 !~ /^NFT_MEDIA_HANDLER_AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)$/" \
+                "${BLOCKSCOUT_SECRETS}" > "${MERGED_BLOCKSCOUT_SECRETS}"
+              cat "${NFT_MEDIA_SECRETS}" >> "${MERGED_BLOCKSCOUT_SECRETS}"
+              sudo install -m 0600 "${MERGED_BLOCKSCOUT_SECRETS}" "${BLOCKSCOUT_SECRETS}"
+              rm -f "${MERGED_BLOCKSCOUT_SECRETS}"
+
+              EDGE_CONFIG_CHANGED=0
+              EDGE_CADDY_CONFIG_CHANGED=0
+              if ! sudo cmp -s "${SRC}/docker-compose/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet"; then
+                L1_CADDY_CONFIG_CHANGED=1
+              fi
+              if ! sudo cmp -s "${SRC}/docker-compose/docker-compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml" ||
+                 ! sudo cmp -s "${SRC}/docker-compose/docker-compose-gcp-edge.override.yml" "${EDGE_PATH}/compose.override.yml"; then
+                EDGE_CONFIG_CHANGED=1
+              fi
+              EDGE_CADDY_SOURCE_HASH="$(sha256sum "${SRC}/docker-compose/Caddyfile-gcp-edge" | cut -d " " -f1)"
+              EDGE_CADDY_RUNNING_HASH="$(sudo docker exec caddy sha256sum /etc/caddy/Caddyfile 2>/dev/null |
+                cut -d " " -f1 || true)"
+              if [ "${EDGE_CADDY_SOURCE_HASH}" != "${EDGE_CADDY_RUNNING_HASH}" ]; then
+                EDGE_CADDY_CONFIG_CHANGED=1
+              fi
+
+              sudo install -m 0644 "${SRC}/docker-compose/docker-compose-mainnet.yml" "${L1_PATH}/compose.yml"
+              sudo install -m 0644 "${SRC}/docker-compose/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet"
+              for file in interchain-indexer-{chains,bridges}.json; do sudo install -m 0644 "${SRC}/docker-compose/configs/${file}" "${L1_PATH}/configs/${file}"; done
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-blockscout.env" "${L1_PATH}/envs/common-blockscout.env"
+              sudo install -m 0644 "${SRC}/docker-compose/docker-compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml"
+              sudo install -m 0644 "${SRC}/docker-compose/Caddyfile-gcp-edge" "${EDGE_PATH}/Caddyfile"
+              sudo install -m 0644 "${SRC}/docker-compose/docker-compose-gcp-edge.override.yml" "${EDGE_PATH}/compose.override.yml"
+              sudo rm -f "${EDGE_PATH}/compose.rpc-override.yml"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-blockscout-mainnet.env" "${L1_PATH}/envs/common-blockscout-mainnet.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend-scan.env" "${L1_PATH}/envs/common-frontend-scan.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend.env" "${SHARED_ENV_PATH}/common-frontend.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-smart-contract-verifier.env" "${SHARED_ENV_PATH}/common-smart-contract-verifier.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-visualizer.env" "${SHARED_ENV_PATH}/common-visualizer.env"
+              cd "${L1_PATH}"
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose config -q
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                docker compose config --hash="*" > "${SRC}/new-service-hashes"
+
+              TOUCHED_SERVICES="$(
+                awk '"'"'
+                  NR == FNR { old[$1] = $2; next }
+                  !($1 in old) || old[$1] != $2 { print $1 }
+                '"'"' "${SRC}/old-service-hashes" "${SRC}/new-service-hashes"
+              )"
+              if [ "${BACKEND_ENV_CHANGED}" -eq 1 ] && ! grep -qw backend <<<"${TOUCHED_SERVICES}"; then
+                TOUCHED_SERVICES="${TOUCHED_SERVICES} backend"
+              fi
+              if [ "${FRONTEND_ENV_CHANGED}" -eq 1 ] && ! grep -qw frontend <<<"${TOUCHED_SERVICES}"; then
+                TOUCHED_SERVICES="${TOUCHED_SERVICES} frontend"
+              fi
+
+              for service in ${TOUCHED_SERVICES}; do
+                case "${service}" in
+                  db|db-init|redis-db)
+                    echo "Refusing automatic stateful service change: ${service}" >&2
+                    exit 1
+                    ;;
+                  caddy)
+                    continue
+                    ;;
+                esac
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                  docker compose pull "${service}"
+                if { [ "${service}" = "backend" ] && [ "${BACKEND_ENV_CHANGED}" -eq 1 ]; } ||
+                   { [ "${service}" = "frontend" ] && [ "${FRONTEND_ENV_CHANGED}" -eq 1 ]; }; then
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                    docker compose up -d --force-recreate --no-deps "${service}"
+                else
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                    docker compose up -d --no-deps "${service}"
+                fi
+              done
+
+              if grep -qw caddy <<<"${TOUCHED_SERVICES}" || [ "${L1_CADDY_CONFIG_CHANGED}" -eq 1 ]; then
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                  docker compose up -d --force-recreate --no-deps caddy
+              fi
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose exec -T caddy \
+                caddy validate --config /etc/caddy/Caddyfile
+              verify_touched_services
+
+              for attempt in $(seq 1 24); do
+                if curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null &&
+                   curl -fsS http://127.0.0.1:13080/public-metrics >/dev/null; then
+                  break
+                fi
+                if [ "${attempt}" -eq 24 ]; then
+                  echo "DOScan did not become healthy in time" >&2
+                  sudo docker compose ps
+                  exit 1
+                fi
+                sleep 5
+              done
+
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                docker compose exec -T backend curl -fsS \
+                http://smart-contract-verifier:8050/health >/dev/null
+
+              verify_nft_media_runtime() {
+                probe_key="healthchecks/github-${DEPLOY_ID}.txt"
+                for probe_attempt in $(seq 1 5); do
+                  if probe_output="$(
+                    sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                      docker compose exec -T backend bin/blockscout rpc \
+                      "folder = Application.fetch_env!(:nft_media_handler, :r2_folder); key = Path.join(folder, ~s(${probe_key})); body = ~s(doscan-nft-media-runtime); try do true = is_pid(Process.whereis(NFTMediaHandler.Dispatcher)); {:ok, _} = ExAws.S3.put_object(~s(doscan), key, body) |> ExAws.request(); {:ok, %{body: ^body}} = ExAws.S3.get_object(~s(doscan), key) |> ExAws.request(); IO.puts(~s(NFT_MEDIA_RUNTIME_OK)) after ExAws.S3.delete_object(~s(doscan), key) |> ExAws.request() end"
+                  )" && grep -q "NFT_MEDIA_RUNTIME_OK" <<<"${probe_output}"; then
+                    return 0
+                  fi
+                  sleep 5
+                done
+                echo "NFT media runtime probe failed after 5 attempts" >&2
+                return 1
+              }
+              verify_nft_media_runtime
+
+              sudo docker network inspect doscan-beta >/dev/null 2>&1 ||
+                sudo docker network create doscan-beta >/dev/null
+              cd "${EDGE_PATH}"
+              sudo docker compose config -q
+              if [ "${EDGE_CONFIG_CHANGED}" -eq 1 ] || [ "${EDGE_CADDY_CONFIG_CHANGED}" -eq 1 ]; then
+                EDGE_TOUCHED=1
+                sudo docker compose up -d --force-recreate --no-deps caddy
+              fi
+              sudo docker compose exec -T caddy \
+                caddy validate --config /etc/caddy/Caddyfile
+
+              rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_chainId\",\"params\":[]}"
+              check_local_rpc() {
+                rpc_host="$1"
+                expected_origin="$2"
+                rpc_response="$(curl -fsS -D - --max-time 10 \
+                  -H "Host: ${rpc_host}" \
+                  -H "Content-Type: application/json" \
+                  --data "${rpc_body}" \
+                  http://127.0.0.1:8545/)"
+                grep -q "\"result\":\"0x1f2b\"" <<<"${rpc_response}"
+                grep -qi "X-DOS-RPC-Origin: ${expected_origin}" <<<"${rpc_response}"
+              }
+              check_local_rpc main2.doschain.com archive-doscan-mainnet
+              check_local_rpc main3.doschain.com archive-doscan-mainnet
+
+              cd "${L1_PATH}"
+              frontend_env="$(
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
+                  docker compose exec -T frontend curl -fsS http://localhost:3000/assets/envs.js
+              )"
+              grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://doscan.io/metadata-api\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://doscan.io\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
+              verify_frontend_wallets
+
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/stats >/dev/null
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/public-metrics >/dev/null
+              expected_token_icon="https://raw.githubusercontent.com/DOS/DOScan-Frontend-Configs/main/configs/token-icons/WDOS.svg"
+              token_icon_type="$(
+                curl --fail --silent --show-error --output /dev/null --write-out "%{content_type}" \
+                  --retry 6 --retry-delay 5 \
+                  "${expected_token_icon}"
+              )"
+              [ "${token_icon_type%%;*}" = "image/svg+xml" ]
+              for attempt in $(seq 1 30); do
+                token_info="$(
+                  curl --fail --silent --show-error \
+                    https://doscan.io/api/v2/tokens/0x1111111111111111111111111111111111111111
+                )"
+                if [ "$(jq -r .icon_url <<<"${token_info}")" = "${expected_token_icon}" ]; then
+                  break
+                fi
+                if [ "${attempt}" -eq 30 ]; then
+                  echo "Mainnet WDOS token icon was not imported from TOKEN_LIST_URL" >&2
+                  echo "${token_info}" >&2
+                  exit 1
+                fi
+                sleep 5
+              done
+              frontend_env="$(
+                curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                  "https://doscan.io/assets/envs.js?deploy=${DEPLOY_ID}"
+              )"
+              grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://doscan.io/metadata-api\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://doscan.io\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_CROSS_CHAIN_TXS_ENABLED: \"true\"" <<<"${frontend_env}"
+              verify_frontend_wallets
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                https://doscan.io/api/v1/chains/7979/pools >/dev/null
+              curl -fsS --retry 6 --retry-delay 5 https://doscan.io/api/v1/status/indexers | grep -Eq '"'"'"name":"avalanche"[^}]*"state":"running"'"'"'
+
+              DEPLOYMENT_STARTED=0
+              for metadata_url in \
+                "https://doscan.io/metadata-api/api/v1/metadata" \
+                "https://doscan.io/api/v1/metadata"; do
+                metadata_response="$(
+                  curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                    "${metadata_url}?addresses=0x0000000000000000000000000000000000000000&chainId=7979&tagsLimit=1"
+                )"
+                grep -q '"addresses"' <<<"${metadata_response}"
+              done
+
+              check_public_rpc() {
+                rpc_url="$1"
+                expected_origin="$2"
+                rpc_response="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                  -D - \
+                  -H "Content-Type: application/json" \
+                  --data "${rpc_body}" \
+                  "${rpc_url}")"
+                grep -q "\"result\":\"0x1f2b\"" <<<"${rpc_response}"
+                grep -qi "X-DOS-RPC-Origin: ${expected_origin}" <<<"${rpc_response}"
+              }
+              check_public_rpc https://main2.doschain.com archive-doscan-mainnet
+              check_public_rpc https://main3.doschain.com archive-doscan-mainnet
+
+              curl --fail --silent --show-error --retry 2 --retry-delay 5 \
+                https://doscan.io/api/v2/proxy/account-abstraction/status >/dev/null || \
+                echo "Account abstraction status is not healthy yet; explorer and RPC deployment succeeded"
+
+              sudo docker compose ps caddy
+              cd "${L1_PATH}"
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose ps
+              echo "GCP mainnet deployment completed"
+            '
+
+  deploy-testnet:
+    if: >
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'testnet')
+      )
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate Mainnet and Testnet environment parity
+        run: python scripts/validate-blockscout-env-parity.py
+
+      - name: Validate testnet Caddy configuration
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "${PWD}/docker-compose/Caddyfile-gcp-testnet:/etc/caddy/Caddyfile:ro" \
+            caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9 \
+            caddy validate --config /etc/caddy/Caddyfile
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Package testnet deployment configuration
+        run: |
+          set -euo pipefail
+          umask 077
+          trap 'rm -f /tmp/common-blockscout-nft-media.env' EXIT
+
+          nft_media_json="$(
+            gcloud secrets versions access latest \
+              --project="${GCP_PROJECT_ID}" \
+              --secret="doscan-nft-media-hmac"
+          )"
+          jq -e \
+            '.bucket == "doscan" and .host == "storage.googleapis.com"' \
+            <<<"${nft_media_json}" >/dev/null
+          nft_media_access_key_id="$(jq -er '.accessId' <<<"${nft_media_json}")"
+          nft_media_secret_access_key="$(jq -er '.secret' <<<"${nft_media_json}")"
+          printf 'NFT_MEDIA_HANDLER_AWS_ACCESS_KEY_ID=%s\nNFT_MEDIA_HANDLER_AWS_SECRET_ACCESS_KEY=%s\n' \
+            "${nft_media_access_key_id}" \
+            "${nft_media_secret_access_key}" \
+            > /tmp/common-blockscout-nft-media.env
+          unset nft_media_json nft_media_access_key_id nft_media_secret_access_key
+
+          tar -czf /tmp/doscan-testnet-config.tgz \
+            docker-compose/docker-compose-testnet.yml \
+            docker-compose/Caddyfile-gcp-testnet \
+            docker-compose/envs/common-blockscout.env \
+            docker-compose/envs/common-blockscout-testnet.env \
+            docker-compose/envs/common-frontend.env \
+            docker-compose/envs/common-frontend-testnet.env \
+            docker-compose/envs/common-smart-contract-verifier.env \
+            docker-compose/envs/common-visualizer.env \
+            -C /tmp common-blockscout-nft-media.env
+          rm -f /tmp/common-blockscout-nft-media.env
+
+      - name: Upload testnet configuration through IAP
+        run: |
+          set -euo pipefail
+          gcloud compute scp \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${GCP_TESTNET_ZONE}" \
+            --tunnel-through-iap \
+            /tmp/doscan-testnet-config.tgz \
+            "${GCP_TESTNET_INSTANCE}:/tmp/doscan-testnet-config-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
+
+      - name: Remove local testnet package containing NFT media credentials
+        if: always()
+        run: rm -f /tmp/doscan-testnet-config.tgz /tmp/common-blockscout-nft-media.env
+
+      - name: Apply testnet configuration and verify services
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "${GCP_TESTNET_INSTANCE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${GCP_TESTNET_ZONE}" \
+            --tunnel-through-iap \
+            --command='
+              set -euo pipefail
+
+              RUN_ID='"${GITHUB_RUN_ID}"'
+              RUN_ATTEMPT='"${GITHUB_RUN_ATTEMPT}"'
+              DEPLOY_ID="${RUN_ID}-${RUN_ATTEMPT}"
+              ARCHIVE="/tmp/doscan-testnet-config-${DEPLOY_ID}.tgz"
+              test -s "${ARCHIVE}"
+              SRC="$(mktemp -d /tmp/doscan-testnet-deploy.XXXXXX)"
+              DEPLOY_PATH="/opt/doscan-testnet"
+              BACKUP="${DEPLOY_PATH}/backups/github-${DEPLOY_ID}"
+              SECRETS_ENV="${DEPLOY_PATH}/envs/common-blockscout-secrets.env"
+              NFT_MEDIA_SECRETS="${SRC}/common-blockscout-nft-media.env"
+              DEPLOYMENT_STARTED=0
+
+              cleanup() {
+                rm -rf "${SRC}" "${ARCHIVE}"
+              }
+
+              verify_frontend_wallets() {
+                [ $(grep -Pxc "NEXT_PUBLIC_WEB3_WALLETS: \x22\[\x27metamask\x27,\x27rabby\x27,\x27coinbase\x27,\x27token_pocket\x27\]\x22,"<<<"$frontend_env") = 1 ]
+              }
+
+              rollback() {
+                echo "Testnet deployment failed; restoring ${BACKUP}" >&2
+                set +e
+                restore_rc=0
+
+                cd "${DEPLOY_PATH}"
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                  docker compose stop backend stats || restore_rc=1
+                if ! user_ops_container_ids="$(
+                  sudo docker ps -aq \
+                    --filter "label=com.docker.compose.project=doscan-testnet" \
+                    --filter "label=com.docker.compose.service=user-ops-indexer"
+                )"; then
+                  restore_rc=1
+                fi
+                if [ -n "${user_ops_container_ids}" ]; then
+                  sudo docker stop ${user_ops_container_ids} || restore_rc=1
+                  sudo docker rm -f ${user_ops_container_ids} || restore_rc=1
+                fi
+                if [ "${restore_rc}" -ne 0 ]; then
+                  echo "TESTNET ROLLBACK ABORTED; database writers could not be stopped" >&2
+                  return 1
+                fi
+                sudo docker compose exec -T db dropdb --force -U postgres blockscout || restore_rc=1
+                sudo docker compose exec -T db createdb -U postgres blockscout || restore_rc=1
+                sudo cat "${BACKUP}/blockscout.dump" |
+                  sudo docker compose exec -T db pg_restore -U postgres -d blockscout --no-owner --no-privileges ||
+                  restore_rc=1
+                sudo docker compose exec -T db dropdb --force -U postgres stats || restore_rc=1
+                sudo docker compose exec -T db createdb -U postgres stats || restore_rc=1
+                sudo cat "${BACKUP}/stats.dump" |
+                  sudo docker compose exec -T db pg_restore -U postgres -d stats --no-owner --no-privileges ||
+                  restore_rc=1
+
+                sudo cp -a "${BACKUP}/docker-compose.yml" "${DEPLOY_PATH}/docker-compose.yml" || restore_rc=1
+                sudo cp -a "${BACKUP}/Caddyfile" "${DEPLOY_PATH}/Caddyfile" || restore_rc=1
+                if sudo test -f "${BACKUP}/Caddyfile-gcp-testnet"; then
+                  sudo cp -a "${BACKUP}/Caddyfile-gcp-testnet" "${DEPLOY_PATH}/Caddyfile-gcp-testnet" ||
+                    restore_rc=1
+                else
+                  sudo rm -f "${DEPLOY_PATH}/Caddyfile-gcp-testnet" || restore_rc=1
+                fi
+                sudo cp -a "${BACKUP}/envs/." "${DEPLOY_PATH}/envs/" || restore_rc=1
+
+                if [ "${restore_rc}" -ne 0 ]; then
+                  echo "TESTNET ROLLBACK FAILED; manual recovery is required from ${BACKUP}" >&2
+                  return 1
+                fi
+
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose up -d || restore_rc=1
+                if [ "${FRONTEND_ENV_CHANGED:-0}" -eq 1 ]; then
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    docker compose up -d --force-recreate --no-deps frontend || restore_rc=1
+                  restored_frontend_env=""
+                  frontend_env_restored=0
+                  for attempt in $(seq 1 12); do
+                    if restored_frontend_env="$(
+                      sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                        docker compose exec -T frontend curl -fsS http://localhost:3000/assets/envs.js
+                    )"; then
+                      frontend_env_restored=1
+                      break
+                    fi
+                    sleep 5
+                  done
+                  if [ "${frontend_env_restored}" -ne 1 ]; then
+                    restore_rc=1
+                  fi
+                  restored_dex_value="$(
+                    sudo awk -F= \
+                      '"'"'$1 == "NEXT_PUBLIC_DEX_POOLS_ENABLED" { value = $2 } END { print value }'"'"' \
+                      "${DEPLOY_PATH}/envs/common-frontend.env" \
+                      "${DEPLOY_PATH}/envs/common-frontend-testnet.env"
+                  )"
+                  if [ "${restored_dex_value}" = "true" ]; then
+                    grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${restored_frontend_env}" ||
+                      restore_rc=1
+                  else
+                    if grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${restored_frontend_env}"; then
+                      restore_rc=1
+                    fi
+                  fi
+                fi
+                if [ "${restore_rc}" -ne 0 ]; then
+                  echo "TESTNET ROLLBACK FAILED; restored frontend runtime is unhealthy" >&2
+                  return 1
+                fi
+                for attempt in $(seq 1 30); do
+                  if curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null; then
+                    echo "Testnet rollback completed successfully" >&2
+                    return 0
+                  fi
+                  sleep 5
+                done
+                echo "TESTNET ROLLBACK FAILED; restored stack is not healthy" >&2
+                return 1
+              }
+
+              finish() {
+                rc=$?
+                trap - EXIT
+                if [ "${rc}" -ne 0 ] && [ "${DEPLOYMENT_STARTED}" -eq 1 ]; then
+                  rollback || rc=2
+                fi
+                cleanup
+                exit "${rc}"
+              }
+              trap finish EXIT
+
+              tar -xzf "${ARCHIVE}" -C "${SRC}"
+              sudo mkdir -p "${BACKUP}" "${DEPLOY_PATH}/envs"
+
+              sudo cp -a "${DEPLOY_PATH}/docker-compose.yml" "${BACKUP}/docker-compose.yml" 2>/dev/null || true
+              sudo cp -a "${DEPLOY_PATH}/Caddyfile" "${BACKUP}/Caddyfile" 2>/dev/null || true
+              sudo cp -a "${DEPLOY_PATH}/Caddyfile-gcp-testnet" "${BACKUP}/Caddyfile-gcp-testnet" 2>/dev/null || true
+              sudo cp -a "${DEPLOY_PATH}/envs" "${BACKUP}/envs" 2>/dev/null || true
+
+              if ! sudo test -s "${SECRETS_ENV}"; then
+                sudo awk -F= \
+                  '"'"'$1 ~ /^(ACCOUNT_CLOAK_KEY|DATABASE_URL|RELEASE_COOKIE|SECRET_KEY_BASE)$/ {print}'"'"' \
+                  "${DEPLOY_PATH}/envs/common-blockscout-testnet.env" |
+                  sudo tee "${SECRETS_ENV}" >/dev/null
+                sudo chmod 0600 "${SECRETS_ENV}"
+              fi
+
+              if ! sudo grep -Eq "^SECRET_KEY_BASE=.+" "${SECRETS_ENV}"; then
+                echo "Existing Testnet SECRET_KEY_BASE is missing; refusing deployment" >&2
+                exit 1
+              fi
+
+              cd "${DEPLOY_PATH}"
+              FRONTEND_ENV_CHANGED=0
+              if ! sudo cmp -s "${SRC}/docker-compose/envs/common-frontend.env" \
+                   "${DEPLOY_PATH}/envs/common-frontend.env" ||
+                 ! sudo cmp -s "${SRC}/docker-compose/envs/common-frontend-testnet.env" \
+                   "${DEPLOY_PATH}/envs/common-frontend-testnet.env"; then
+                FRONTEND_ENV_CHANGED=1
+              fi
+              CURRENT_FRONTEND_ENV="$(
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                  docker compose exec -T frontend curl -fsS http://localhost:3000/assets/envs.js 2>/dev/null || true
+              )"
+              if grep -Fqx "NEXT_PUBLIC_DEX_POOLS_ENABLED=true" \
+                   "${SRC}/docker-compose/envs/common-frontend.env" &&
+                 ! grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${CURRENT_FRONTEND_ENV}"; then
+                FRONTEND_ENV_CHANGED=1
+              fi
+
+              current_volume="$(
+                sudo docker inspect doscan-testnet-db-1 \
+                  --format '"'"'{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}'"'"'
+              )"
+              if [ "${current_volume}" != "doscan-testnet_postgres_data" ]; then
+                echo "Unexpected Testnet Postgres volume: ${current_volume}" >&2
+                exit 1
+              fi
+
+              cd "${DEPLOY_PATH}"
+              sudo docker compose exec -T db pg_dump -U postgres -Fc blockscout |
+                sudo tee "${BACKUP}/blockscout.dump" >/dev/null
+              sudo docker compose exec -T db pg_dump -U postgres -Fc stats |
+                sudo tee "${BACKUP}/stats.dump" >/dev/null
+              sudo test -s "${BACKUP}/blockscout.dump"
+              sudo test -s "${BACKUP}/stats.dump"
+              DEPLOYMENT_STARTED=1
+
+              if [ "$(grep -Ec "^NFT_MEDIA_HANDLER_AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)=.+$" "${NFT_MEDIA_SECRETS}")" -ne 2 ]; then
+                echo "NFT media credential file is missing required values" >&2
+                exit 1
+              fi
+              MERGED_BLOCKSCOUT_SECRETS="$(mktemp /tmp/doscan-testnet-blockscout-secrets.XXXXXX)"
+              sudo awk -F= \
+                "\$1 !~ /^NFT_MEDIA_HANDLER_AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)$/" \
+                "${SECRETS_ENV}" > "${MERGED_BLOCKSCOUT_SECRETS}"
+              cat "${NFT_MEDIA_SECRETS}" >> "${MERGED_BLOCKSCOUT_SECRETS}"
+              sudo install -m 0600 "${MERGED_BLOCKSCOUT_SECRETS}" "${SECRETS_ENV}"
+              rm -f "${MERGED_BLOCKSCOUT_SECRETS}"
+
+              sudo install -m 0644 "${SRC}/docker-compose/docker-compose-testnet.yml" "${DEPLOY_PATH}/docker-compose.yml"
+              sudo install -m 0644 "${SRC}/docker-compose/Caddyfile-gcp-testnet" "${DEPLOY_PATH}/Caddyfile-gcp-testnet"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-blockscout.env" "${DEPLOY_PATH}/envs/common-blockscout.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-blockscout-testnet.env" "${DEPLOY_PATH}/envs/common-blockscout-testnet.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend.env" "${DEPLOY_PATH}/envs/common-frontend.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend-testnet.env" "${DEPLOY_PATH}/envs/common-frontend-testnet.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-smart-contract-verifier.env" "${DEPLOY_PATH}/envs/common-smart-contract-verifier.env"
+              sudo install -m 0644 "${SRC}/docker-compose/envs/common-visualizer.env" "${DEPLOY_PATH}/envs/common-visualizer.env"
+
+              cd "${DEPLOY_PATH}"
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose config -q
+              STATELESS_SERVICES="backend frontend smart-contract-verifier visualizer sig-provider user-ops-indexer stats caddy"
+              for service in ${STATELESS_SERVICES}; do
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose pull "${service}"
+                if [ "${service}" = "caddy" ] ||
+                   { [ "${service}" = "frontend" ] && [ "${FRONTEND_ENV_CHANGED}" -eq 1 ]; }; then
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    docker compose up -d --force-recreate --no-deps "${service}"
+                else
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    docker compose up -d --no-deps "${service}"
+                fi
+              done
+
+              for attempt in $(seq 1 30); do
+                rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_chainId\",\"params\":[]}"
+                if curl -fsS http://127.0.0.1:13080/ >/dev/null &&
+                   curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null &&
+                   curl -fsS http://127.0.0.1:13080/public-metrics >/dev/null &&
+                   curl -fsS -H "Content-Type: application/json" --data "${rpc_body}" \
+                     http://127.0.0.1:8545/ | grep -q "\"result\":\"0xf63\""; then
+                  break
+                fi
+                if [ "${attempt}" -eq 30 ]; then
+                  echo "DOScan Testnet did not become healthy in time" >&2
+                  sudo docker compose ps
+                  exit 1
+                fi
+                sleep 5
+              done
+
+              frontend_env="$(
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                  docker compose exec -T frontend curl -fsS http://localhost:3000/assets/envs.js
+              )"
+              grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://test.doscan.io/metadata-api\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://test.doscan.io\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
+              verify_frontend_wallets
+              if grep -F "NEXT_PUBLIC_NETWORK_EXPLORERS:" <<<"${frontend_env}" | grep -Fq "https://test.doscan.io/"; then
+                echo "Testnet must not link back to itself as an external explorer" >&2
+                exit 1
+              fi
+              grep -Fq "NEXT_PUBLIC_HAS_USER_OPS: \"true\"" <<<"${frontend_env}"
+
+              for attempt in $(seq 1 30); do
+                if curl -fsS \
+                  http://127.0.0.1:13080/api/v2/proxy/account-abstraction/status >/dev/null; then
+                  break
+                fi
+                if [ "${attempt}" -eq 30 ]; then
+                  echo "Testnet Account Abstraction proxy did not become healthy" >&2
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    docker compose logs --tail=100 user-ops-indexer backend
+                  exit 1
+                fi
+                sleep 5
+              done
+
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                docker compose exec -T backend curl -fsS \
+                http://smart-contract-verifier:8050/health >/dev/null
+
+              # External GCS, Cloudflare, RPC, or metadata failures must not trigger a destructive database restore.
+              DEPLOYMENT_STARTED=0
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                docker compose exec -T backend curl -fsS \
+                "https://metadata.services.blockscout.com/api/v1/metadata?chain_id=3939&addresses=0x0000000000000000000000000000000000000000&tags_limit=1" >/dev/null
+
+              verify_nft_media_runtime() {
+                probe_key="healthchecks/github-${DEPLOY_ID}.txt"
+                for probe_attempt in $(seq 1 5); do
+                  if probe_output="$(
+                    sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                      docker compose exec -T backend bin/blockscout rpc \
+                      "folder = Application.fetch_env!(:nft_media_handler, :r2_folder); key = Path.join(folder, ~s(${probe_key})); body = ~s(doscan-nft-media-runtime); try do true = is_pid(Process.whereis(NFTMediaHandler.Dispatcher)); {:ok, _} = ExAws.S3.put_object(~s(doscan), key, body) |> ExAws.request(); {:ok, %{body: ^body}} = ExAws.S3.get_object(~s(doscan), key) |> ExAws.request(); IO.puts(~s(NFT_MEDIA_RUNTIME_OK)) after ExAws.S3.delete_object(~s(doscan), key) |> ExAws.request() end"
+                  )" && grep -q "NFT_MEDIA_RUNTIME_OK" <<<"${probe_output}"; then
+                    return 0
+                  fi
+                  sleep 5
+                done
+                echo "NFT media runtime probe failed after 5 attempts" >&2
+                return 1
+              }
+              verify_nft_media_runtime
+
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://test.doscan.io/ >/dev/null
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://test.doscan.io/api/v2/stats >/dev/null
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://test.doscan.io/public-metrics >/dev/null
+              frontend_env="$(
+                curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                  "https://test.doscan.io/assets/envs.js?deploy=${DEPLOY_ID}"
+              )"
+              grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://test.doscan.io/metadata-api\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://test.doscan.io\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
+              verify_frontend_wallets
+              if grep -F "NEXT_PUBLIC_NETWORK_EXPLORERS:" <<<"${frontend_env}" | grep -Fq "https://test.doscan.io/"; then
+                echo "Testnet must not link back to itself as an external explorer" >&2
+                exit 1
+              fi
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                https://test.doscan.io/api/v1/chains/3939/pools >/dev/null
+              for metadata_url in \
+                "https://test.doscan.io/metadata-api/api/v1/metadata" \
+                "https://test.doscan.io/api/v1/metadata"; do
+                metadata_response="$(
+                  curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                    "${metadata_url}?addresses=0x9f2aCCb76DEFE1735Fb55c41e1741c54a2d0fEa7&chainId=3939&tagsLimit=1"
+                )"
+                grep -q '"addresses"' <<<"${metadata_response}"
+              done
+              rpc_response="$(
+                curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                  -D - -H "Content-Type: application/json" --data "${rpc_body}" https://test.doschain.com/
+              )"
+              grep -q "\"result\":\"0xf63\"" <<<"${rpc_response}"
+              grep -qi "X-DOS-RPC-Origin: archive-dos-testnet-r0" <<<"${rpc_response}"
+
+              sudo docker compose ps
+              echo "GCP testnet deployment completed"
+            '
+
+  deploy-beta:
+    if: >
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.environment == 'beta'
+    runs-on: ubuntu-latest
+    environment: beta
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate beta configuration
+        run: |
+          set -euo pipefail
+          secrets_file="$(mktemp)"
+          trap 'rm -f "${secrets_file}"' EXIT
+          DOSCAN_BLOCKSCOUT_SECRETS_ENV="${secrets_file}" \
+            DOSCAN_BASE_ENV_DIR="${PWD}/docker-compose/envs" \
+            docker compose -f docker-compose/docker-compose-beta.yml config -q
+          docker run --rm \
+            -v "${PWD}/docker-compose/Caddyfile-beta:/etc/caddy/Caddyfile:ro" \
+            caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9 \
+            caddy validate --config /etc/caddy/Caddyfile
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Package and upload beta configuration
+        run: |
+          set -euo pipefail
+          archive="/tmp/doscan-beta-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
+          tar -czf "${archive}" \
+            docker-compose/docker-compose-beta.yml \
+            docker-compose/Caddyfile-beta \
+            docker-compose/envs/common-blockscout.env \
+            docker-compose/envs/common-blockscout-beta.env \
+            docker-compose/envs/common-frontend-beta.env \
+            scripts/apply-beta-on-mainnet-vm.sh
+          gcloud compute scp \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${GCP_ZONE}" \
+            --tunnel-through-iap \
+            "${archive}" \
+            "${GCP_INSTANCE}:${archive}"
+          rm -f "${archive}"
+
+      - name: Apply beta configuration and verify services
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "${GCP_INSTANCE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --zone="${GCP_ZONE}" \
+            --tunnel-through-iap \
+            --command="
+              set -euo pipefail
+              deploy_id='${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}'
+              archive='/tmp/doscan-beta-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz'
+              src=\"\$(mktemp -d /tmp/doscan-beta-deploy.XXXXXX)\"
+              trap 'rm -rf \"\${src}\" \"\${archive}\"' EXIT
+              tar -xzf \"\${archive}\" -C \"\${src}\"
+              sudo bash \"\${src}/scripts/apply-beta-on-mainnet-vm.sh\" \"\${src}\" \"\${deploy_id}\"
+            "
+
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 \
+            https://beta.doscan.io/api/v2/stats >/dev/null

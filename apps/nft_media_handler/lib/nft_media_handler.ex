@@ -85,7 +85,7 @@ defmodule NFTMediaHandler do
          {:thumbnails, {:ok, _result}} <- {:thumbnails, Uploader.upload_images(thumbnails, r2_folder)} do
       file_path = Path.join(r2_folder, Resizer.generate_file_name(url, ".jpg", "{}"))
       uploaded_thumbnails_sizes = thumbnails |> Enum.map(&elem(&1, 0))
-      original_uploaded? = true
+      original_uploaded? = false
 
       {:ok, {[file_path, uploaded_thumbnails_sizes, original_uploaded?], media_type}}
     else

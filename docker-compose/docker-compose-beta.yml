@@ -1,0 +1,190 @@
+name: doscan-beta
+
+# Beta runs on the mainnet GCP VM with an isolated database and Compose project.
+# It shares only the local AvalancheGo archive RPC with production.
+
+services:
+  redis-db:
+    image: redis:alpine
+    pull_policy: always
+    restart: unless-stopped
+    command: redis-server
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  db-init:
+    image: postgres:15
+    pull_policy: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    entrypoint: ["sh", "-c", "chown -R 2000:2000 /var/lib/postgresql/data"]
+
+  db:
+    image: postgres:15
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    user: 2000:2000
+    shm_size: 256m
+    command: postgres -c 'max_connections=120' -c 'client_connection_check_interval=60000'
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: ghcr.io/dos/doscan:11.2.3.commit.86fd0dd5@sha256:423bab078a679d3290cc6e276774a8ed201686636933e0d066ce9859270f700d
+    pull_policy: always
+    restart: unless-stopped
+    stop_grace_period: 5m
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-db:
+        condition: service_healthy
+    command: sh -c 'bin/blockscout eval "Elixir.Explorer.ReleaseTasks.create_and_migrate()" && bin/blockscout start'
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    env_file:
+      - ./envs/common-blockscout.env
+      - ${DOSCAN_BLOCKSCOUT_SECRETS_ENV:-/opt/doscan/envs/common-blockscout-secrets.env}
+      - ./envs/common-blockscout-beta.env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/v2/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  frontend:
+    image: metados/blockscout-frontend:2.9.5-dos.2@sha256:7d676950e8beb40e947b098f3fc39b9394f6ffac4ec0eccd58c25acac05eba19
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    env_file:
+      - ${DOSCAN_BASE_ENV_DIR:-/opt/doscan/envs}/common-frontend.env
+      - ./envs/common-frontend-beta.env
+    environment:
+      HOSTNAME: 0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  smart-contract-verifier:
+    image: ghcr.io/blockscout/smart-contract-verifier:latest
+    pull_policy: always
+    platform: linux/amd64
+    restart: unless-stopped
+    env_file:
+      - ${DOSCAN_BASE_ENV_DIR:-/opt/doscan/envs}/common-smart-contract-verifier.env
+
+  visualizer:
+    image: ghcr.io/blockscout/visualizer:latest
+    pull_policy: always
+    platform: linux/amd64
+    restart: unless-stopped
+    env_file:
+      - ${DOSCAN_BASE_ENV_DIR:-/opt/doscan/envs}/common-visualizer.env
+
+  sig-provider:
+    image: ghcr.io/blockscout/sig-provider:latest
+    pull_policy: always
+    platform: linux/amd64
+    restart: unless-stopped
+
+  user-ops-indexer:
+    image: ghcr.io/blockscout/user-ops-indexer:latest
+    pull_policy: always
+    platform: linux/amd64
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    environment:
+      USER_OPS_INDEXER__INDEXER__RPC_URL: http://host.docker.internal:9650/ext/bc/2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk/rpc
+      USER_OPS_INDEXER__INDEXER__CONCURRENCY: "2"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V06: "true"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V06_ENTRY_POINT: "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V07: "true"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V07_ENTRY_POINT: "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V08: "true"
+      USER_OPS_INDEXER__INDEXER__ENTRYPOINTS__V08_ENTRY_POINT: "0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108"
+      USER_OPS_INDEXER__INDEXER__REALTIME__ENABLED: "true"
+      USER_OPS_INDEXER__INDEXER__PAST_RPC_LOGS_INDEXER__ENABLED: "true"
+      USER_OPS_INDEXER__INDEXER__PAST_RPC_LOGS_INDEXER__BLOCK_RANGE: "1000"
+      USER_OPS_INDEXER__INDEXER__PAST_DB_LOGS_INDEXER__ENABLED: "true"
+      USER_OPS_INDEXER__INDEXER__PAST_DB_LOGS_INDEXER__START_BLOCK: "0"
+      USER_OPS_INDEXER__INDEXER__PAST_DB_LOGS_INDEXER__END_BLOCK: "0"
+      USER_OPS_INDEXER__DATABASE__CONNECT__URL: postgresql://postgres:@db:5432/blockscout
+      USER_OPS_INDEXER__DATABASE__CREATE_DATABASE: "false"
+      USER_OPS_INDEXER__DATABASE__RUN_MIGRATIONS: "true"
+      USER_OPS_INDEXER__SERVER__HTTP__ADDR: "0.0.0.0:8050"
+
+  stats:
+    image: ghcr.io/blockscout/stats:latest
+    pull_policy: always
+    platform: linux/amd64
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      STATS__DB_URL: postgresql://postgres:@db:5432/stats
+      STATS__BLOCKSCOUT_DB_URL: postgresql://postgres:@db:5432/blockscout
+      STATS__CREATE_DATABASE: "true"
+      STATS__RUN_MIGRATIONS: "true"
+      STATS__SERVER__HTTP__ADDR: 0.0.0.0:8050
+      STATS__SERVER__HTTP__CORS__ALLOWED_ORIGIN: https://beta.doscan.io
+      STATS__IGNORE_BLOCKSCOUT_API_ABSENCE: "true"
+
+  caddy:
+    image: caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    volumes:
+      - ./Caddyfile-beta:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - 127.0.0.1:14080:80
+    networks:
+      default:
+        aliases:
+          - beta-origin
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  default:
+    external: true
+    name: doscan-beta

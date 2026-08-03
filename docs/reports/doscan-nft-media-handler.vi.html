@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23ff2e29'/%3E%3Cpath d='M9 9h7c5 0 8 3 8 7s-3 7-8 7H9zm5 4v6h2c2 0 3-1 3-3s-1-3-3-3z' fill='white'/%3E%3C/svg%3E">
+  <title>DOS Chain NFT Media Handler</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1113;
+      --panel: #171a1f;
+      --panel2: #1d2127;
+      --text: #eef0f3;
+      --muted: #a8b0bb;
+      --line: #303640;
+      --red: #ff2e29;
+      --green: #43d17c;
+      --amber: #ffb74a;
+      --blue: #63a9ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.65 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    main { max-width: 1120px; margin: 0 auto; padding: 42px 26px 80px; }
+    h1, h2, h3 { line-height: 1.25; margin-top: 0; }
+    h1 { font-size: clamp(31px, 5vw, 50px); max-width: 860px; }
+    h2 { margin-top: 40px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
+    h3 { margin-bottom: 7px; }
+    p { margin: 8px 0 15px; }
+    a { color: #9dcbff; }
+    code {
+      padding: 2px 6px;
+      border: 1px solid #2a3038;
+      border-radius: 6px;
+      background: #090b0e;
+      color: #ffd0ce;
+      overflow-wrap: anywhere;
+    }
+    pre {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #090b0e;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+    .hero {
+      padding: 30px;
+      border: 1px solid #3b292b;
+      border-radius: 18px;
+      background:
+        radial-gradient(circle at 100% 0, rgba(255,46,41,.18), transparent 36%),
+        linear-gradient(145deg, #191c21, #111317);
+    }
+    .eyebrow { color: var(--red); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .lead { max-width: 880px; color: #d3d8df; font-size: 19px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 20px; }
+    .card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+    }
+    .card strong { display: block; color: #fff; font-size: 20px; }
+    .card span, .muted { color: var(--muted); }
+    .ok {
+      margin-top: 18px;
+      padding: 16px 18px;
+      border-left: 4px solid var(--green);
+      border-radius: 8px;
+      background: rgba(67,209,124,.08);
+    }
+    .warn {
+      padding: 15px 17px;
+      border: 1px solid rgba(255,183,74,.35);
+      border-radius: 10px;
+      background: rgba(255,183,74,.08);
+    }
+    table { width: 100%; border-collapse: collapse; margin-top: 13px; }
+    th, td { padding: 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: var(--panel2); }
+    ul, ol { padding-left: 22px; }
+    li { margin: 7px 0; }
+    .good { color: var(--green); font-weight: 800; }
+    @media (max-width: 760px) {
+      main { padding: 22px 15px 55px; }
+      .grid { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <div class="eyebrow">Báo cáo prod DOS Chain</div>
+    <h1>NFT Media Handler đã tích hợp bằng Google Cloud Storage</h1>
+    <p class="lead">Blockscout Mainnet và Testnet giờ tự tải media NFT, tạo thumbnail và lưu vào bucket GCS <code>doscan</code>. Không cần Cloudflare R2 và không cần thêm container riêng.</p>
+    <div class="grid">
+      <div class="card"><strong>Mainnet: hoạt động</strong><span><code>mainnet/nft-media</code></span></div>
+      <div class="card"><strong>Testnet: hoạt động</strong><span><code>testnet/nft-media</code></span></div>
+      <div class="card"><strong>Public chỉ GET</strong><span>Không cho list hoặc ghi object</span></div>
+    </div>
+    <div class="ok"><strong class="good">Đã deploy ngày 28/07/2026.</strong> PR backend #115 cùng các hotfix #116, #117, #119 và #120 đã merge. Workflow #30331379243 hoàn tất runtime probe thành công cho cả Mainnet và Testnet.</div>
+  </section>
+
+  <h2>1. Kiến trúc đang chạy</h2>
+  <ol>
+    <li>Blockscout đọc URL ảnh hoặc animation từ metadata ERC-721/ERC-1155.</li>
+    <li>NFT Media Handler chạy inline trong backend, tải và kiểm tra media nguồn.</li>
+    <li>Backend tạo original cùng thumbnail 60, 250 và 500 px.</li>
+    <li>Media được upload qua GCS XML API tương thích S3.</li>
+    <li>Frontend dùng URL public tại <code>https://storage.googleapis.com/doscan</code>.</li>
+  </ol>
+  <p>Handler không phụ thuộc consensus. DOS Chain là Avalanche L1 chạy Subnet-EVM, nên mô hình token và metadata NFT vẫn tương thích EVM như các chain ERC khác.</p>
+
+  <h2>2. Cấu hình chính</h2>
+  <pre>NFT_MEDIA_HANDLER_ENABLED=true
+NFT_MEDIA_HANDLER_REMOTE_DISPATCHER_NODE_MODE_ENABLED=false
+NFT_MEDIA_HANDLER_AWS_BUCKET_HOST=storage.googleapis.com
+NFT_MEDIA_HANDLER_AWS_BUCKET_NAME=doscan
+NFT_MEDIA_HANDLER_AWS_PUBLIC_BUCKET_URL=https://storage.googleapis.com/doscan
+NFT_MEDIA_HANDLER_BACKFILL_ENABLED=true</pre>
+  <table>
+    <thead><tr><th>Môi trường</th><th>VM GCP</th><th>Prefix</th></tr></thead>
+    <tbody>
+      <tr><td>Mainnet</td><td><code>doscan-mainnet</code>, <code>asia-southeast1-b</code></td><td><code>mainnet/nft-media</code></td></tr>
+      <tr><td>Testnet</td><td><code>dos-testnet-r0</code>, <code>asia-southeast1-a</code></td><td><code>testnet/nft-media</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>3. Vì sao GCS dùng được, không cần R2?</h2>
+  <p>Blockscout yêu cầu endpoint S3-compatible chứ không bắt buộc một nhà cung cấp cụ thể. Google Cloud Storage có XML API tương thích công cụ S3, endpoint <code>storage.googleapis.com</code> và HMAC key. Vì vậy DOS có thể tận dụng GCP credit hiện có.</p>
+  <p>Chi phí GCS gồm dung lượng lưu, số thao tác và băng thông ra ngoài. Với lưu lượng NFT hiện tại, chi phí dự kiến nhỏ và được trừ vào credit, nhưng vẫn cần theo dõi object count và egress khi marketplace hoạt động trở lại.</p>
+
+  <h2>4. Secret và policy bucket</h2>
+  <ul>
+    <li>HMAC nằm trong Google Secret Manager: <code>doscan-nft-media-hmac</code>.</li>
+    <li>Workflow đọc secret qua Workload Identity Federation, tạo file tạm mode 0600, merge vào secret env trên VM rồi xóa file tạm.</li>
+    <li>Repo không chứa access ID hoặc secret HMAC.</li>
+    <li>Service account ghi object: <code>doscan-nft-media@dos--ai.iam.gserviceaccount.com</code>.</li>
+    <li>Public dùng custom role <code>doscanPublicObjectReader</code>, chỉ có <code>storage.objects.get</code>.</li>
+  </ul>
+  <div class="ok">Probe ẩn danh ngày 28/07/2026: GET thumbnail đã biết trả HTTP 200; XML bucket list trả HTTP 403; JSON bucket list trả HTTP 401.</div>
+  <div class="warn"><strong>Lưu ý rotate key:</strong> Mainnet và Testnet đang dùng chung một HMAC service account. Phải deploy và kiểm tra cả hai môi trường trước khi vô hiệu hóa key cũ.</div>
+
+  <h2>5. Bằng chứng end-to-end</h2>
+  <table>
+    <thead><tr><th>Kiểm tra</th><th>Kết quả</th></tr></thead>
+    <tbody>
+      <tr><td>Mainnet backend</td><td>Container tạo lúc <code>2026-07-28T05:24:02Z</code>, healthy, API OK, handler bật, bucket <code>doscan</code>.</td></tr>
+      <tr><td>Testnet NFT</td><td>Contract <code>0x9f2accb76defe1735fb55c41e1741c54a2d0fea7</code>, token ID <code>1</code>.</td></tr>
+      <tr><td>Database</td><td>Có template thumbnail, kích thước 60, 250, 500 và không có <code>cdn_upload_error</code>.</td></tr>
+      <tr><td>GCS</td><td>Có original cùng ba thumbnail trong <code>testnet/nft-media</code>.</td></tr>
+      <tr><td>Runtime probe</td><td><a href="https://github.com/DOS/DOScan/actions/runs/30331379243">Workflow #30331379243</a> xác nhận dispatcher tồn tại và GCS ghi-đọc-xóa thành công ở cả Mainnet và Testnet.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>6. Nguồn kỹ thuật</h2>
+  <ul class="muted">
+    <li><a href="https://docs.blockscout.com/setup/env-variables/backend-env-variables">Blockscout Backend ENVs và NFT Media Handler</a></li>
+    <li><a href="https://docs.cloud.google.com/storage/docs/interoperability">Google Cloud Storage interoperability</a></li>
+    <li><a href="https://github.com/DOS/DOScan/pull/115">DOScan PR #115</a></li>
+    <li><a href="https://github.com/DOS/DOScan/pull/116">DOScan PR #116</a></li>
+    <li><a href="https://github.com/DOS/DOScan/pull/117">DOScan PR #117</a></li>
+    <li><a href="https://github.com/DOS/DOScan/pull/119">DOScan PR #119</a></li>
+    <li><a href="https://github.com/DOS/DOScan/pull/120">DOScan PR #120</a></li>
+  </ul>
+</main>
+</body>
+</html>

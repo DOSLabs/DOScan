@@ -5,7 +5,25 @@ updates:
     open-pull-requests-limit: 20
     schedule:
       interval: "weekly"
-      
+
+  - package-ecosystem: "github-actions"
+    directories:
+      - "/"
+      - "/.github/actions/setup-repo"
+    open-pull-requests-limit: 5
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Ho_Chi_Minh"
+    groups:
+      github-actions-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
   # - package-ecosystem: "npm"
   #   directory: "/apps/block_scout_web/assets"
   #   open-pull-requests-limit: 10

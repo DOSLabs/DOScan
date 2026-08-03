@@ -1,0 +1,46 @@
+# HTTP-only origin for beta.doscan.io.
+# The VM edge Caddy terminates TLS and proxies over the shared doscan-beta network.
+
+:80 {
+	encode zstd gzip
+
+	header >Cross-Origin-Opener-Policy "same-origin-allow-popups"
+
+	handle /api/v1/counters {
+		reverse_proxy stats:8050
+	}
+	handle /api/v1/lines {
+		reverse_proxy stats:8050
+	}
+	handle /api/v1/pages/main {
+		reverse_proxy stats:8050
+	}
+	handle /api/* {
+		reverse_proxy backend:4000
+	}
+	handle /socket/* {
+		reverse_proxy backend:4000
+	}
+	handle /sitemap.xml {
+		reverse_proxy backend:4000
+	}
+	handle /auth/* {
+		reverse_proxy backend:4000
+	}
+	handle /metrics {
+		reverse_proxy backend:4000
+	}
+	handle /public-metrics {
+		reverse_proxy backend:4000
+	}
+	handle /stats-api/* {
+		uri strip_prefix /stats-api
+		reverse_proxy stats:8050
+	}
+	handle /visualize/* {
+		reverse_proxy visualizer:8050
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

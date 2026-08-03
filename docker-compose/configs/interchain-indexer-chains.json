@@ -1,0 +1,35 @@
+[
+  {
+    "chain_id": 43114,
+    "name": "Avalanche C-Chain",
+    "icon": "https://images.ctfassets.net/gcj8jwzm6086/5VHupNKwnDYJvqMENeV7iJ/3e4b8ff10b69bfa31e70080a4b142cd0/avalanche-avax-logo.svg",
+    "explorer": {
+      "url": "https://subnets.avax.network/c-chain",
+      "custom_tx_route": "/tx/{hash}",
+      "custom_address_route": "/address/{hash}",
+      "custom_token_route": "/token/{hash}"
+    },
+    "rpcs": [
+      {
+        "avalanche": {
+          "url": "https://api.avax.network/ext/bc/C/rpc"
+        }
+      }
+    ]
+  },
+  {
+    "chain_id": 7979,
+    "name": "DOS Chain",
+    "icon": "https://raw.githubusercontent.com/DOSLabs/DOScan-Frontend-Configs/main/configs/network-icons/dos.svg",
+    "explorer": {
+      "url": "https://doscan.io"
+    },
+    "rpcs": [
+      {
+        "dos_archive": {
+          "url": "http://host.docker.internal:9650/ext/bc/2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk/rpc"
+        }
+      }
+    ]
+  }
+]

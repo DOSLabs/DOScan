@@ -1,0 +1,30 @@
+services:
+  caddy:
+    image: caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
+    container_name: caddy
+    restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - doscan_l1
+      - doscan_beta
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  doscan_l1:
+    external: true
+    name: doscan-l1_default
+  doscan_beta:
+    external: true
+    name: doscan-beta

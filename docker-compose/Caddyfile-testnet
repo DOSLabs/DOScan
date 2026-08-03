@@ -1,0 +1,32 @@
+test.doscan.io {
+    # Backend API routes
+    handle /api* {
+        reverse_proxy backend:4000
+    }
+
+    handle /socket* {
+        reverse_proxy backend:4000
+    }
+
+    handle /sitemap.xml {
+        reverse_proxy backend:4000
+    }
+
+    handle /auth* {
+        reverse_proxy backend:4000
+    }
+
+    handle /metrics {
+        reverse_proxy backend:4000
+    }
+
+    # RPC passthrough (optional - if want to expose RPC via same domain)
+    handle /ext/* {
+        reverse_proxy avago:9650
+    }
+
+    # Frontend (default catch-all)
+    handle {
+        reverse_proxy frontend:3000
+    }
+}

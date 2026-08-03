@@ -1,0 +1,113 @@
+:80 {
+	encode zstd gzip
+
+	header >Cross-Origin-Opener-Policy "same-origin-allow-popups"
+
+	@frontend_runtime_assets path /assets/envs.js /_next/static/chunks/*
+	header @frontend_runtime_assets >Cache-Control "public, max-age=0, must-revalidate"
+
+	handle /api/v1/counters {
+		reverse_proxy stats:8050
+	}
+	handle /api/v1/lines {
+		reverse_proxy stats:8050
+	}
+	handle /api/v1/pages/main {
+		reverse_proxy stats:8050
+	}
+	handle /api/v1/chains/* {
+		reverse_proxy https://contracts-info.services.blockscout.com {
+			header_up Host contracts-info.services.blockscout.com
+			header_up -Cookie
+			header_up -Authorization
+		}
+	}
+	@metadata_api path /api/v1/metadata /api/v1/tags:search /api/v1/public-tag-types /api/v1/addresses:submit
+	handle @metadata_api {
+		reverse_proxy https://metadata.services.blockscout.com {
+			header_up Host metadata.services.blockscout.com
+			header_up -Cookie
+			header_up -Authorization
+		}
+	}
+	handle /api/* {
+		reverse_proxy backend:4000
+	}
+	handle /socket/* {
+		reverse_proxy backend:4000
+	}
+	handle /sitemap.xml {
+		reverse_proxy backend:4000
+	}
+	handle /auth/* {
+		reverse_proxy backend:4000
+	}
+	handle_path /metadata-api/* {
+		reverse_proxy https://metadata.services.blockscout.com {
+			header_up Host metadata.services.blockscout.com
+			header_up -Cookie
+			header_up -Authorization
+		}
+	}
+	handle /metrics {
+		reverse_proxy backend:4000
+	}
+	handle /public-metrics {
+		reverse_proxy backend:4000
+	}
+	handle /stats-api/* {
+		uri strip_prefix /stats-api
+		reverse_proxy stats:8050
+	}
+	handle_path /visualize/* {
+		reverse_proxy visualizer:8050
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
+
+:8545 {
+	@options method OPTIONS
+	handle @options {
+		header Access-Control-Allow-Origin "*"
+		header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+		header Access-Control-Allow-Headers "*"
+		respond "" 204
+	}
+
+	header {
+		-Access-Control-Allow-Credentials
+		Access-Control-Allow-Origin "*"
+		Access-Control-Allow-Methods "GET, POST, OPTIONS"
+		Access-Control-Allow-Headers "*"
+		defer
+	}
+
+	@archive_websocket path /ws
+	handle @archive_websocket {
+		header X-DOS-RPC-Origin "archive-dos-testnet-r0"
+		rewrite * /ext/bc/2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ/ws
+		reverse_proxy 10.148.0.7:9650 {
+			header_down -Access-Control-Allow-Origin
+			header_down -Access-Control-Allow-Methods
+			header_down -Access-Control-Allow-Headers
+			header_down -Access-Control-Allow-Credentials
+		}
+	}
+
+	@archive_rpc {
+		not method OPTIONS
+		not path /ws
+	}
+	handle @archive_rpc {
+		header X-DOS-RPC-Origin "archive-dos-testnet-r0"
+		rewrite * /ext/bc/2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ/rpc
+		reverse_proxy 10.148.0.7:9650 {
+			header_down -Access-Control-Allow-Origin
+			header_down -Access-Control-Allow-Methods
+			header_down -Access-Control-Allow-Headers
+			header_down -Access-Control-Allow-Credentials
+		}
+	}
+}
