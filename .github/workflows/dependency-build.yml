@@ -16,6 +16,9 @@ on:
       - "docker-compose/envs/common-blockscout-mainnet.env"
       - "docker-compose/envs/common-blockscout-testnet.env"
       - ".github/workflows/dependency-build.yml"
+      - ".github/workflows/sync-upstream.yml"
+      - ".github/scripts/check-upstream-sync.py"
+      - ".github/scripts/tests/**"
   workflow_dispatch:
 
 permissions:
@@ -31,6 +34,16 @@ env:
   MIX_ENV: prod
 
 jobs:
+  workflow-scripts:
+    name: Test workflow scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Test upstream sync state detection
+        run: python -m unittest discover -s .github/scripts/tests -p 'test_*.py' -v
+
   token-lists:
     name: Validate DOS Chain token list reference
     runs-on: ubuntu-latest
@@ -310,6 +323,7 @@ jobs:
   dependency-build-gate:
     name: Dependency build gate
     needs:
+      - workflow-scripts
       - token-lists
       - changes
       - elixir-compile
@@ -322,6 +336,7 @@ jobs:
         env:
           RELEVANT: ${{ needs.changes.outputs.relevant }}
           TOKEN_LISTS_RESULT: ${{ needs.token-lists.result }}
+          WORKFLOW_SCRIPTS_RESULT: ${{ needs.workflow-scripts.result }}
           CHANGES_RESULT: ${{ needs.changes.result }}
           COMPILE_RESULT: ${{ needs.elixir-compile.result }}
           PRODUCTION_RESULT: ${{ needs.production-docker.result }}
@@ -331,6 +346,11 @@ jobs:
 
           if [ "$TOKEN_LISTS_RESULT" != "success" ]; then
             echo "::error::DOS Chain token list validation failed."
+            exit 1
+          fi
+
+          if [ "$WORKFLOW_SCRIPTS_RESULT" != "success" ]; then
+            echo "::error::Workflow script tests failed."
             exit 1
           fi
 

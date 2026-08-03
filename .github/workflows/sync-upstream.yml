@@ -56,15 +56,12 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "Target tag: $TAG"
 
-          # Check if we already synced this tag
+          # Compare release content instead of commit identity. Upstream may
+          # rewrite release ancestry while preserving the exact release tree.
           MARKER_TAG="synced-$TAG"
-          if git rev-parse "$MARKER_TAG" >/dev/null 2>&1; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "Already synced $TAG, skipping"
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-            echo "Will sync $TAG"
-          fi
+          python .github/scripts/check-upstream-sync.py \
+            --tag "$TAG" \
+            --marker "$MARKER_TAG"
 
       - name: Merge upstream tag
         if: steps.target.outputs.skip == 'false'
@@ -170,9 +167,14 @@ jobs:
           TAG="${{ steps.target.outputs.tag }}"
           git push origin HEAD
 
-          # Create marker tag so we don't re-sync
-          git tag "synced-$TAG"
-          git push origin "synced-$TAG"
+          # Record the exact upstream release tree. Commit ancestry can be
+          # rewritten upstream without changing the release content.
+          UPSTREAM_COMMIT=$(git rev-parse "$TAG^{commit}")
+          UPSTREAM_TREE=$(git rev-parse "$TAG^{tree}")
+          git tag --annotate --force "synced-$TAG" \
+            --message "upstream-commit: $UPSTREAM_COMMIT" \
+            --message "upstream-tree: $UPSTREAM_TREE"
+          git push origin "synced-$TAG" --force
 
           # Create the release tag (same as upstream) to trigger docker-publish
           git tag "$TAG" --force
