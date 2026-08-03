@@ -3,7 +3,7 @@
 
 	header >Cross-Origin-Opener-Policy "same-origin-allow-popups"
 
-	# Invalidate browser HTTP caches once for the v2.9.5 frontend rollout.
+	# Invalidate browser HTTP caches once for the v2.10.0 frontend rollout.
 	@pre_relaunch_cache {
 		not header_regexp Cookie "(^|;\s*)dos_chain_epoch=20260725(;|$)"
 	}
