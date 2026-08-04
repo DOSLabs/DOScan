@@ -117,6 +117,16 @@ class ValidateDocsProductionStatusTest(unittest.TestCase):
     def test_synchronized_repository_passes(self):
         self.assertEqual([], self.module.validate_repository(self.repo))
 
+    def test_dependency_build_workflow_runs_production_docs_validator(self):
+        fixture_root = Path(__file__).resolve().parents[3]
+        workflow = (
+            fixture_root / ".github/workflows/dependency-build.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "python .github/scripts/validate-docs-production-status.py", workflow
+        )
+
     def test_backend_digest_drift_names_the_compose_file(self):
         self.replace(
             "docker-compose/docker-compose-testnet.yml",
