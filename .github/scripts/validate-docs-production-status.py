@@ -884,37 +884,98 @@ def dependency_workflow_errors(text: str, path: Path) -> list[str]:
     workflow_start, workflow_end = mapping_block(
         lines, "workflow-scripts", 2, jobs_start, jobs_end
     )
-    steps_start, steps_end = mapping_block(
-        lines, "steps", 4, workflow_start, workflow_end
+    job_properties = direct_mapping_children(
+        lines,
+        workflow_start,
+        workflow_end,
+        4,
+        "workflow-scripts job property",
     )
+    if "steps" not in job_properties:
+        raise StructureError("missing workflow-scripts steps mapping")
+    steps_value, steps_start, steps_end = job_properties["steps"]
+    if steps_value:
+        raise StructureError("unsupported inline workflow-scripts steps")
+
+    def guard_control_reasons(
+        properties: dict[str, tuple[str, int, int]], scope: str
+    ) -> list[str]:
+        reasons: list[str] = []
+        controls = (("if", "true"), ("continue-on-error", "false"))
+        for key, safe_value in controls:
+            if key not in properties:
+                continue
+            value, child_start, child_end = properties[key]
+            if child_start != child_end:
+                raise StructureError(f"unsupported {scope} {key} structure")
+            actual = parse_scalar(value).lower()
+            if actual != safe_value:
+                reasons.append(f"{scope} {key}: {actual or 'missing'}")
+        return reasons
+
+    job_reasons = guard_control_reasons(job_properties, "job")
+    step_markers = [
+        index
+        for index in range(steps_start, steps_end)
+        if lines[index][1] == 6
+    ]
+    for index in step_markers:
+        if not lines[index][2].startswith("- "):
+            raise StructureError(
+                f"unsupported workflow step at line {lines[index][0]}"
+            )
+
     active_command = False
-    in_step = False
-    for index in range(steps_start, steps_end):
-        _, indent, content = lines[index]
-        if indent == 6:
-            in_step = content.startswith("- ")
+    inactive_reasons: list[str] = []
+    for marker_position, marker_index in enumerate(step_markers):
+        step_end = steps_end
+        if marker_position + 1 < len(step_markers):
+            step_end = step_markers[marker_position + 1]
+        inline_entry = split_yaml_mapping(lines[marker_index][2][2:].strip())
+        if inline_entry is None:
+            raise StructureError(
+                f"unsupported workflow step at line {lines[marker_index][0]}"
+            )
+        step_properties = direct_mapping_children(
+            lines,
+            marker_index + 1,
+            step_end,
+            8,
+            "workflow step property",
+        )
+        inline_key, inline_value = inline_entry
+        if inline_key in step_properties:
+            raise StructureError(f"duplicate workflow step property {inline_key!r}")
+        step_properties[inline_key] = (
+            inline_value,
+            marker_index + 1,
+            marker_index + 1,
+        )
+        if "run" not in step_properties:
             continue
-        if not in_step or indent != 8:
-            continue
-        entry = split_yaml_mapping(content)
-        if entry is None or entry[0] != "run":
-            continue
-        run_value = entry[1]
+        run_value, run_start, run_end = step_properties["run"]
         if run_value in ("|", ">", "|-", ">-"):
-            block_commands: list[str] = []
-            for nested_index in range(index + 1, steps_end):
-                _, nested_indent, nested_content = lines[nested_index]
-                if nested_indent <= 8:
-                    break
-                block_commands.append(nested_content.strip())
-            active_command = VALIDATOR_COMMAND in block_commands
+            block_commands = [
+                lines[index][2].strip()
+                for index in range(run_start, run_end)
+                if lines[index][1] > 8
+            ]
+            runs_validator = VALIDATOR_COMMAND in block_commands
         else:
-            active_command = parse_scalar(run_value) == VALIDATOR_COMMAND
-        if active_command:
+            if run_start != run_end:
+                raise StructureError("unsupported validator run step structure")
+            runs_validator = parse_scalar(run_value) == VALIDATOR_COMMAND
+        if not runs_validator:
+            continue
+        step_reasons = guard_control_reasons(step_properties, "step")
+        if not job_reasons and not step_reasons:
+            active_command = True
             break
+        inactive_reasons.extend(job_reasons + step_reasons)
     if not active_command:
+        actual = ", ".join(dict.fromkeys(inactive_reasons)) or "missing"
         errors.append(
-            diagnostic(path, "active validator run step", VALIDATOR_COMMAND, "missing")
+            diagnostic(path, "active validator run step", VALIDATOR_COMMAND, actual)
         )
     return errors
 

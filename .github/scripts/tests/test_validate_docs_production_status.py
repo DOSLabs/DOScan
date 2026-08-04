@@ -418,6 +418,23 @@ jobs:
             errors, "docs/FEATURES.md", "backend image", BACKEND_IMAGE_WITH_DIFFERENT_DIGEST
         )
 
+    def test_features_current_backend_version_is_not_hidden_by_another_row(self):
+        self.replace(
+            "docs/FEATURES.md",
+            f"| Mainnet | `https://doscan.io` | 7979 | `2.10.0` | `{BACKEND_RUNTIME_VERSION}` |",
+            "| Mainnet | `https://doscan.io` | 7979 | `2.10.0` | `v11.2.2` |",
+        )
+        self.append(
+            "docs/FEATURES.md",
+            f"\nHistorical backend version: `{BACKEND_RUNTIME_VERSION}`.\n",
+        )
+
+        errors = self.module.validate_repository(self.repo)
+
+        self.assert_diagnostic(
+            errors, "docs/FEATURES.md", "backend version (Mainnet)", "v11.2.2"
+        )
+
     def test_changelog_current_release_is_not_hidden_by_history(self):
         self.replace(
             "docs/CHANGELOG.md",
@@ -430,6 +447,37 @@ jobs:
 
         self.assert_diagnostic(errors, "docs/CHANGELOG.md", "frontend version", "2.9.0")
 
+    def test_changelog_current_backend_fields_are_not_hidden_by_history(self):
+        cases = (
+            (
+                f"custom Backend `{BACKEND_RUNTIME_VERSION}`",
+                "custom Backend `v11.2.2`",
+                "backend version",
+                "v11.2.2",
+            ),
+            (
+                f"pin `{BACKEND_IMAGE}`",
+                f"pin `{BACKEND_IMAGE_WITH_DIFFERENT_DIGEST}`",
+                "backend image",
+                BACKEND_IMAGE_WITH_DIFFERENT_DIGEST,
+            ),
+        )
+        original = (self.repo / "docs/CHANGELOG.md").read_text(encoding="utf-8")
+        for old, new, invariant, actual in cases:
+            with self.subTest(invariant=invariant):
+                self.write(
+                    "docs/CHANGELOG.md",
+                    original.replace(old, new)
+                    + f"\nHistorical backend: `{BACKEND_RUNTIME_VERSION}` `{BACKEND_IMAGE}`.\n",
+                )
+
+                errors = self.module.validate_repository(self.repo)
+
+                self.assert_diagnostic(
+                    errors, "docs/CHANGELOG.md", invariant, actual
+                )
+        self.write("docs/CHANGELOG.md", original)
+
     def test_architecture_runtime_pin_is_not_hidden_by_history(self):
         self.replace("docs/DOScan-ARCHITECTURE.md", FRONTEND_IMAGE, STALE_FRONTEND_IMAGE)
         self.append(
@@ -441,6 +489,26 @@ jobs:
 
         self.assert_diagnostic(
             errors, "docs/DOScan-ARCHITECTURE.md", "frontend image", STALE_FRONTEND_IMAGE
+        )
+
+    def test_architecture_current_backend_pin_is_not_hidden_by_history(self):
+        self.replace(
+            "docs/DOScan-ARCHITECTURE.md",
+            f"| Backend | `{BACKEND_IMAGE}` |",
+            f"| Backend | `{BACKEND_IMAGE_WITH_DIFFERENT_DIGEST}` |",
+        )
+        self.append(
+            "docs/DOScan-ARCHITECTURE.md",
+            f"\nHistorical backend pin: `{BACKEND_IMAGE}`.\n",
+        )
+
+        errors = self.module.validate_repository(self.repo)
+
+        self.assert_diagnostic(
+            errors,
+            "docs/DOScan-ARCHITECTURE.md",
+            "backend image",
+            BACKEND_IMAGE_WITH_DIFFERENT_DIGEST,
         )
 
     def test_architecture_gcp_fields_are_not_hidden_by_history(self):
@@ -460,6 +528,32 @@ jobs:
             errors, "docs/DOScan-ARCHITECTURE.md", "GCP_TESTNET_INSTANCE", "stale-host"
         )
 
+    def test_every_architecture_gcp_field_comes_from_the_current_row(self):
+        cases = (
+            ("`doscan-mainnet` | `asia-southeast1-b`", "`stale-mainnet` | `asia-southeast1-b`", "GCP_INSTANCE", "stale-mainnet"),
+            ("`doscan-mainnet` | `asia-southeast1-b`", "`doscan-mainnet` | `stale-zone`", "GCP_ZONE", "stale-zone"),
+            ("`dos-testnet-r0` | `asia-southeast1-a`", "`stale-testnet` | `asia-southeast1-a`", "GCP_TESTNET_INSTANCE", "stale-testnet"),
+            ("`dos-testnet-r0` | `asia-southeast1-a`", "`dos-testnet-r0` | `stale-zone`", "GCP_TESTNET_ZONE", "stale-zone"),
+        )
+        original = (self.repo / "docs/DOScan-ARCHITECTURE.md").read_text(
+            encoding="utf-8"
+        )
+        for old, new, invariant, actual in cases:
+            with self.subTest(invariant=invariant):
+                mutated = original.replace(old, new, 1)
+                self.assertNotEqual(original, mutated)
+                self.write(
+                    "docs/DOScan-ARCHITECTURE.md",
+                    mutated + f"\nHistorical topology: {old}.\n",
+                )
+
+                errors = self.module.validate_repository(self.repo)
+
+                self.assert_diagnostic(
+                    errors, "docs/DOScan-ARCHITECTURE.md", invariant, actual
+                )
+        self.write("docs/DOScan-ARCHITECTURE.md", original)
+
     def test_each_backend_overlay_rejects_a_protected_override(self):
         cases = (
             ("mainnet", "MICROSERVICE_METADATA_ENABLED=false", "metadata enabled", "false"),
@@ -478,6 +572,31 @@ jobs:
                 errors = self.module.validate_repository(self.repo)
                 self.assert_diagnostic(errors, path, invariant, actual)
                 self.write(path, f"# {environment} overrides restored.\n")
+
+    def test_every_referenced_committed_backend_env_file_is_validated(self):
+        cases = (
+            ("mainnet", "MICROSERVICE_METADATA_ENABLED=false", "metadata enabled", "false"),
+            ("testnet", "MICROSERVICE_BENS_ENABLED=true", "BENS disabled", "true"),
+            (
+                "beta",
+                "MICROSERVICE_BENS_PROTOCOLS=dos",
+                "BENS disabled",
+                "dos",
+            ),
+        )
+        for environment, assignment, invariant, actual in cases:
+            with self.subTest(environment=environment):
+                compose_path = f"docker-compose/docker-compose-{environment}.yml"
+                marker = f"      - ./envs/common-blockscout-{environment}.env\n"
+                extra_name = f"extra-blockscout-{environment}.env"
+                extra_reference = f"      - ./envs/{extra_name}\n"
+                self.replace(compose_path, marker, marker + extra_reference)
+                self.write(f"docker-compose/envs/{extra_name}", f"{assignment}\n")
+
+                errors = self.module.validate_repository(self.repo)
+
+                self.assert_diagnostic(errors, extra_name, invariant, actual)
+                self.replace(compose_path, marker + extra_reference, marker)
 
     def test_backend_inline_protected_overrides_are_rejected(self):
         cases = (
@@ -511,21 +630,33 @@ jobs:
                 self.assert_diagnostic(errors, path, invariant, actual)
                 self.replace(path, new, old)
 
-    def test_unresolved_secret_env_source_requires_all_inline_protected_locks(self):
-        self.replace(
-            "docker-compose/docker-compose-beta.yml",
-            '      MICROSERVICE_BENS_PROTOCOLS: ""\n',
-            "",
-        )
-
-        errors = self.module.validate_repository(self.repo)
-
-        self.assert_diagnostic(
-            errors,
-            "docker-compose-beta.yml",
-            "unresolved env source protection",
+    def test_unresolved_secret_env_source_requires_every_inline_protected_lock(self):
+        path = "docker-compose/docker-compose-beta.yml"
+        original = (self.repo / path).read_text(encoding="utf-8")
+        keys = (
+            "MICROSERVICE_METADATA_ENABLED",
+            "MICROSERVICE_BENS_ENABLED",
+            "MICROSERVICE_BENS_URL",
             "MICROSERVICE_BENS_PROTOCOLS",
         )
+        for key in keys:
+            with self.subTest(key=key):
+                line = next(
+                    fixture_line
+                    for fixture_line in original.splitlines(keepends=True)
+                    if fixture_line.strip().startswith(f"{key}:")
+                )
+                self.write(path, original.replace(line, ""))
+
+                errors = self.module.validate_repository(self.repo)
+
+                self.assert_diagnostic(
+                    errors,
+                    "docker-compose-beta.yml",
+                    "unresolved env source protection",
+                    key,
+                )
+        self.write(path, original)
 
     def test_nested_workflow_env_cannot_overwrite_top_level_gcp_value(self):
         self.replace(
@@ -617,6 +748,15 @@ env:
             f"        run: {VALIDATOR_COMMAND}",
             f"        # run: {VALIDATOR_COMMAND}",
         )
+        self.append(
+            ".github/workflows/dependency-build.yml",
+            f"""
+  decoy-job:
+    runs-on: ubuntu-latest
+    steps:
+      - run: {VALIDATOR_COMMAND}
+""",
+        )
 
         errors = self.module.validate_repository(self.repo)
 
@@ -628,21 +768,62 @@ env:
         )
 
     def test_dependency_workflow_requires_the_complete_push_path_set(self):
-        missing_path = "docker-compose/envs/common-blockscout-beta.env"
-        self.replace(
-            ".github/workflows/dependency-build.yml",
-            f'      - "{missing_path}"\n',
-            "",
-        )
+        path = ".github/workflows/dependency-build.yml"
+        original = (self.repo / path).read_text(encoding="utf-8")
+        for missing_path in REQUIRED_PUSH_PATHS:
+            with self.subTest(missing_path=missing_path):
+                line = f'      - "{missing_path}"\n'
+                self.assertIn(line, original)
+                self.write(path, original.replace(line, ""))
 
-        errors = self.module.validate_repository(self.repo)
+                errors = self.module.validate_repository(self.repo)
 
-        self.assert_diagnostic(
-            errors,
-            ".github/workflows/dependency-build.yml",
-            "required push paths",
-            missing_path,
+                self.assert_diagnostic(
+                    errors,
+                    path,
+                    "required push paths",
+                    missing_path,
+                )
+        self.write(path, original)
+
+    def test_validator_job_and_step_must_be_unconditional_and_blocking(self):
+        path = ".github/workflows/dependency-build.yml"
+        original = (self.repo / path).read_text(encoding="utf-8")
+        cases = (
+            (
+                "  workflow-scripts:\n",
+                "  workflow-scripts:\n    if: false\n",
+                "job if: false",
+            ),
+            (
+                "  workflow-scripts:\n",
+                "  workflow-scripts:\n    continue-on-error: true\n",
+                "job continue-on-error: true",
+            ),
+            (
+                "      - name: Validate production documentation status\n",
+                "      - name: Validate production documentation status\n"
+                "        if: false\n",
+                "step if: false",
+            ),
+            (
+                "      - name: Validate production documentation status\n",
+                "      - name: Validate production documentation status\n"
+                "        continue-on-error: true\n",
+                "step continue-on-error: true",
+            ),
         )
+        for old, new, actual in cases:
+            with self.subTest(actual=actual):
+                self.assertIn(old, original)
+                self.write(path, original.replace(old, new, 1))
+
+                errors = self.module.validate_repository(self.repo)
+
+                self.assert_diagnostic(
+                    errors, path, "active validator run step", actual
+                )
+        self.write(path, original)
 
     def test_yaml_block_scalars_may_contain_multiline_shell_quotes(self):
         self.replace(
