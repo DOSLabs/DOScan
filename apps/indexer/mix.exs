@@ -54,7 +54,7 @@ defmodule Indexer.MixProject do
       {:ethereum_jsonrpc, in_umbrella: true},
       {:ex_eth_bls, "~> 0.1.0"},
       # Brotli compression/decompression
-      {:ex_brotli, "~> 0.6.0"},
+      {:ex_brotli, "~> 0.5.0"},
       {:ex_keccak, "~> 0.7.5"},
       # RLP encoding
       {:ex_rlp, "~> 0.6.0"},
@@ -66,7 +66,7 @@ defmodule Indexer.MixProject do
       {:logger_file_backend, "~> 0.0.10"},
       {:logger_json, "~> 7.0"},
       # Mocking `EthereumJSONRPC.Transport`, so we avoid hitting real chains for local testing
-      {:mox, "~> 1.2.0"},
+      {:mox, "~> 1.1.0"},
       {:prometheus_ex, "~> 5.1.0", override: true},
       # Tracing
       {:spandex, "~> 3.0"},
