@@ -98,3 +98,29 @@ class ValidateDocsProductionStatusTest(unittest.TestCase):
         errors = self.module.validate_repository(self.repo)
         self.assertTrue(any("docs/FEATURES.md" in error for error in errors))
         self.assertTrue(any("frontend version" in error for error in errors))
+
+    def test_missing_and_invalid_sources_include_invariant_expected_and_actual(self):
+        (self.repo / "docker-compose/docker-compose-beta.yml").unlink()
+        invalid_frontend_image = "metados/blockscout-frontend:2.10.0"
+        self.replace(
+            "docker-compose/docker-compose-testnet.yml",
+            FRONTEND_IMAGE,
+            invalid_frontend_image,
+        )
+
+        errors = self.module.validate_repository(self.repo)
+
+        missing_source = next(
+            error for error in errors if "docker-compose-beta.yml" in error
+        )
+        self.assertIn("required Compose source", missing_source)
+        self.assertIn("expected 'present'", missing_source)
+        self.assertIn("actual 'missing'", missing_source)
+
+        invalid_pin = next(
+            error
+            for error in errors
+            if "docker-compose-testnet.yml" in error and "frontend immutable image pin" in error
+        )
+        self.assertIn("expected 'tag@sha256:<64 lowercase hexadecimal characters>'", invalid_pin)
+        self.assertIn(f"actual '{invalid_frontend_image}'", invalid_pin)

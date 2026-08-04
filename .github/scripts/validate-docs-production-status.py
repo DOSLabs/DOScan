@@ -21,6 +21,10 @@ STATUS_DOCUMENTS = (
 ARCHITECTURE_DOCUMENT = "docs/DOScan-ARCHITECTURE.md"
 
 
+def diagnostic(path: str, invariant: str, expected: object, actual: object) -> str:
+    return f"{path}: {invariant} expected '{expected}', actual '{actual}'"
+
+
 def read_required(root: Path, relative_path: str) -> str:
     return (root / relative_path).read_text(encoding="utf-8")
 
@@ -77,16 +81,30 @@ def validate_repository(root: Path) -> list[str]:
         try:
             compose = read_required(root, compose_path)
         except FileNotFoundError:
-            errors.append(f"{compose_path}: missing required file")
+            errors.append(
+                diagnostic(compose_path, "required Compose source", "present", "missing")
+            )
             continue
 
         for service in images:
             image = extract_service_image(compose, service)
             if image is None:
-                errors.append(f"{compose_path}: {service} image is missing")
+                errors.append(
+                    diagnostic(
+                        compose_path,
+                        f"{service} image",
+                        "service image key",
+                        "missing",
+                    )
+                )
             elif parse_immutable_image(image) is None:
                 errors.append(
-                    f"{compose_path}: {service} image must be an immutable tag and digest pin"
+                    diagnostic(
+                        compose_path,
+                        f"{service} immutable image pin",
+                        "tag@sha256:<64 lowercase hexadecimal characters>",
+                        image,
+                    )
                 )
             else:
                 images[service][compose_path] = image
@@ -101,7 +119,7 @@ def validate_repository(root: Path) -> list[str]:
         for compose_path, image in service_images.items():
             if image != canonical_image:
                 errors.append(
-                    f"{compose_path}: {service} image expected '{canonical_image}', found '{image}'"
+                    diagnostic(compose_path, f"{service} image", canonical_image, image)
                 )
 
     backend_image = canonical_images.get("backend")
@@ -113,21 +131,38 @@ def validate_repository(root: Path) -> list[str]:
         try:
             document = read_required(root, document_path)
         except FileNotFoundError:
-            errors.append(f"{document_path}: missing required file")
+            errors.append(
+                diagnostic(
+                    document_path,
+                    "required production status document",
+                    "present",
+                    "missing",
+                )
+            )
             continue
 
         if backend_image is not None and backend_image not in document:
             errors.append(
-                f"{document_path}: backend image expected '{backend_image}', actual token not found"
+                diagnostic(document_path, "backend image", backend_image, "token not found")
             )
         if frontend_version is not None and frontend_version not in document:
             errors.append(
-                f"{document_path}: frontend version expected '{frontend_version}', actual token not found"
+                diagnostic(
+                    document_path,
+                    "frontend version",
+                    frontend_version,
+                    "token not found",
+                )
             )
         if document_path == ARCHITECTURE_DOCUMENT and frontend_image is not None:
             if frontend_image not in document:
                 errors.append(
-                    f"{document_path}: frontend image expected '{frontend_image}', actual token not found"
+                    diagnostic(
+                        document_path,
+                        "frontend image",
+                        frontend_image,
+                        "token not found",
+                    )
                 )
 
     return errors
