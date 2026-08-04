@@ -788,16 +788,20 @@ def validate_protected_values(
     path: Path,
     errors: list[str],
     require_metadata: bool,
+    invariant_prefix: str = "",
 ) -> None:
     for key, expected in PROTECTED_BACKEND_ENV.items():
         actual = values.get(key)
         if actual is None and (not require_metadata or key != "MICROSERVICE_METADATA_ENABLED"):
             continue
         if actual != expected:
+            invariant = protected_invariant(key)
+            if invariant_prefix:
+                invariant = f"{invariant_prefix} {invariant}"
             errors.append(
                 diagnostic(
                     path,
-                    protected_invariant(key),
+                    invariant,
                     expected,
                     actual if actual is not None else "missing",
                 )
@@ -811,12 +815,15 @@ def validate_backend_sources(
     env_cache: dict[str, dict[str, str] | None],
     errors: list[str],
 ) -> None:
-    unresolved_sources: list[str] = []
+    effective_values: dict[str, str | None] = {}
+    canonical_source_referenced = False
     for reference in backend["env_files"]:
         local_path, unresolved = local_env_reference(compose_path, reference)
-        if unresolved:
-            unresolved_sources.append(reference)
-        if local_path is None or local_path == COMMON_BLOCKSCOUT_ENV:
+        if local_path == COMMON_BLOCKSCOUT_ENV and not unresolved:
+            canonical_source_referenced = True
+        if local_path is None:
+            for key in PROTECTED_BACKEND_ENV:
+                effective_values[key] = "unresolved"
             continue
         if local_path not in env_cache:
             try:
@@ -834,25 +841,44 @@ def validate_backend_sources(
                     diagnostic(Path(local_path), "env structure", "supported env", str(error))
                 )
         values = env_cache.get(local_path)
-        if values is not None:
+        if values is not None and local_path != COMMON_BLOCKSCOUT_ENV:
             validate_protected_values(values, Path(local_path), errors, False)
+        if unresolved:
+            for key in PROTECTED_BACKEND_ENV:
+                effective_values[key] = "unresolved"
+        elif values is not None:
+            for key in PROTECTED_BACKEND_ENV:
+                if key in values:
+                    effective_values[key] = values[key]
 
     inline_environment = backend["environment"]
     validate_protected_values(
         inline_environment, Path(compose_path), errors, require_metadata=False
     )
-    if unresolved_sources:
-        for key, expected in PROTECTED_BACKEND_ENV.items():
-            actual = inline_environment.get(key)
-            if actual != expected:
-                errors.append(
-                    diagnostic(
-                        Path(compose_path),
-                        f"unresolved env source protection ({key})",
-                        f"{key}={expected!r} pinned in backend environment",
-                        f"{key}={actual!r}; sources={unresolved_sources!r}",
-                    )
-                )
+    for key in PROTECTED_BACKEND_ENV:
+        if key in inline_environment:
+            inline_value = inline_environment[key]
+            effective_values[key] = (
+                inline_value if inline_value is not None else "unresolved"
+            )
+
+    if not canonical_source_referenced:
+        errors.append(
+            diagnostic(
+                Path(compose_path),
+                "canonical backend env source",
+                COMMON_BLOCKSCOUT_ENV,
+                "missing",
+            )
+        )
+
+    validate_protected_values(
+        effective_values,
+        Path(compose_path),
+        errors,
+        require_metadata=True,
+        invariant_prefix="effective",
+    )
 
 
 def dependency_workflow_errors(text: str, path: Path) -> list[str]:

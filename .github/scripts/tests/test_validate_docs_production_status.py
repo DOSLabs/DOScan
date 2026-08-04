@@ -630,16 +630,16 @@ jobs:
                 self.assert_diagnostic(errors, path, invariant, actual)
                 self.replace(path, new, old)
 
-    def test_unresolved_secret_env_source_requires_every_inline_protected_lock(self):
+    def test_unresolved_secret_env_source_requires_every_protected_value_resolved(self):
         path = "docker-compose/docker-compose-beta.yml"
         original = (self.repo / path).read_text(encoding="utf-8")
-        keys = (
-            "MICROSERVICE_METADATA_ENABLED",
-            "MICROSERVICE_BENS_ENABLED",
-            "MICROSERVICE_BENS_URL",
-            "MICROSERVICE_BENS_PROTOCOLS",
+        cases = (
+            ("MICROSERVICE_METADATA_ENABLED", "effective metadata enabled"),
+            ("MICROSERVICE_BENS_ENABLED", "effective BENS disabled"),
+            ("MICROSERVICE_BENS_URL", "effective BENS disabled"),
+            ("MICROSERVICE_BENS_PROTOCOLS", "effective BENS disabled"),
         )
-        for key in keys:
+        for key, invariant in cases:
             with self.subTest(key=key):
                 line = next(
                     fixture_line
@@ -653,10 +653,133 @@ jobs:
                 self.assert_diagnostic(
                     errors,
                     "docker-compose-beta.yml",
-                    "unresolved env source protection",
-                    key,
+                    invariant,
+                    "unresolved",
                 )
         self.write(path, original)
+
+    def test_committed_source_after_secret_can_resolve_every_protected_key(self):
+        path = "docker-compose/docker-compose-mainnet.yml"
+        original = (self.repo / path).read_text(encoding="utf-8")
+        inline_environment = (
+            "    environment:\n"
+            '      MICROSERVICE_METADATA_ENABLED: "true"\n'
+            '      MICROSERVICE_BENS_ENABLED: "false"\n'
+            '      MICROSERVICE_BENS_URL: ""\n'
+            '      MICROSERVICE_BENS_PROTOCOLS: ""\n'
+        )
+        marker = "      - ./envs/common-blockscout-mainnet.env\n"
+        late_reference = "      - ./envs/protected-locks.env\n"
+        self.assertIn(inline_environment, original)
+        self.assertIn(marker, original)
+        self.write(
+            path,
+            original.replace(marker, marker + late_reference).replace(
+                inline_environment, ""
+            ),
+        )
+        self.write(
+            "docker-compose/envs/protected-locks.env",
+            "MICROSERVICE_METADATA_ENABLED=true\n"
+            "MICROSERVICE_BENS_ENABLED=false\n"
+            "MICROSERVICE_BENS_URL=\n"
+            "MICROSERVICE_BENS_PROTOCOLS=\n",
+        )
+
+        self.assertEqual([], self.module.validate_repository(self.repo))
+
+    def test_key_only_inline_environment_is_unresolved_not_disabled(self):
+        path = "docker-compose/docker-compose-testnet.yml"
+        original = (self.repo / path).read_text(encoding="utf-8")
+        mapping = '      MICROSERVICE_BENS_ENABLED: "false"\n'
+        environment_block = (
+            "    environment:\n"
+            '      MICROSERVICE_METADATA_ENABLED: "true"\n'
+            '      MICROSERVICE_BENS_ENABLED: "false"\n'
+            '      MICROSERVICE_BENS_URL: ""\n'
+            '      MICROSERVICE_BENS_PROTOCOLS: ""\n'
+        )
+        list_environment = (
+            "    environment:\n"
+            "      - MICROSERVICE_METADATA_ENABLED=true\n"
+            "      - MICROSERVICE_BENS_ENABLED\n"
+            "      - MICROSERVICE_BENS_URL=\n"
+            "      - MICROSERVICE_BENS_PROTOCOLS=\n"
+        )
+        mutations = (
+            original.replace(mapping, "      MICROSERVICE_BENS_ENABLED:\n"),
+            original.replace(environment_block, list_environment),
+        )
+        for style, mutated in zip(("mapping", "list"), mutations, strict=True):
+            with self.subTest(style=style):
+                self.assertNotEqual(original, mutated)
+                self.write(path, mutated)
+
+                errors = self.module.validate_repository(self.repo)
+
+                self.assert_diagnostic(
+                    errors, path, "effective BENS disabled", "unresolved"
+                )
+        self.write(path, original)
+
+    def test_backend_without_env_files_or_inline_locks_fails_closed(self):
+        path = "docker-compose/docker-compose-testnet.yml"
+        env_files = (
+            "    env_file:\n"
+            "      - ./envs/common-blockscout.env\n"
+            "      - ${DOSCAN_BLOCKSCOUT_SECRETS_ENV:-/run/secrets/blockscout.env}\n"
+            "      - ./envs/common-blockscout-testnet.env\n"
+        )
+        inline_environment = (
+            "    environment:\n"
+            '      MICROSERVICE_METADATA_ENABLED: "true"\n'
+            '      MICROSERVICE_BENS_ENABLED: "false"\n'
+            '      MICROSERVICE_BENS_URL: ""\n'
+            '      MICROSERVICE_BENS_PROTOCOLS: ""\n'
+        )
+        original = (self.repo / path).read_text(encoding="utf-8")
+        self.assertIn(env_files, original)
+        self.assertIn(inline_environment, original)
+        self.write(path, original.replace(env_files, "").replace(inline_environment, ""))
+
+        errors = self.module.validate_repository(self.repo)
+
+        self.assert_diagnostic(
+            errors, path, "canonical backend env source", "missing"
+        )
+        self.assert_diagnostic(
+            errors, path, "effective metadata enabled", "missing"
+        )
+
+    def test_backend_must_reference_the_canonical_common_env(self):
+        path = "docker-compose/docker-compose-mainnet.yml"
+        self.replace(path, "      - ./envs/common-blockscout.env\n", "")
+
+        errors = self.module.validate_repository(self.repo)
+
+        self.assert_diagnostic(
+            errors, path, "canonical backend env source", "missing"
+        )
+
+    def test_effective_backend_metadata_must_not_be_missing(self):
+        path = "docker-compose/docker-compose-testnet.yml"
+        self.replace(
+            "docker-compose/envs/common-blockscout.env",
+            "MICROSERVICE_METADATA_ENABLED=true\n",
+            "# MICROSERVICE_METADATA_ENABLED=\n",
+        )
+        self.replace(
+            path,
+            "      - ${DOSCAN_BLOCKSCOUT_SECRETS_ENV:-/run/secrets/blockscout.env}\n",
+            "",
+        )
+        self.replace(path, '      MICROSERVICE_METADATA_ENABLED: "true"\n', "")
+
+        errors = self.module.validate_repository(self.repo)
+
+        self.assert_diagnostic(
+            errors, path, "effective metadata enabled", "missing"
+        )
 
     def test_nested_workflow_env_cannot_overwrite_top_level_gcp_value(self):
         self.replace(
