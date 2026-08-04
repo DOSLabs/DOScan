@@ -4,6 +4,45 @@ All notable changes to DOScan (DOS Chain Block Explorer) are documented in this 
 
 ---
 
+## [2026-08-04] - Production Documentation and Runtime Baseline
+
+### Deployed
+
+- Mainnet and Testnet run Frontend `2.10.0` and custom Backend `v11.2.3.+commit.86fd0dd5` on GCP.
+- Both production Compose files pin `ghcr.io/dos/doscan:11.2.3.commit.86fd0dd5@sha256:423bab078a679d3290cc6e276774a8ed201686636933e0d066ce9859270f700d`.
+- Mainnet runs on `doscan-mainnet` in `asia-southeast1-b`.
+- Testnet runs on `dos-testnet-r0` in `asia-southeast1-a`.
+- Beta runs as an isolated Compose stack on the Mainnet GCP VM. Its application state is separate from Mainnet, while it uses the local Mainnet archive RPC.
+
+### Added
+
+- Enabled the Blockscout Metadata Service in the backend and exposed it through same-origin Caddy proxies on Mainnet and Testnet.
+- Enabled NFT Media Handler with GCS storage and separate `mainnet/nft-media` and `testnet/nft-media` prefixes.
+- Deployed Interchain Indexer v1.6.0 on Mainnet for DOS Chain and Avalanche C-Chain messages.
+- Documented the current GCP deployment, edge routing, service layout, data isolation, and CI/CD flow.
+
+### Changed
+
+- Updated the production frontend to `2.10.0`.
+- Updated the backend baseline to Blockscout `11.2.3` plus custom commit `86fd0dd5`.
+- Replaced stale Azure and local WSL2 architecture guidance with the active GCP topology.
+- Corrected feature status: the admin panel and BENS are disabled, while Metadata Service is enabled.
+
+### Fixed
+
+- Commit `86fd0dd5` omits a missing original thumbnail for NFT videos instead of returning an invalid original-thumbnail value.
+- Production validation now checks backend health, version, Metadata proxy behavior, and environment-specific service routes.
+
+### Verified
+
+- Mainnet and Testnet `/api/v2/stats` returned HTTP 200.
+- Mainnet and Testnet `/api/v2/config/backend-version` returned `v11.2.3.+commit.86fd0dd5`.
+- Docker inspection showed both backend containers running and healthy on the pinned custom image.
+- Mainnet and Testnet Metadata proxy probes returned HTTP 200 with an `addresses` object.
+- Deploy Config run `30878181874` completed successfully for Mainnet and Testnet.
+
+---
+
 ## [2026-02-01] - Testnet Feature Expansion
 
 ### Added
@@ -109,23 +148,21 @@ USER_OPS_INDEXER__DATABASE__CONNECT__URL: postgresql://postgres:@host.docker.int
 
 ---
 
-## Pending / Roadmap
+## Current Follow-up
 
-### Mainnet Deployment
-- [ ] Deploy to mainnet (Chain ID: 7979)
-- [ ] Configure `doscan.io` domain
-- [ ] Set up production database
+### Product prerequisites
 
-### Features to Enable
-- [ ] Validators List (requires custom implementation for Avalanche L1)
-- [ ] My Account full integration with Auth0
-- [ ] Export to CSV feature
-- [ ] Public tag submission
+- [ ] Add a Validators view only after an Avalanche L1-compatible implementation exists.
+- [ ] Enable user accounts only after a supported identity and email stack is selected.
+- [ ] Enable CSV export only after the export service and anti-abuse configuration are deployed.
+- [ ] Register DEX pools only after official or verified DOSwap Factory and Pair contracts with liquidity are available.
+- [ ] Enable BENS only after a DOS name-service protocol and adapter are available for the deployed chains.
 
-### Infrastructure
-- [ ] Set up monitoring (Prometheus/Grafana)
-- [ ] Configure automated backups
-- [ ] Set up CI/CD pipeline
+### Operations
+
+- [ ] Keep production image pins immutable by tag and digest.
+- [ ] Keep automated database backup and restore validation documented and tested.
+- [ ] Keep public, container, and deployment-workflow evidence aligned when changing runtime status documentation.
 
 ---
 
@@ -133,5 +170,6 @@ USER_OPS_INDEXER__DATABASE__CONNECT__URL: postgresql://postgres:@host.docker.int
 
 | Date | Frontend | Backend | Notes |
 |------|----------|---------|-------|
+| 2026-08-04 | 2.10.0 | 11.2.3 + `86fd0dd5` | Current GCP production baseline |
 | 2026-02-01 | latest | latest | Feature expansion |
 | 2026-01-30 | v2.6.0 | v9.0.2 | Initial testnet launch |
