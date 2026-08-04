@@ -184,6 +184,32 @@ class ValidateDocsProductionStatusTest(unittest.TestCase):
 
         self.assertEqual([], self.module.validate_repository(self.repo))
 
+    def test_inline_comment_bens_enablement_is_rejected(self):
+        self.append(
+            "docker-compose/envs/common-blockscout.env",
+            "MICROSERVICE_BENS_ENABLED=true # active deployment comment\n",
+        )
+
+        errors = self.module.validate_repository(self.repo)
+
+        self.assertTrue(any("BENS disabled" in error for error in errors))
+
+    def test_missing_required_frontend_env_files_are_diagnosed(self):
+        frontend_env_files = (
+            "common-frontend.env",
+            "common-frontend-scan.env",
+            "common-frontend-testnet.env",
+            "common-frontend-beta.env",
+        )
+        for filename in frontend_env_files:
+            (self.repo / "docker-compose/envs" / filename).unlink()
+
+        errors = self.module.validate_repository(self.repo)
+
+        self.assertEqual(4, sum("missing required file" in error for error in errors))
+        for filename in frontend_env_files:
+            self.assertTrue(any(filename in error for error in errors))
+
     def test_active_bens_values_and_frontend_name_service_host_are_rejected(self):
         self.append(
             "docker-compose/envs/common-blockscout.env",

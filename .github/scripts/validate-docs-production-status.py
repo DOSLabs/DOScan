@@ -33,6 +33,12 @@ BENS_KEYS = (
     "MICROSERVICE_BENS_PROTOCOLS",
 )
 NAME_SERVICE_API_HOST = "NEXT_PUBLIC_NAME_SERVICE_API_HOST"
+FRONTEND_ENV_FILES = (
+    "docker-compose/envs/common-frontend.env",
+    "docker-compose/envs/common-frontend-scan.env",
+    "docker-compose/envs/common-frontend-testnet.env",
+    "docker-compose/envs/common-frontend-beta.env",
+)
 
 
 def diagnostic(path: Path, invariant: str, expected: object, actual: object) -> str:
@@ -227,7 +233,7 @@ def validate_repository(root: Path) -> list[str]:
         for key in BENS_KEYS:
             value = blockscout_env.get(key)
             is_active = (
-                value == "true"
+                value is not None and value != "false"
                 if key == "MICROSERVICE_BENS_ENABLED"
                 else bool(value)
             )
@@ -241,14 +247,25 @@ def validate_repository(root: Path) -> list[str]:
                     )
                 )
 
-    frontend_env_directory = root / "docker-compose/envs"
-    for frontend_env_path in sorted(frontend_env_directory.glob("common-frontend*.env")):
-        frontend_env = read_env(frontend_env_path)
+    for frontend_env_file in FRONTEND_ENV_FILES:
+        frontend_env_path = root / frontend_env_file
+        try:
+            frontend_env = read_env(frontend_env_path)
+        except FileNotFoundError:
+            errors.append(
+                diagnostic(
+                    Path(frontend_env_file),
+                    "missing required file",
+                    "present",
+                    "missing",
+                )
+            )
+            continue
         name_service_api_host = frontend_env.get(NAME_SERVICE_API_HOST)
         if name_service_api_host:
             errors.append(
                 diagnostic(
-                    frontend_env_path.relative_to(root),
+                    Path(frontend_env_file),
                     f"{NAME_SERVICE_API_HOST} disabled",
                     "unset",
                     name_service_api_host,
