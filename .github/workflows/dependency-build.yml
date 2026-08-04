@@ -19,6 +19,7 @@ on:
       - "docker-compose/envs/common-blockscout.env"
       - "docker-compose/envs/common-blockscout-mainnet.env"
       - "docker-compose/envs/common-blockscout-testnet.env"
+      - "docker-compose/envs/common-blockscout-beta.env"
       - "docker-compose/envs/common-frontend*.env"
       - "docs/FEATURES.md"
       - "docs/CHANGELOG.md"

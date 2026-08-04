@@ -62,6 +62,11 @@ services:
       - ./envs/common-blockscout.env
       - ${DOSCAN_BLOCKSCOUT_SECRETS_ENV:-./envs/common-blockscout.env}
       - ./envs/common-blockscout-mainnet.env
+    environment:
+      MICROSERVICE_METADATA_ENABLED: "true"
+      MICROSERVICE_BENS_ENABLED: "false"
+      MICROSERVICE_BENS_URL: ""
+      MICROSERVICE_BENS_PROTOCOLS: ""
     links:
       - db:database
     healthcheck:
