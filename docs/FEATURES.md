@@ -1,218 +1,119 @@
-# DOScan Features Summary
+# DOScan Feature Status
 
-Tổng hợp các tính năng Blockscout đã bật/chưa bật cho DOS Chain Testnet.
+This document records the deployed feature baseline for DOScan Mainnet and Testnet.
 
-**Last Updated:** 2026-02-02
+**Last verified:** 2026-08-04
 
----
+## Runtime Baseline
 
-## Frontend Features
+| Environment | Explorer | Chain ID | Frontend | Backend | Runtime status |
+|---|---|---:|---|---|---|
+| Mainnet | `https://doscan.io` | 7979 | `2.10.0` | `v11.2.3.+commit.86fd0dd5` | HTTP 200, backend healthy |
+| Testnet | `https://test.doscan.io` | 3939 | `2.10.0` | `v11.2.3.+commit.86fd0dd5` | HTTP 200, backend healthy |
 
-### App Configuration
-| Feature | Env Variable | Status | Notes |
-|---------|--------------|--------|-------|
-| App Protocol | `NEXT_PUBLIC_APP_PROTOCOL` | ✅ `https` | |
-| App Host | `NEXT_PUBLIC_APP_HOST` | ✅ `test.doscan.io` | |
-| App Environment | `NEXT_PUBLIC_APP_ENV` | ✅ `production` | |
+Both production environments pin the custom backend image below:
 
-### Blockchain Parameters
-| Feature | Env Variable | Status | Notes |
-|---------|--------------|--------|-------|
-| Network Name | `NEXT_PUBLIC_NETWORK_NAME` | ✅ `DOS Chain Testnet` | |
-| Network ID | `NEXT_PUBLIC_NETWORK_ID` | ✅ `3939` | |
-| Network RPC | `NEXT_PUBLIC_NETWORK_RPC_URL` | ✅ `https://test.doschain.com` | |
-| Currency Symbol | `NEXT_PUBLIC_NETWORK_CURRENCY_SYMBOL` | ✅ `DOS` | |
-| Testnet Indicator | `NEXT_PUBLIC_IS_TESTNET` | ✅ `true` | |
-| Token Standard | `NEXT_PUBLIC_NETWORK_TOKEN_STANDARD_NAME` | ✅ `ERC` | |
-| Multiple Gas Currencies | `NEXT_PUBLIC_NETWORK_MULTIPLE_GAS_CURRENCIES` | ❌ | Not needed |
+```text
+ghcr.io/dos/doscan:11.2.3.commit.86fd0dd5@sha256:423bab078a679d3290cc6e276774a8ed201686636933e0d066ce9859270f700d
+```
 
-### UI - Homepage
-| Feature | Env Variable | Status | Notes |
-|---------|--------------|--------|-------|
-| Homepage Charts | `NEXT_PUBLIC_HOMEPAGE_CHARTS` | ✅ `['daily_txs']` | |
-| Homepage Stats | `NEXT_PUBLIC_HOMEPAGE_STATS` | ✅ 5 widgets | total_blocks, avg_block_time, total_txs, wallet_addresses, gas_tracker |
-| Hero Plate Background | `NEXT_PUBLIC_HOMEPAGE_PLATE_BACKGROUND` | ✅ Custom gradient | |
-| Hero Banner | `NEXT_PUBLIC_HOMEPAGE_HERO_BANNER_CONFIG` | ❌ | Optional |
-
-### UI - Branding
-| Feature | Env Variable | Status | Notes |
-|---------|--------------|--------|-------|
-| Network Logo | `NEXT_PUBLIC_NETWORK_LOGO` | ✅ Custom | |
-| Network Logo Dark | `NEXT_PUBLIC_NETWORK_LOGO_DARK` | ✅ Custom | |
-| Network Icon | `NEXT_PUBLIC_NETWORK_ICON` | ✅ Custom | |
-| Favicon | `FAVICON_MASTER_URL` | ✅ Custom | |
-| Footer Links | `NEXT_PUBLIC_FOOTER_LINKS` | ✅ Custom JSON | |
-| Featured Networks | `NEXT_PUBLIC_FEATURED_NETWORKS` | ✅ Custom JSON | |
-
-### UI - Views
-| Feature | Env Variable | Status | Notes |
-|---------|--------------|--------|-------|
-| SolidityScan | `NEXT_PUBLIC_VIEWS_CONTRACT_SOLIDITYSCAN_ENABLED` | ✅ Enabled | Security scoring |
-| Token Scam Toggle | `NEXT_PUBLIC_VIEWS_TOKEN_SCAM_TOGGLE_ENABLED` | ✅ Enabled | |
-| NFT Marketplaces | `NEXT_PUBLIC_VIEWS_NFT_MARKETPLACES` | ✅ OverMint | |
-| Contract IDEs | `NEXT_PUBLIC_CONTRACT_CODE_IDES` | ✅ Remix IDE | |
-| Network Explorers | `NEXT_PUBLIC_NETWORK_EXPLORERS` | ✅ Configured | |
-
-### Core Features
-| Feature | Env Variable | Status | Notes |
-|---------|--------------|--------|-------|
-| Gas Tracker | `NEXT_PUBLIC_GAS_TRACKER_ENABLED` | ✅ Enabled | |
-| Advanced Filter | `NEXT_PUBLIC_ADVANCED_FILTER_ENABLED` | ✅ Enabled | |
-| API Documentation | `NEXT_PUBLIC_API_DOCS_TABS` | ✅ rest, eth_rpc, graphql | |
-
-### Account & Auth
-| Feature | Env Variable | Status | Notes |
-|---------|--------------|--------|-------|
-| My Account | `NEXT_PUBLIC_IS_ACCOUNT_SUPPORTED` | ✅ Enabled | |
-| Auth0 Integration | `NEXT_PUBLIC_AUTH0_CLIENT_ID` | ✅ Configured | Deprecated but working |
-| Address Verification | `NEXT_PUBLIC_CONTRACT_INFO_API_HOST` | ✅ Blockscout service | |
-
-### Blockchain Interaction
-| Feature | Env Variable | Status | Notes |
-|---------|--------------|--------|-------|
-| WalletConnect | `NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID` | ✅ Configured | |
-| Web3 Wallets | `NEXT_PUBLIC_WEB3_WALLETS` | ✅ 6 wallets | metamask, rabby, coinbase, trust, okx, token_pocket |
-| Add Token to Wallet | `NEXT_PUBLIC_WEB3_DISABLE_ADD_TOKEN_TO_WALLET` | ✅ Enabled | |
-| Transaction Interpretation | `NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER` | ✅ Blockscout | |
-
-### Microservice Integrations
-| Feature | Env Variable | Status | Notes |
-|---------|--------------|--------|-------|
-| User Operations (ERC-4337) | `NEXT_PUBLIC_HAS_USER_OPS` | ✅ Enabled | `https://test-ops.doscan.io` |
-| Blockchain Statistics | `NEXT_PUBLIC_STATS_API_HOST` | ✅ Enabled | `https://test-stats.doscan.io` |
-| Sol2UML Visualizer | `NEXT_PUBLIC_VISUALIZE_API_HOST` | ✅ Enabled | `https://viz-beta.doscan.io` |
-| Name Service | `NEXT_PUBLIC_NAME_SERVICE_API_HOST` | ✅ Blockscout BENS | |
-
-### Marketplace
-| Feature | Env Variable | Status | Notes |
-|---------|--------------|--------|-------|
-| DApp Marketplace | `NEXT_PUBLIC_MARKETPLACE_ENABLED` | ✅ Enabled | |
-| Marketplace Config | `NEXT_PUBLIC_MARKETPLACE_CONFIG_URL` | ✅ Custom JSON | |
-| Submit Form | `NEXT_PUBLIC_MARKETPLACE_SUBMIT_FORM` | ✅ Google Form | |
-| Categories | `NEXT_PUBLIC_MARKETPLACE_CATEGORIES_URL` | ✅ Custom JSON | |
-
-### Additional Features
-| Feature | Env Variable | Status | Notes |
-|---------|--------------|--------|-------|
-| DEX Pools | `NEXT_PUBLIC_DEX_POOLS_ENABLED` | ✅ Enabled | |
-| Hot Contracts | `NEXT_PUBLIC_HOT_CONTRACTS_ENABLED` | ✅ Enabled | |
-| Bridged Tokens | `NEXT_PUBLIC_BRIDGED_TOKENS_CHAINS` | ✅ Ethereum | |
-| Get Gas Button | `NEXT_PUBLIC_GAS_REFUEL_PROVIDER_CONFIG` | ✅ DOS Faucet | |
-| Google Analytics | `NEXT_PUBLIC_GOOGLE_ANALYTICS_PROPERTY_ID` | ✅ Configured | |
-
-### Features NOT Enabled (Optional)
-| Feature | Env Variable | Reason |
-|---------|--------------|--------|
-| Beacon Chain | `NEXT_PUBLIC_HAS_BEACON_CHAIN` | Not applicable (not Ethereum) |
-| Rollup Features | `NEXT_PUBLIC_ROLLUP_TYPE` | Not a rollup |
-| Data Availability | `NEXT_PUBLIC_DATA_AVAILABILITY_ENABLED` | No EIP-4844 blobs |
-| Validators List | `NEXT_PUBLIC_VALIDATORS_CHAIN_TYPE` | Avalanche L1 uses PoA |
-| SUAVE Chain | `NEXT_PUBLIC_IS_SUAVE_CHAIN` | Not SUAVE |
-| Celo Features | `NEXT_PUBLIC_CELO_ENABLED` | Not Celo |
-| Banner Ads | `NEXT_PUBLIC_AD_BANNER_PROVIDER` | Disabled (none) |
-| Text Ads | `NEXT_PUBLIC_AD_TEXT_PROVIDER` | Disabled (none) |
-| Mixpanel | `NEXT_PUBLIC_MIXPANEL_PROJECT_TOKEN` | Optional analytics |
-| GrowthBook | `NEXT_PUBLIC_GROWTH_BOOK_CLIENT_KEY` | Optional A/B testing |
-| MetaSuites | `NEXT_PUBLIC_METASUITES_ENABLED` | Optional extension |
-| Multichain Balance | `NEXT_PUBLIC_MULTICHAIN_BALANCE_PROVIDER_CONFIG` | Future feature |
-| DeFi Dropdown | `NEXT_PUBLIC_DEFI_DROPDOWN_ITEMS` | No DeFi apps yet |
-| CSV Export | Requires reCAPTCHA | Not configured |
-
----
+Commit `86fd0dd5` fixes NFT video media processing so a missing original thumbnail is omitted instead of emitting an invalid value.
 
 ## Backend Features
 
-### Core Services
-| Feature | Env Variable | Status | Notes |
-|---------|--------------|--------|-------|
-| API v2 | `API_V2_ENABLED` | ✅ Default | |
-| API v1 Read | `API_V1_READ_METHODS_DISABLED` | ✅ Enabled | |
-| API v1 Write | `API_V1_WRITE_METHODS_DISABLED` | ✅ Enabled | |
-| GraphQL API | `API_GRAPHQL_ENABLED` | ✅ Enabled | |
-| Admin Panel | `ADMIN_PANEL_ENABLED` | ✅ Enabled | |
+### APIs and Access
 
-### Indexer Settings
-| Feature | Env Variable | Status | Notes |
-|---------|--------------|--------|-------|
-| Internal Transactions | `INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER` | ✅ Enabled (false) | |
-| Pending Transactions | `INDEXER_DISABLE_PENDING_TRANSACTIONS_FETCHER` | ✅ Enabled (false) | |
-| Token Instance Fetchers | Various | ✅ Enabled | realtime, retry, sanitize |
-| Block Reward Fetcher | `INDEXER_DISABLE_BLOCK_REWARD_FETCHER` | ✅ Default | |
+| Feature | Configuration | Mainnet | Testnet | Notes |
+|---|---|---|---|---|
+| API v2 | Default Blockscout API | Enabled | Enabled | `/api/v2/stats` and `/api/v2/config/backend-version` return HTTP 200 |
+| API v1 read methods | `API_V1_READ_METHODS_DISABLED=false` | Enabled | Enabled | Shared base configuration |
+| API v1 write methods | `API_V1_WRITE_METHODS_DISABLED=false` | Enabled | Enabled | Shared base configuration |
+| GraphQL API | `API_GRAPHQL_ENABLED=true` | Enabled | Enabled | Shared base configuration |
+| Public metrics | `/public-metrics` route | Enabled | Enabled | Checked by the deployment workflow |
+| Admin panel | `ADMIN_PANEL_ENABLED=false` | Disabled | Disabled | Deliberately not exposed in production |
+| Proxy-aware API rate limiting | `API_RATE_LIMIT_IS_BLOCKSCOUT_BEHIND_PROXY=true` | Enabled | Enabled | Uses Cloudflare and forwarded client IP headers |
 
-### Microservices
-| Service | Env Variables | Status | URL |
-|---------|---------------|--------|-----|
-| Smart Contract Verifier | `MICROSERVICE_SC_VERIFIER_*` | ✅ Enabled | eth-bytecode-db.services.blockscout.com |
-| Visualizer (Sol2UML) | `MICROSERVICE_VISUALIZE_SOL2UML_*` | ✅ Enabled | http://visualizer:8050/ |
-| Sig Provider | `MICROSERVICE_SIG_PROVIDER_*` | ✅ Enabled | http://sig-provider:8050/ |
-| Account Abstraction | `MICROSERVICE_ACCOUNT_ABSTRACTION_*` | ✅ Enabled | http://host.docker.internal:8090/ |
+### Indexing
 
-### External Integrations
-| Feature | Env Variable | Status | Notes |
-|---------|--------------|--------|-------|
-| Sourcify | `SOURCIFY_INTEGRATION_ENABLED` | ✅ Enabled | sourcify.dev |
-| Decode Non-Contract Calls | `DECODE_NOT_A_CONTRACT_CALLS` | ✅ Enabled | |
+| Feature | Mainnet | Testnet | Notes |
+|---|---|---|---|
+| Blocks and transactions | Enabled | Enabled | Core Blockscout indexer |
+| Internal transactions | Enabled | Disabled | Testnet RPC does not expose the required debug tracing interface |
+| Pending transactions | Enabled | Disabled | Testnet RPC does not expose `txpool_content` |
+| Cataloged token updater | Enabled | Enabled | `INDEXER_DISABLE_CATALOGED_TOKEN_UPDATER_FETCHER=false` |
+| Token instance metadata processing | Enabled | Enabled | Includes retry, refetch, sanitization, and NFT media integration |
+| Market data | Disabled | Disabled | `DISABLE_MARKET=true`; DOS is not sourced from a configured market provider |
 
-### Features NOT Enabled (Optional)
-| Feature | Env Variable | Reason |
-|---------|--------------|--------|
-| BENS (ENS) | `MICROSERVICE_BENS_*` | No ENS on DOS Chain |
-| Multichain Search | `MICROSERVICE_MULTICHAIN_SEARCH_*` | Single chain |
-| Metadata Service | `MICROSERVICE_METADATA_*` | Optional |
-| Noves.fi | `NOVES_FI_*` | Optional tx interpretation |
-| Tenderly | `SHOW_TENDERLY_LINK` | Optional debugging |
-| Datadog | `DATADOG_*` | Optional monitoring |
-| MUD Framework | `MUD_*` | Not using MUD |
-| Stylus Verifier | `MICROSERVICE_STYLUS_VERIFIER_URL` | Not Arbitrum |
-| Xname | `XNAME_*` | Optional humanity score |
+### Backend Integrations and Services
 
----
+| Service or integration | Mainnet | Testnet | Runtime path |
+|---|---|---|---|
+| Smart Contract Verifier | Enabled | Enabled | `smart-contract-verifier:8050` |
+| Sol2UML Visualizer | Enabled | Enabled | `visualizer:8050` |
+| Signature Provider | Enabled | Enabled | `sig-provider:8050` |
+| Account Abstraction | Enabled | Enabled | `user-ops-indexer:8050`, EntryPoint v0.6, v0.7, and v0.8 |
+| Stats service | Enabled | Enabled | Separate Stats database in each environment |
+| Metadata Service | Enabled | Enabled | Backend integration plus same-origin Caddy proxy |
+| Sourcify | Enabled | Enabled | `https://sourcify.dev/server` |
+| Decode non-contract calls | Enabled | Enabled | `DECODE_NOT_A_CONTRACT_CALLS=true` |
+| Interchain Indexer | Enabled | Not deployed | Mainnet indexes Avalanche C-Chain and DOS Chain cross-chain messages |
 
-## Summary Statistics
+### NFT Media Handler
 
-### Frontend
-| Category | Enabled | Available | Percentage |
-|----------|---------|-----------|------------|
-| Core Config | 8/8 | 8 | 100% |
-| UI/Branding | 12/15 | 15 | 80% |
-| Core Features | 6/6 | 6 | 100% |
-| Microservice APIs | 4/4 | 4 | 100% |
-| Marketplace | 4/4 | 4 | 100% |
-| Analytics | 1/4 | 4 | 25% |
-| Optional/Chain-specific | 3/15 | 15 | 20% |
-| **Total Essential** | **38/42** | **42** | **90%** |
+| Capability | Mainnet | Testnet | Notes |
+|---|---|---|---|
+| Media handler | Enabled | Enabled | Runs inside the custom Blockscout backend |
+| Backfill | Enabled | Enabled | `NFT_MEDIA_HANDLER_BACKFILL_ENABLED=true` |
+| Object storage | `gs://doscan/mainnet/nft-media` | `gs://doscan/testnet/nft-media` | Separate prefixes in the shared public GCS bucket |
+| Generated assets | Original plus 60, 250, and 500 px thumbnails | Original plus 60, 250, and 500 px thumbnails | Video records omit a missing original thumbnail after `86fd0dd5` |
 
-### Backend
-| Category | Enabled | Available | Percentage |
-|----------|---------|-----------|------------|
-| Core APIs | 4/4 | 4 | 100% |
-| Indexers | 4/4 | 4 | 100% |
-| Microservices | 4/8 | 8 | 50% |
-| External Integrations | 2/6 | 6 | 33% |
-| **Total Essential** | **14/16** | **16** | **88%** |
+See [NFT Media Handler](NFT-MEDIA-HANDLER.md) for implementation and operational details.
 
----
+## Frontend Features Backed by Production Services
 
-## Recommendations
+| Feature | Mainnet | Testnet | Notes |
+|---|---|---|---|
+| Advanced filter | Enabled | Enabled | Shared frontend configuration |
+| Gas tracker | Enabled | Enabled | Included in homepage stats |
+| User Operations | Enabled | Enabled | Backed by the local Account Abstraction service |
+| DEX Pools UI | Enabled | Enabled | A truthful empty state is expected until official or verified Factory and Pair contracts are recorded |
+| Hot Contracts | Enabled | Enabled | Results depend on sufficient chain history |
+| Metadata address tags | Enabled | Enabled | Uses `/metadata-api` on the same explorer origin |
+| Contract Info proxy | Enabled | Enabled | Proxied through each explorer origin |
+| Cross-chain transactions | Enabled | Disabled | Mainnet only, backed by Interchain Indexer v1.6.0 |
+| Marketplace | Enabled | Enabled | Uses checked-in DOS configuration URLs |
+| Wallet helpers | Enabled | Enabled | MetaMask, Rabby, Coinbase Wallet, and TokenPocket |
 
-### High Priority (Should Enable)
-1. **CSV Export** - Requires reCAPTCHA setup
-2. **Public Tag Submission** - Requires Metadata Service
+The detailed frontend environment audit is maintained in [Frontend Environment Audit](reports/doscan-frontend-env-audit.vi.html).
 
-### Medium Priority (Nice to Have)
-1. **Mixpanel Analytics** - Better user tracking
-2. **Multichain Balance** - When supporting multiple chains
-3. **DeFi Dropdown** - When DeFi apps launch
+## Deliberately Disabled or Blocked Features
 
-### Low Priority (Optional)
-1. **MetaSuites Extension** - Browser extension support
-2. **GrowthBook** - A/B testing
-3. **Noves.fi** - Enhanced tx interpretation
+| Feature | Status | Reason or prerequisite |
+|---|---|---|
+| BENS / name service | Disabled | No DOS or `.dos` BENS protocol is configured for chain 7979 or 3939 |
+| Multichain Search | Disabled | No dedicated Multichain Search service is deployed |
+| User accounts and Auth0 | Disabled | Requires a supported identity and email stack |
+| CSV export | Disabled | Requires the export service and anti-abuse configuration |
+| Transaction interpretation provider | Disabled | No approved provider and credential are configured |
+| Validators list | Disabled | The upstream UI does not provide the required Avalanche L1 integration |
+| Beacon, rollup, blob, Celo, Stylus, and SUAVE features | Not applicable | These chain-specific features do not match DOS Chain |
 
----
+## Operational Evidence
+
+The 2026-08-04 verification used all of the following evidence layers:
+
+1. Checked-in Compose image pins and environment overrides.
+2. GCP instance inventory for `doscan-mainnet` and `dos-testnet-r0`.
+3. Docker runtime inspection showing both backend containers healthy on the pinned custom image.
+4. HTTP 200 responses from Mainnet and Testnet Stats, backend version, frontend config, and Metadata proxy endpoints.
+5. Git history confirming that `86fd0dd5` is the NFT video original-thumbnail fix.
+6. [Deploy Config run 30878181874](https://github.com/DOS/DOScan/actions/runs/30878181874), which completed successfully for Mainnet and Testnet on the current production head.
+
+Configuration in Git describes the intended deployment. Live HTTP and container checks confirm the running deployment. Neither evidence layer should be used alone when updating this document.
 
 ## References
 
-- [Frontend ENV Docs](https://docs.blockscout.com/setup/env-variables/frontend-common-envs/envs)
-- [Backend ENV Docs](https://docs.blockscout.com/setup/env-variables/backend-env-variables)
-- [Backend Integrations](https://docs.blockscout.com/setup/env-variables/backend-envs-integrations)
+- [DOScan Architecture](DOScan-ARCHITECTURE.md)
+- [Frontend Environment Audit](reports/doscan-frontend-env-audit.vi.html)
+- [NFT Media Handler](NFT-MEDIA-HANDLER.md)
+- [Blockscout backend environment variables](https://docs.blockscout.com/setup/env-variables/backend-env-variables)
