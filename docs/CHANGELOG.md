@@ -24,7 +24,7 @@ All notable changes to DOScan (DOS Chain Block Explorer) are documented in this 
 ### Changed
 
 - Updated the production frontend to `2.10.0`.
-- Updated the backend baseline to Blockscout `11.2.4`; the release history retains custom commit `86fd0dd5`.
+- Updated the backend baseline to Blockscout `11.2.4`; the current tree retains the behavior introduced by custom commit `86fd0dd5`.
 - Replaced stale Azure and local WSL2 architecture guidance with the active GCP topology.
 - Corrected feature status: the admin panel and BENS are disabled, while Metadata Service is enabled.
 

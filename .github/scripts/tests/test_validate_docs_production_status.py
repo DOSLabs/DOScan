@@ -34,6 +34,7 @@ REQUIRED_PUSH_PATHS = (
     "docs/FEATURES.md",
     "docs/CHANGELOG.md",
     "docs/DOScan-ARCHITECTURE.md",
+    "docs/reports/doscan-frontend-env-audit.vi.html",
     ".github/workflows/deploy-config.yml",
     ".github/workflows/dependency-build.yml",
     ".github/scripts/validate-docs-production-status.py",
@@ -183,6 +184,17 @@ Historical records are outside the current status sections.
 """,
         )
         self.write(
+            "docs/reports/doscan-frontend-env-audit.vi.html",
+            f"""<!doctype html>
+<html lang="vi">
+<body>
+  <p id="production-backend-version">Backend production: <code>{BACKEND_RUNTIME_VERSION}</code></p>
+  <p id="production-backend-image">Backend image: <code>{BACKEND_IMAGE}</code></p>
+</body>
+</html>
+""",
+        )
+        self.write(
             "docker-compose/envs/common-blockscout.env",
             "# MICROSERVICE_BENS_ENABLED=\n"
             "# MICROSERVICE_BENS_URL=\n"
@@ -283,6 +295,39 @@ jobs:
         errors = self.module.validate_repository(self.repo)
         self.assert_diagnostic(
             errors, "docker-compose-testnet.yml", "backend image", BACKEND_IMAGE_WITH_DIFFERENT_DIGEST
+        )
+
+    def test_html_report_current_backend_version_is_guarded(self):
+        stale_version = "v11.2.2.+commit.deadbeef"
+        self.replace(
+            "docs/reports/doscan-frontend-env-audit.vi.html",
+            BACKEND_RUNTIME_VERSION,
+            stale_version,
+        )
+
+        errors = self.module.validate_repository(self.repo)
+
+        self.assert_diagnostic(
+            errors,
+            "doscan-frontend-env-audit.vi.html",
+            "backend version",
+            stale_version,
+        )
+
+    def test_html_report_current_backend_image_is_guarded(self):
+        self.replace(
+            "docs/reports/doscan-frontend-env-audit.vi.html",
+            BACKEND_IMAGE,
+            BACKEND_IMAGE_WITH_DIFFERENT_DIGEST,
+        )
+
+        errors = self.module.validate_repository(self.repo)
+
+        self.assert_diagnostic(
+            errors,
+            "doscan-frontend-env-audit.vi.html",
+            "backend image",
+            BACKEND_IMAGE_WITH_DIFFERENT_DIGEST,
         )
 
     def test_invalid_and_missing_sources_have_complete_aggregated_diagnostics(self):

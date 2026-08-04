@@ -24,6 +24,7 @@ on:
       - "docs/FEATURES.md"
       - "docs/CHANGELOG.md"
       - "docs/DOScan-ARCHITECTURE.md"
+      - "docs/reports/doscan-frontend-env-audit.vi.html"
       - ".github/workflows/deploy-config.yml"
       - ".github/workflows/dependency-build.yml"
       - ".github/workflows/sync-upstream.yml"

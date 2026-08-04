@@ -21,10 +21,12 @@ STATUS_DOCUMENTS = (
     "docs/FEATURES.md",
     "docs/CHANGELOG.md",
     "docs/DOScan-ARCHITECTURE.md",
+    "docs/reports/doscan-frontend-env-audit.vi.html",
 )
 FEATURES_DOCUMENT = "docs/FEATURES.md"
 CHANGELOG_DOCUMENT = "docs/CHANGELOG.md"
 ARCHITECTURE_DOCUMENT = "docs/DOScan-ARCHITECTURE.md"
+HTML_REPORT_DOCUMENT = "docs/reports/doscan-frontend-env-audit.vi.html"
 COMMON_BLOCKSCOUT_ENV = "docker-compose/envs/common-blockscout.env"
 DEPLOY_WORKFLOW = ".github/workflows/deploy-config.yml"
 DEPENDENCY_WORKFLOW = ".github/workflows/dependency-build.yml"
@@ -760,6 +762,42 @@ def validate_architecture_document(
         )
 
 
+def html_code_claim(document: str, element_id: str) -> str:
+    match = re.search(
+        rf'<p\b(?=[^>]*\bid=["\']{re.escape(element_id)}["\'])[^>]*>'
+        r'.*?<code>(?P<value>[^<]+)</code>.*?</p>',
+        document,
+        re.DOTALL,
+    )
+    if match is None:
+        return "missing"
+    return match.group("value").strip()
+
+
+def validate_html_report(
+    document: str,
+    path: Path,
+    backend_image: str | None,
+    errors: list[str],
+) -> None:
+    if backend_image is None:
+        return
+    append_mismatch(
+        errors,
+        path,
+        "backend version",
+        backend_runtime_version(backend_image),
+        html_code_claim(document, "production-backend-version"),
+    )
+    append_mismatch(
+        errors,
+        path,
+        "backend image",
+        backend_image,
+        html_code_claim(document, "production-backend-image"),
+    )
+
+
 def local_env_reference(
     compose_path: str, reference: str
 ) -> tuple[str | None, bool]:
@@ -1206,6 +1244,13 @@ def validate_repository(root: Path) -> list[str]:
             backend_image,
             frontend_image,
             workflow_env,
+            errors,
+        )
+    if HTML_REPORT_DOCUMENT in documents:
+        validate_html_report(
+            documents[HTML_REPORT_DOCUMENT],
+            Path(HTML_REPORT_DOCUMENT),
+            backend_image,
             errors,
         )
 
