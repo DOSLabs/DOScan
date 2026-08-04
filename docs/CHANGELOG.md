@@ -8,8 +8,8 @@ All notable changes to DOScan (DOS Chain Block Explorer) are documented in this 
 
 ### Deployed
 
-- Mainnet and Testnet run Frontend `2.10.0` and custom Backend `v11.2.3.+commit.86fd0dd5` on GCP.
-- Both production Compose files pin `ghcr.io/dos/doscan:11.2.3.commit.86fd0dd5@sha256:423bab078a679d3290cc6e276774a8ed201686636933e0d066ce9859270f700d`.
+- Mainnet and Testnet run Frontend `2.10.0` and custom Backend `v11.2.4.+commit.3ff223f8` on GCP.
+- Both production Compose files pin `ghcr.io/dos/doscan:11.2.4.commit.3ff223f8@sha256:cb00b089f7a49f301b9fb8f4b13182976f5d95c4396c938b56dfb536bf3c883b`.
 - Mainnet runs on `doscan-mainnet` in `asia-southeast1-b`.
 - Testnet runs on `dos-testnet-r0` in `asia-southeast1-a`.
 - Beta runs as an isolated Compose stack on the Mainnet GCP VM. Its application state is separate from Mainnet, while it uses the local Mainnet archive RPC.
@@ -24,7 +24,7 @@ All notable changes to DOScan (DOS Chain Block Explorer) are documented in this 
 ### Changed
 
 - Updated the production frontend to `2.10.0`.
-- Updated the backend baseline to Blockscout `11.2.3` plus custom commit `86fd0dd5`.
+- Updated the backend baseline to Blockscout `11.2.4`; the release history retains custom commit `86fd0dd5`.
 - Replaced stale Azure and local WSL2 architecture guidance with the active GCP topology.
 - Corrected feature status: the admin panel and BENS are disabled, while Metadata Service is enabled.
 
@@ -33,13 +33,17 @@ All notable changes to DOScan (DOS Chain Block Explorer) are documented in this 
 - Commit `86fd0dd5` omits a missing original thumbnail for NFT videos instead of returning an invalid original-thumbnail value.
 - Production validation now checks backend health, version, Metadata proxy behavior, and environment-specific service routes.
 
+### Known Issue
+
+- The `3ff223f8` production image dropped the direct `xav` dependency during the v11.2.4 sync, so NFT video decoding is degraded. The source dependency has been restored and requires a corrected image deployment.
+
 ### Verified
 
 - Mainnet and Testnet `/api/v2/stats` returned HTTP 200.
-- Mainnet and Testnet `/api/v2/config/backend-version` returned `v11.2.3.+commit.86fd0dd5`.
+- Mainnet and Testnet `/api/v2/config/backend-version` returned `v11.2.4.+commit.3ff223f8`.
 - Docker inspection showed both backend containers running and healthy on the pinned custom image.
 - Mainnet and Testnet Metadata proxy probes returned HTTP 200 with an `addresses` object.
-- Deploy Config run `30878181874` completed successfully for Mainnet and Testnet.
+- Deploy Config run `30921372022` completed successfully for Mainnet and Testnet.
 
 ---
 
@@ -170,6 +174,6 @@ USER_OPS_INDEXER__DATABASE__CONNECT__URL: postgresql://postgres:@host.docker.int
 
 | Date | Frontend | Backend | Notes |
 |------|----------|---------|-------|
-| 2026-08-04 | 2.10.0 | 11.2.3 + `86fd0dd5` | Current GCP production baseline |
+| 2026-08-04 | 2.10.0 | 11.2.4 + `3ff223f8` | Current GCP production baseline; NFT video dependency correction pending deployment |
 | 2026-02-01 | latest | latest | Feature expansion |
 | 2026-01-30 | v2.6.0 | v9.0.2 | Initial testnet launch |
