@@ -1,5 +1,40 @@
 # Changelog
 
+## 11.2.4
+
+### 🚀 Features
+
+- Add eden chain_type with sponsored transaction support ([#14643](https://github.com/blockscout/blockscout/issues/14643))
+
+### 🐛 Bug Fixes
+
+- Enqueue transactions and addresses to multichain queue on block full refetch ([#14652](https://github.com/blockscout/blockscout/issues/14652))
+- Fix OnDemand.TokenBalance import matching ([#14649](https://github.com/blockscout/blockscout/issues/14649))
+- Let INDEXER_OPTIMISM_L1_BATCH_INBOX/SUBMITTER override SystemConfig ([#14645](https://github.com/blockscout/blockscout/issues/14645))
+- Sort data before inserting to export queues ([#14642](https://github.com/blockscout/blockscout/issues/14642))
+- Add missing action_fallback to SolidityScanController ([#14635](https://github.com/blockscout/blockscout/issues/14635))
+- Fix InternalTransaction fetcher test ([#14634](https://github.com/blockscout/blockscout/issues/14634))
+- Handle not-loaded gas_token associations in Celo transaction view ([#14633](https://github.com/blockscout/blockscout/issues/14633))
+
+### ⚙️ Miscellaneous Tasks
+
+- Optimize fetch_coin_balance query ([#14648](https://github.com/blockscout/blockscout/issues/14648))
+- Return proper status codes and string-typed block numbers in b… ([#14646](https://github.com/blockscout/blockscout/issues/14646))
+- Optimize transactions event notifying ([#14637](https://github.com/blockscout/blockscout/issues/14637))
+- Add deposits and withdrawals health metrics for rollups and ETH ([#14632](https://github.com/blockscout/blockscout/issues/14632))
+- Optimize realtime events processing ([#14625](https://github.com/blockscout/blockscout/issues/14625))
+- Add refetch_needed_blocks_count indexer metric ([#14630](https://github.com/blockscout/blockscout/issues/14630))
+
+### New ENV variables
+
+| Variable                                            | Description                                                                                                                                                                                     | Parameters                                                          |
+|-----------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
+| `HEALTH_MONITOR_DEPOSITS_PERIOD`                        | New deposits indexed max delay in /health API endpoint. [Time format](/setup/env-variables/backend-env-variables#time-format). Implemented in [#14632](https://github.com/blockscout/blockscout/pull/14632).                                                                                                                                                                                                                                       | Version: v11.2.4\+ <br />Default: `4h` <br />Applications: API, Indexer                                                                                                                                                                                                                                                                                                           |
+| `HEALTH_MONITOR_WITHDRAWALS_PERIOD`                     | New withdrawals indexed max delay in /health API endpoint. [Time format](/setup/env-variables/backend-env-variables#time-format). Implemented in [#14632](https://github.com/blockscout/blockscout/pull/14632).                                                                                                                                                                                                                                    | Version: v11.2.4\+ <br />Default: `4h` <br />Applications: API, Indexer                                                                                                                                                                                                                                                                                                           |
+| `DB_EVENTS_LISTENER_BATCH_SIZE`                         | Max events in one batch to be processed by DB events listener. Implemented in [#14625](https://github.com/blockscout/blockscout/pull/14625).                                                                                                                                                                                                                                                                                                       | Version: v11.2.4\+ <br />Default: `100` <br />Applications: API                                                                                                                                                                                                                                                                                                       |
+| `REALTIME_EVENT_HANDLERS_BATCH_SIZE`                    | Max events in one batch to be processed by each realtime event handler. Implemented in [#14625](https://github.com/blockscout/blockscout/pull/14625).                                                                                                                                                                                                                                                                                              | Version: v11.2.4\+ <br />Default: `100` <br />Applications: API                                                                                                                                                                                                                                                                                                       |
+
+
 ## 11.2.3
 
 ### 🚀 Features
