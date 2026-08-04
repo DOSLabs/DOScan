@@ -68,7 +68,37 @@ class ValidateDocsProductionStatusTest(unittest.TestCase):
             (
                 f"Backend image: `{BACKEND_IMAGE}`\n"
                 f"Frontend image: `{FRONTEND_IMAGE}`\n"
+                "Mainnet host: `doscan-mainnet`\n"
+                "Mainnet zone: `asia-southeast1-b`\n"
+                "Testnet host: `dos-testnet-r0`\n"
+                "Testnet zone: `asia-southeast1-a`\n"
             ),
+        )
+        self.write(
+            "docker-compose/envs/common-blockscout.env",
+            "# MICROSERVICE_BENS_ENABLED=\n"
+            "# MICROSERVICE_BENS_URL=\n"
+            "# MICROSERVICE_BENS_PROTOCOLS=\n"
+            "MICROSERVICE_METADATA_ENABLED=true\n",
+        )
+        for filename in (
+            "common-frontend.env",
+            "common-frontend-scan.env",
+            "common-frontend-testnet.env",
+            "common-frontend-beta.env",
+        ):
+            self.write(
+                f"docker-compose/envs/{filename}",
+                "# NEXT_PUBLIC_NAME_SERVICE_API_HOST=\n",
+            )
+        self.write(
+            ".github/workflows/deploy-config.yml",
+            """env:
+  GCP_INSTANCE: doscan-mainnet
+  GCP_ZONE: asia-southeast1-b
+  GCP_TESTNET_INSTANCE: dos-testnet-r0
+  GCP_TESTNET_ZONE: asia-southeast1-a
+""",
         )
 
     def write(self, relative_path, content):
@@ -79,6 +109,10 @@ class ValidateDocsProductionStatusTest(unittest.TestCase):
     def replace(self, relative_path, old, new):
         path = self.repo / relative_path
         path.write_text(path.read_text(encoding="utf-8").replace(old, new), encoding="utf-8")
+
+    def append(self, relative_path, content):
+        path = self.repo / relative_path
+        path.write_text(path.read_text(encoding="utf-8") + content, encoding="utf-8")
 
     def test_synchronized_repository_passes(self):
         self.assertEqual([], self.module.validate_repository(self.repo))
@@ -113,7 +147,7 @@ class ValidateDocsProductionStatusTest(unittest.TestCase):
         missing_source = next(
             error for error in errors if "docker-compose-beta.yml" in error
         )
-        self.assertIn("required Compose source", missing_source)
+        self.assertIn("missing required file", missing_source)
         self.assertIn("expected 'present'", missing_source)
         self.assertIn("actual 'missing'", missing_source)
 
@@ -124,3 +158,60 @@ class ValidateDocsProductionStatusTest(unittest.TestCase):
         )
         self.assertIn("expected 'tag@sha256:<64 lowercase hexadecimal characters>'", invalid_pin)
         self.assertIn(f"actual '{invalid_frontend_image}'", invalid_pin)
+
+    def test_metadata_must_remain_enabled(self):
+        self.replace(
+            "docker-compose/envs/common-blockscout.env",
+            "MICROSERVICE_METADATA_ENABLED=true",
+            "MICROSERVICE_METADATA_ENABLED=false",
+        )
+        errors = self.module.validate_repository(self.repo)
+        self.assertTrue(any("metadata enabled" in error for error in errors))
+
+    def test_bens_configuration_is_rejected(self):
+        self.append(
+            "docker-compose/envs/common-blockscout.env",
+            "MICROSERVICE_BENS_ENABLED=true\n",
+        )
+        errors = self.module.validate_repository(self.repo)
+        self.assertTrue(any("BENS disabled" in error for error in errors))
+
+    def test_explicitly_disabled_bens_is_allowed(self):
+        self.append(
+            "docker-compose/envs/common-blockscout.env",
+            "MICROSERVICE_BENS_ENABLED=false\n",
+        )
+
+        self.assertEqual([], self.module.validate_repository(self.repo))
+
+    def test_active_bens_values_and_frontend_name_service_host_are_rejected(self):
+        self.append(
+            "docker-compose/envs/common-blockscout.env",
+            "MICROSERVICE_BENS_URL=https://bens.example\n"
+            "MICROSERVICE_BENS_PROTOCOLS=dos\n",
+        )
+        self.append(
+            "docker-compose/envs/common-frontend-testnet.env",
+            "NEXT_PUBLIC_NAME_SERVICE_API_HOST=https://bens.example\n",
+        )
+
+        errors = self.module.validate_repository(self.repo)
+
+        self.assertTrue(any("MICROSERVICE_BENS_URL" in error for error in errors))
+        self.assertTrue(any("MICROSERVICE_BENS_PROTOCOLS" in error for error in errors))
+        self.assertTrue(
+            any("NEXT_PUBLIC_NAME_SERVICE_API_HOST" in error for error in errors)
+        )
+
+    def test_gcp_topology_drift_names_the_architecture_document(self):
+        self.replace("docs/DOScan-ARCHITECTURE.md", "dos-testnet-r0", "stale-host")
+        errors = self.module.validate_repository(self.repo)
+        self.assertTrue(any("GCP_TESTNET_INSTANCE" in error for error in errors))
+
+    def test_missing_sources_and_multiple_drifts_are_aggregated(self):
+        (self.repo / "docker-compose/docker-compose-beta.yml").unlink()
+        self.replace("docs/FEATURES.md", "2.10.0", "2.9.0")
+        errors = self.module.validate_repository(self.repo)
+        self.assertGreaterEqual(len(errors), 2)
+        self.assertTrue(any("missing required file" in error for error in errors))
+        self.assertTrue(any("frontend version" in error for error in errors))

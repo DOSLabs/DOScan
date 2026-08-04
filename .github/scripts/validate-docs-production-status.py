@@ -19,24 +19,54 @@ STATUS_DOCUMENTS = (
     "docs/DOScan-ARCHITECTURE.md",
 )
 ARCHITECTURE_DOCUMENT = "docs/DOScan-ARCHITECTURE.md"
+COMMON_BLOCKSCOUT_ENV = "docker-compose/envs/common-blockscout.env"
+DEPLOY_WORKFLOW = ".github/workflows/deploy-config.yml"
+GCP_KEYS = (
+    "GCP_INSTANCE",
+    "GCP_ZONE",
+    "GCP_TESTNET_INSTANCE",
+    "GCP_TESTNET_ZONE",
+)
+BENS_KEYS = (
+    "MICROSERVICE_BENS_ENABLED",
+    "MICROSERVICE_BENS_URL",
+    "MICROSERVICE_BENS_PROTOCOLS",
+)
+NAME_SERVICE_API_HOST = "NEXT_PUBLIC_NAME_SERVICE_API_HOST"
 
 
-def diagnostic(path: str, invariant: str, expected: object, actual: object) -> str:
-    return f"{path}: {invariant} expected '{expected}', actual '{actual}'"
+def diagnostic(path: Path, invariant: str, expected: object, actual: object) -> str:
+    return (
+        f"{path.as_posix()}: {invariant}; "
+        f"expected {expected!r}; actual {actual!r}"
+    )
 
 
 def read_required(root: Path, relative_path: str) -> str:
     return (root / relative_path).read_text(encoding="utf-8")
 
 
-def read_env(root: Path, relative_path: str) -> dict[str, str]:
+def read_env(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
-    for line in read_required(root, relative_path).splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
         values[key] = value
+    return values
+
+
+def read_workflow_env(text: str, keys: tuple[str, ...]) -> dict[str, str]:
+    values: dict[str, str] = {}
+    key_pattern = "|".join(re.escape(key) for key in keys)
+    assignment_pattern = re.compile(
+        rf"^\s*(?P<key>{key_pattern}):\s*(?P<value>[^#]*?)(?:\s+#.*)?$"
+    )
+    for line in text.splitlines():
+        match = assignment_pattern.match(line)
+        if match is not None:
+            values[match.group("key")] = match.group("value").strip().strip("\"'")
     return values
 
 
@@ -76,13 +106,16 @@ def backend_runtime_version(image: str) -> str | None:
 def validate_repository(root: Path) -> list[str]:
     errors: list[str] = []
     images: dict[str, dict[str, str]] = {"backend": {}, "frontend": {}}
+    documents: dict[str, str] = {}
 
     for compose_path in COMPOSE_FILES:
         try:
             compose = read_required(root, compose_path)
         except FileNotFoundError:
             errors.append(
-                diagnostic(compose_path, "required Compose source", "present", "missing")
+                diagnostic(
+                    Path(compose_path), "missing required file", "present", "missing"
+                )
             )
             continue
 
@@ -91,7 +124,7 @@ def validate_repository(root: Path) -> list[str]:
             if image is None:
                 errors.append(
                     diagnostic(
-                        compose_path,
+                        Path(compose_path),
                         f"{service} image",
                         "service image key",
                         "missing",
@@ -100,7 +133,7 @@ def validate_repository(root: Path) -> list[str]:
             elif parse_immutable_image(image) is None:
                 errors.append(
                     diagnostic(
-                        compose_path,
+                        Path(compose_path),
                         f"{service} immutable image pin",
                         "tag@sha256:<64 lowercase hexadecimal characters>",
                         image,
@@ -119,7 +152,9 @@ def validate_repository(root: Path) -> list[str]:
         for compose_path, image in service_images.items():
             if image != canonical_image:
                 errors.append(
-                    diagnostic(compose_path, f"{service} image", canonical_image, image)
+                    diagnostic(
+                        Path(compose_path), f"{service} image", canonical_image, image
+                    )
                 )
 
     backend_image = canonical_images.get("backend")
@@ -133,22 +168,26 @@ def validate_repository(root: Path) -> list[str]:
         except FileNotFoundError:
             errors.append(
                 diagnostic(
-                    document_path,
-                    "required production status document",
+                    Path(document_path),
+                    "missing required file",
                     "present",
                     "missing",
                 )
             )
             continue
 
+        documents[document_path] = document
+
         if backend_image is not None and backend_image not in document:
             errors.append(
-                diagnostic(document_path, "backend image", backend_image, "token not found")
+                diagnostic(
+                    Path(document_path), "backend image", backend_image, "token not found"
+                )
             )
         if frontend_version is not None and frontend_version not in document:
             errors.append(
                 diagnostic(
-                    document_path,
+                    Path(document_path),
                     "frontend version",
                     frontend_version,
                     "token not found",
@@ -158,10 +197,87 @@ def validate_repository(root: Path) -> list[str]:
             if frontend_image not in document:
                 errors.append(
                     diagnostic(
-                        document_path,
+                        Path(document_path),
                         "frontend image",
                         frontend_image,
                         "token not found",
+                    )
+                )
+
+    common_blockscout_path = root / COMMON_BLOCKSCOUT_ENV
+    try:
+        blockscout_env = read_env(common_blockscout_path)
+    except FileNotFoundError:
+        errors.append(
+            diagnostic(
+                Path(COMMON_BLOCKSCOUT_ENV), "missing required file", "present", "missing"
+            )
+        )
+    else:
+        metadata_enabled = blockscout_env.get("MICROSERVICE_METADATA_ENABLED")
+        if metadata_enabled != "true":
+            errors.append(
+                diagnostic(
+                    Path(COMMON_BLOCKSCOUT_ENV),
+                    "metadata enabled",
+                    "true",
+                    metadata_enabled if metadata_enabled is not None else "missing",
+                )
+            )
+        for key in BENS_KEYS:
+            value = blockscout_env.get(key)
+            is_active = (
+                value == "true"
+                if key == "MICROSERVICE_BENS_ENABLED"
+                else bool(value)
+            )
+            if is_active:
+                errors.append(
+                    diagnostic(
+                        Path(COMMON_BLOCKSCOUT_ENV),
+                        f"BENS disabled ({key})",
+                        "unset",
+                        value,
+                    )
+                )
+
+    frontend_env_directory = root / "docker-compose/envs"
+    for frontend_env_path in sorted(frontend_env_directory.glob("common-frontend*.env")):
+        frontend_env = read_env(frontend_env_path)
+        name_service_api_host = frontend_env.get(NAME_SERVICE_API_HOST)
+        if name_service_api_host:
+            errors.append(
+                diagnostic(
+                    frontend_env_path.relative_to(root),
+                    f"{NAME_SERVICE_API_HOST} disabled",
+                    "unset",
+                    name_service_api_host,
+                )
+            )
+
+    try:
+        workflow_env = read_workflow_env(read_required(root, DEPLOY_WORKFLOW), GCP_KEYS)
+    except FileNotFoundError:
+        errors.append(
+            diagnostic(Path(DEPLOY_WORKFLOW), "missing required file", "present", "missing")
+        )
+    else:
+        architecture_document = documents.get(ARCHITECTURE_DOCUMENT)
+        for key in GCP_KEYS:
+            value = workflow_env.get(key)
+            if not value:
+                errors.append(
+                    diagnostic(
+                        Path(DEPLOY_WORKFLOW),
+                        key,
+                        "defined workflow value",
+                        "missing",
+                    )
+                )
+            elif architecture_document is not None and value not in architecture_document:
+                errors.append(
+                    diagnostic(
+                        Path(ARCHITECTURE_DOCUMENT), key, value, "token not found"
                     )
                 )
 
