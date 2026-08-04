@@ -262,6 +262,18 @@ jobs:
     def test_synchronized_repository_passes(self):
         self.assertEqual([], self.module.validate_repository(self.repo))
 
+    def test_repository_workflow_keeps_the_validator_bootstrapped(self):
+        repository_root = Path(__file__).resolve().parents[3]
+        workflow_path = repository_root / ".github/workflows/dependency-build.yml"
+
+        self.assertEqual(
+            [],
+            self.module.dependency_workflow_errors(
+                workflow_path.read_text(encoding="utf-8"),
+                Path(".github/workflows/dependency-build.yml"),
+            ),
+        )
+
     def test_backend_digest_drift_names_the_compose_file(self):
         self.replace(
             "docker-compose/docker-compose-testnet.yml",
