@@ -8,8 +8,8 @@ All notable changes to DOScan (DOS Chain Block Explorer) are documented in this 
 
 ### Deployed
 
-- Mainnet and Testnet run Frontend `2.10.0` and custom Backend `v11.2.4.+commit.3ff223f8` on GCP.
-- Both production Compose files pin `ghcr.io/dos/doscan:11.2.4.commit.3ff223f8@sha256:cb00b089f7a49f301b9fb8f4b13182976f5d95c4396c938b56dfb536bf3c883b`.
+- Mainnet and Testnet run Frontend `2.10.0` and custom Backend `v11.2.4.+commit.2d53484e` on GCP.
+- Both production Compose files pin `ghcr.io/dos/doscan:11.2.4.commit.2d53484e@sha256:370eb1e8360ca86dfca3e13f9ffd0cb34e3d90be51cfbaf3abc91416994dc32e`.
 - Mainnet runs on `doscan-mainnet` in `asia-southeast1-b`.
 - Testnet runs on `dos-testnet-r0` in `asia-southeast1-a`.
 - Beta runs as an isolated Compose stack on the Mainnet GCP VM. Its application state is separate from Mainnet, while it uses the local Mainnet archive RPC.
@@ -31,19 +31,16 @@ All notable changes to DOScan (DOS Chain Block Explorer) are documented in this 
 ### Fixed
 
 - Commit `86fd0dd5` omits a missing original thumbnail for NFT videos instead of returning an invalid original-thumbnail value.
+- Restored the direct `xav` dependency removed during the v11.2.4 sync and verified `Image.Video` against the exact published production digest.
 - Production validation now checks backend health, version, Metadata proxy behavior, and environment-specific service routes.
-
-### Known Issue
-
-- The `3ff223f8` production image dropped the direct `xav` dependency during the v11.2.4 sync, so NFT video decoding is degraded. The source dependency has been restored and requires a corrected image deployment.
 
 ### Verified
 
 - Mainnet and Testnet `/api/v2/stats` returned HTTP 200.
-- Mainnet and Testnet `/api/v2/config/backend-version` returned `v11.2.4.+commit.3ff223f8`.
+- Mainnet and Testnet `/api/v2/config/backend-version` returned `v11.2.4.+commit.2d53484e`.
 - Docker inspection showed both backend containers running and healthy on the pinned custom image.
 - Mainnet and Testnet Metadata proxy probes returned HTTP 200 with an `addresses` object.
-- Deploy Config run `30921372022` completed successfully for Mainnet and Testnet.
+- Deploy Config run `30926419497` completed successfully for Mainnet and Testnet.
 
 ---
 
@@ -174,6 +171,6 @@ USER_OPS_INDEXER__DATABASE__CONNECT__URL: postgresql://postgres:@host.docker.int
 
 | Date | Frontend | Backend | Notes |
 |------|----------|---------|-------|
-| 2026-08-04 | 2.10.0 | 11.2.4 + `3ff223f8` | Current GCP production baseline; NFT video dependency correction pending deployment |
+| 2026-08-04 | 2.10.0 | 11.2.4 + `2d53484e` | Current GCP production baseline; NFT video decoding restored and verified |
 | 2026-02-01 | latest | latest | Feature expansion |
 | 2026-01-30 | v2.6.0 | v9.0.2 | Initial testnet launch |

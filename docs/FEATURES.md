@@ -8,16 +8,16 @@ This document records the deployed feature baseline for DOScan Mainnet and Testn
 
 | Environment | Explorer | Chain ID | Frontend | Backend | Runtime status |
 |---|---|---:|---|---|---|
-| Mainnet | `https://doscan.io` | 7979 | `2.10.0` | `v11.2.4.+commit.3ff223f8` | HTTP 200, backend healthy |
-| Testnet | `https://test.doscan.io` | 3939 | `2.10.0` | `v11.2.4.+commit.3ff223f8` | HTTP 200, backend healthy |
+| Mainnet | `https://doscan.io` | 7979 | `2.10.0` | `v11.2.4.+commit.2d53484e` | HTTP 200, backend healthy |
+| Testnet | `https://test.doscan.io` | 3939 | `2.10.0` | `v11.2.4.+commit.2d53484e` | HTTP 200, backend healthy |
 
 Both production environments pin the custom backend image below:
 
 ```text
-ghcr.io/dos/doscan:11.2.4.commit.3ff223f8@sha256:cb00b089f7a49f301b9fb8f4b13182976f5d95c4396c938b56dfb536bf3c883b
+ghcr.io/dos/doscan:11.2.4.commit.2d53484e@sha256:370eb1e8360ca86dfca3e13f9ffd0cb34e3d90be51cfbaf3abc91416994dc32e
 ```
 
-The `3ff223f8` build contains the DOS patch from commit `86fd0dd5`, which omits a missing original thumbnail for NFT video records. The published build dropped the direct `xav` dependency during the v11.2.4 sync, so video decoding is degraded until the corrected image is published and deployed.
+The `2d53484e` build retains the behavior introduced by DOS patch `86fd0dd5`, which omits a missing original thumbnail for NFT video records. It also restores the direct `xav` dependency required by `Image.Video`.
 
 ## Backend Features
 
@@ -65,7 +65,7 @@ The `3ff223f8` build contains the DOS patch from commit `86fd0dd5`, which omits 
 | Media handler | Enabled | Enabled | Runs inside the custom Blockscout backend |
 | Backfill | Enabled | Enabled | `NFT_MEDIA_HANDLER_BACKFILL_ENABLED=true` |
 | Object storage | `gs://doscan/mainnet/nft-media` | `gs://doscan/testnet/nft-media` | Separate prefixes in the shared public GCS bucket |
-| Generated assets | Original plus 60, 250, and 500 px thumbnails | Original plus 60, 250, and 500 px thumbnails | Image processing is active; NFT video decoding is pending the corrected v11.2.4 image |
+| Generated assets | Original plus 60, 250, and 500 px thumbnails | Original plus 60, 250, and 500 px thumbnails | Published-image smoke validation confirmed NFT video decoding and all thumbnail sizes |
 
 See [NFT Media Handler](NFT-MEDIA-HANDLER.md) for implementation and operational details.
 
@@ -107,7 +107,7 @@ The 2026-08-04 verification used all of the following evidence layers:
 3. Docker runtime inspection showing both backend containers healthy on the pinned custom image.
 4. HTTP 200 responses from Mainnet and Testnet Stats, backend version, frontend config, and Metadata proxy endpoints.
 5. Git history confirming that `86fd0dd5` is the NFT video original-thumbnail fix.
-6. [Deploy Config run 30921372022](https://github.com/DOS/DOScan/actions/runs/30921372022), which completed successfully for Mainnet and Testnet on the current production head.
+6. [Deploy Config run 30926419497](https://github.com/DOS/DOScan/actions/runs/30926419497), which completed successfully for Mainnet and Testnet on the current production head.
 
 Configuration in Git describes the intended deployment. Live HTTP and container checks confirm the running deployment. Neither evidence layer should be used alone when updating this document.
 
