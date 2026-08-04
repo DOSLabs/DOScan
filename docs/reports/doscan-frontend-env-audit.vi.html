@@ -137,13 +137,18 @@
   <section class="hero">
     <div class="eyebrow">DOScan Production Audit</div>
     <h1>Các tính năng Blockscout đang bật trên DOS Chain</h1>
-    <p class="lead">Đối chiếu cấu hình Frontend và Backend của Mainnet/Testnet với Blockscout Frontend v2.10.0, Blockscout Backend 11.2.3 và đặc tính Avalanche L1 dùng Subnet-EVM.</p>
+    <p class="lead">Đối chiếu cấu hình Frontend và Backend của Mainnet/Testnet với Blockscout Frontend v2.10.0, Blockscout Backend 11.2.4 và đặc tính Avalanche L1 dùng Subnet-EVM.</p>
     <div class="grid">
       <div class="metric"><strong>19</strong><span>nhóm tính năng hữu ích đã cấu hình</span></div>
       <div class="metric"><strong>18</strong><span>nhóm bật trên cả Mainnet và Testnet</span></div>
       <div class="metric"><strong>0</strong><span>lệch ở các feature flag dùng chung</span></div>
     </div>
     <div class="verdict"><strong>Trạng thái production ngày 04/08/2026:</strong> Frontend v2.10.0 đang chạy trên Mainnet và Testnet. Các feature flag dùng chung đã được đồng bộ cho hai môi trường. Mainnet đã có thêm Cross-chain Transactions cùng Blockscout Interchain Indexer cho Avalanche ICM/Teleporter và ICTT. Testnet chưa bật tính năng liên chuỗi vì chưa cấu hình cặp Fuji/DOS Testnet tương ứng. Pending transaction và internal transaction vẫn tắt riêng trên Testnet vì RPC 3939 thực tế không cung cấp <code>txpool_content</code> và <code>debug_traceBlockByNumber</code>.</div>
+    <div class="verdict">
+      <p id="production-backend-version"><strong>Backend production:</strong> <code>v11.2.4.+commit.3ff223f8</code></p>
+      <p id="production-backend-image"><strong>Backend image:</strong> <code>ghcr.io/dos/doscan:11.2.4.commit.3ff223f8@sha256:cb00b089f7a49f301b9fb8f4b13182976f5d95c4396c938b56dfb536bf3c883b</code></p>
+      <p><strong class="warn">NFT video đang suy giảm:</strong> image này bị mất dependency trực tiếp <code>xav</code> trong lúc sync v11.2.4, nên không tải được module <code>Image.Video</code>. Source đã khôi phục dependency và cần publish, deploy image sửa lỗi trước khi xác nhận xử lý video hoạt động trở lại.</p>
+    </div>
   </section>
 
   <h2>0. Trạng thái triển khai</h2>
@@ -311,9 +316,9 @@
   <div class="callout"><strong>"Bật tất cả tính năng có thể" không có nghĩa là bật mọi env upstream:</strong> phạm vi hoàn tất là các feature EVM phù hợp Avalanche L1, có backend/API hoặc credential thật và không tạo link giả. Account người dùng cần Auth0/Keycloak, email provider và frontend auth; async CSV cần Gokapi; SolidityScan, Noves và Blockaid cần API key; BENS cần protocol DOS; Multichain Search và Avalanche ICM cần service riêng; market price cần DOS được provider hỗ trợ. Các integration thiếu điều kiện không được tính là tính năng có thể bật an toàn.</div>
   <div class="verdict"><strong class="good">Reown và Metadata đã được xử lý:</strong> Reown Dashboard đã allowlist <code>https://doscan.io</code>. Metadata Service được proxy an toàn qua <code>https://doscan.io/metadata-api</code> trên Mainnet và <code>https://test.doscan.io/metadata-api</code> trên Testnet; Caddy loại bỏ <code>Cookie</code> và <code>Authorization</code> trước khi chuyển request tới dịch vụ bên ngoài. <a href="https://github.com/DOS/DOScan/pull/122">PR #122</a> khôi phục endpoint same-origin cho Testnet và thêm deployment guard chống rollback database do outage third-party. <a href="https://github.com/DOS/DOScan/actions/runs/30343254663">Deploy run #30343254663</a> cùng Playwright ngày 28/07/2026 xác nhận không còn lỗi Metadata CORS.</div>
   <div class="verdict">
-    <strong class="good">NFT Media Handler đã chạy trên Mainnet và Testnet:</strong>
+    <strong class="warn">NFT Media Handler đang chạy cho image, nhưng xử lý video đang suy giảm:</strong>
     <p><a href="https://github.com/DOS/DOScan/pull/115">PR #115</a> bật xử lý media trong backend hiện tại, dùng bucket GCS <code>doscan</code>. Các PR <a href="https://github.com/DOS/DOScan/pull/116">#116</a>, <a href="https://github.com/DOS/DOScan/pull/117">#117</a>, <a href="https://github.com/DOS/DOScan/pull/119">#119</a> và <a href="https://github.com/DOS/DOScan/pull/120">#120</a> hoàn thiện recreate backend, runtime probe và Erlang node naming. <a href="https://github.com/DOS/DOScan/actions/runs/30331379243">Deploy run #30331379243</a> xác nhận dispatcher cùng GCS ghi-đọc-xóa thành công trên cả hai môi trường.</p>
-    <p>Mainnet đã được kiểm tra lại sau deploy: container backend mới tạo lúc <code>2026-07-28T05:24:02Z</code>, trạng thái healthy, API hoạt động, handler bật và dùng prefix <code>mainnet/nft-media</code>. Testnet đã xử lý NFT thật thành công, ghi original cùng thumbnail 60, 250 và 500 px vào prefix <code>testnet/nft-media</code>.</p>
+    <p>Mainnet đã được kiểm tra lại sau deploy: container backend ở trạng thái healthy, API hoạt động, handler bật và dùng prefix <code>mainnet/nft-media</code>. Testnet trước đây đã xử lý NFT thật thành công, ghi original cùng thumbnail 60, 250 và 500 px vào prefix <code>testnet/nft-media</code>. Image production <code>3ff223f8</code> hiện thiếu <code>xav</code>, vì vậy bằng chứng cũ không chứng minh video decoding của image hiện tại còn hoạt động.</p>
   </div>
 
   <h2>1. DOS Chain có phù hợp với các env EVM không?</h2>
@@ -567,8 +572,9 @@ NEXT_PUBLIC_TRANSACTION_INTERPRETATION_PROVIDER=none</pre>
     <li><a href="https://github.com/DOS/DOScan/actions/runs/30413862805">DOScan Deploy Config #30413862805</a></li>
     <li><a href="https://github.com/DOS/DOScan/pull/159">DOScan PR #159: deploy Frontend v2.10.0</a></li>
     <li><a href="https://github.com/DOS/DOScan/actions/runs/30821141157">DOScan Deploy Config #30821141157</a></li>
+    <li><a href="https://github.com/DOS/DOScan/actions/runs/30921372022">DOScan Deploy Config #30921372022 cho Backend v11.2.4</a></li>
   </ul>
-  <p class="muted">Audit ban đầu thực hiện ngày 24/07/2026 và cập nhật bằng chứng production đến ngày 04/08/2026. Frontend dùng image <code>metados/blockscout-frontend:2.10.0@sha256:4125d49b1658ba95b81075cabbc07120bebd90be95df49440aff5fa0e7e95eed</code>; Backend dùng Blockscout 11.2.3; Interchain Indexer dùng v1.6.0 tại production GCP. Trạng thái trong bảng được đối chiếu từ env chung, override Mainnet/Testnet, Docker Compose, source chính thức, deploy run <code>30821141157</code>, HTTP probe, API production, container readiness và browser kiểm tra giao diện thật.</p>
+  <p class="muted">Audit ban đầu thực hiện ngày 24/07/2026 và cập nhật bằng chứng production đến ngày 04/08/2026. Frontend dùng image <code>metados/blockscout-frontend:2.10.0@sha256:4125d49b1658ba95b81075cabbc07120bebd90be95df49440aff5fa0e7e95eed</code>; Backend dùng Blockscout 11.2.4 với image <code>ghcr.io/dos/doscan:11.2.4.commit.3ff223f8@sha256:cb00b089f7a49f301b9fb8f4b13182976f5d95c4396c938b56dfb536bf3c883b</code>; Interchain Indexer dùng v1.6.0 tại production GCP. Trạng thái trong bảng được đối chiếu từ env chung, override Mainnet/Testnet, Docker Compose, source chính thức, deploy run <code>30921372022</code>, HTTP probe, API production, container readiness và browser kiểm tra giao diện thật. NFT video được đánh dấu suy giảm riêng vì image hiện tại thiếu dependency <code>xav</code>.</p>
 </main>
 </body>
 </html>

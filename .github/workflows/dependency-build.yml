@@ -13,11 +13,23 @@ on:
       - "apps/**/yarn.lock"
       - "docker/Dockerfile"
       - "docker/oldUI.Dockerfile"
+      - "docker-compose/docker-compose-mainnet.yml"
+      - "docker-compose/docker-compose-testnet.yml"
+      - "docker-compose/docker-compose-beta.yml"
+      - "docker-compose/envs/common-blockscout.env"
       - "docker-compose/envs/common-blockscout-mainnet.env"
       - "docker-compose/envs/common-blockscout-testnet.env"
+      - "docker-compose/envs/common-blockscout-beta.env"
+      - "docker-compose/envs/common-frontend*.env"
+      - "docs/FEATURES.md"
+      - "docs/CHANGELOG.md"
+      - "docs/DOScan-ARCHITECTURE.md"
+      - "docs/reports/doscan-frontend-env-audit.vi.html"
+      - ".github/workflows/deploy-config.yml"
       - ".github/workflows/dependency-build.yml"
       - ".github/workflows/sync-upstream.yml"
       - ".github/scripts/check-upstream-sync.py"
+      - ".github/scripts/validate-docs-production-status.py"
       - ".github/scripts/tests/**"
   workflow_dispatch:
 
@@ -43,6 +55,9 @@ jobs:
 
       - name: Test upstream sync state detection
         run: python -m unittest discover -s .github/scripts/tests -p 'test_*.py' -v
+
+      - name: Validate production documentation status
+        run: python .github/scripts/validate-docs-production-status.py
 
   token-lists:
     name: Validate DOS Chain token list reference

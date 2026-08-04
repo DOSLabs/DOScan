@@ -23,10 +23,10 @@ Mainnet and Testnet are production environments. Beta is an isolated validation 
 | Component | Production version |
 |---|---|
 | Frontend | `metados/blockscout-frontend:2.10.0@sha256:4125d49b1658ba95b81075cabbc07120bebd90be95df49440aff5fa0e7e95eed` |
-| Backend | `ghcr.io/dos/doscan:11.2.3.commit.86fd0dd5@sha256:423bab078a679d3290cc6e276774a8ed201686636933e0d066ce9859270f700d` |
+| Backend | `ghcr.io/dos/doscan:11.2.4.commit.3ff223f8@sha256:cb00b089f7a49f301b9fb8f4b13182976f5d95c4396c938b56dfb536bf3c883b` |
 | Interchain Indexer | `v1.6.0`, Mainnet only |
 
-Commit `86fd0dd5` is a DOS custom patch for NFT video media records. It omits an original thumbnail when no original thumbnail exists.
+The `3ff223f8` build contains the DOS patch from commit `86fd0dd5`, which omits an original thumbnail when none exists for an NFT video record. The published build dropped the direct `xav` dependency during the v11.2.4 sync, so video decoding is degraded until a corrected image is deployed.
 
 ## Request Topology
 
@@ -248,12 +248,12 @@ The following checks passed on 2026-08-04:
 | GCP VM state | `RUNNING` | `RUNNING` |
 | Backend container | `running`, `healthy` | `running`, `healthy` |
 | Frontend container | `running`, `healthy` | `running`, `healthy` |
-| Backend version endpoint | `v11.2.3.+commit.86fd0dd5` | `v11.2.3.+commit.86fd0dd5` |
+| Backend version endpoint | `v11.2.4.+commit.3ff223f8` | `v11.2.4.+commit.3ff223f8` |
 | Stats API | HTTP 200 | HTTP 200 |
 | Frontend runtime config | HTTP 200 | HTTP 200 |
 | Metadata same-origin proxy | HTTP 200 with `addresses` | HTTP 200 with `addresses` |
 
-The current production head also passed [Deploy Config run 30878181874](https://github.com/DOS/DOScan/actions/runs/30878181874) for both environments.
+The current production head also passed [Deploy Config run 30921372022](https://github.com/DOS/DOScan/actions/runs/30921372022) for both environments.
 
 Runtime verification must check both the configured image reference and the live container. A healthy container alone does not prove that the expected custom build is running.
 
