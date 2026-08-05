@@ -27,6 +27,7 @@ on:
       - "docs/reports/doscan-frontend-env-audit.vi.html"
       - ".github/workflows/deploy-config.yml"
       - ".github/workflows/dependency-build.yml"
+      - ".github/workflows/publish-regular-docker-image-on-demand.yml"
       - ".github/workflows/sync-upstream.yml"
       - ".github/scripts/check-upstream-sync.py"
       - ".github/scripts/validate-docs-production-status.py"
