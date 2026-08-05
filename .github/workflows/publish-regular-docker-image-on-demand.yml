@@ -65,7 +65,7 @@ jobs:
           file: ./docker/Dockerfile
           push: true
           cache-from: type=registry,ref=ghcr.io/dos/doscan:buildcache
-          cache-to: type=registry,ref=ghcr.io/dos/doscan:buildcache,mode=max
+          cache-to: type=registry,ref=ghcr.io/dos/doscan:buildcache,mode=max,ignore-error=true
           tags: ghcr.io/dos/doscan:${{ steps.version.outputs.release_version }}.commit.${{ env.SHORT_SHA }}
           labels: ${{ steps.setup.outputs.docker-labels }}
           platforms: linux/amd64
