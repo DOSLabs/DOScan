@@ -48,7 +48,7 @@ env:
   ELIXIR_VERSION: "1.19.4"
   MIX_ENV: prod
   DOS_NAMES_REPOSITORY: https://github.com/DOS/DOS-Names-Contracts.git
-  DOS_NAMES_SUBGRAPH_REF: 45836c7164ac103fa93c4f810015925a1f8220cb
+  DOS_NAMES_SUBGRAPH_REF: a48f2798d0e8cbb620251febc2fa4e41c6ee750e
 
 jobs:
   workflow-scripts:
