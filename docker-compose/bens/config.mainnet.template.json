@@ -1,0 +1,35 @@
+{
+  "subgraphs_reader": {
+    "refresh_cache_schedule": "0 */5 * * * *",
+    "max_protocols_from_user_input": 1,
+    "networks": {
+      "7979": {
+        "blockscout": {
+          "url": "http://backend:4000"
+        },
+        "use_protocols": ["dos-names"],
+        "rpc_url": "http://host.docker.internal:9650/ext/bc/2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk/rpc"
+      }
+    },
+    "protocols": {
+      "dos-names": {
+        "tld_list": ["dos"],
+        "network_id": 7979,
+        "subgraph_name": "dos-names",
+        "address_resolve_technique": "all_domains",
+        "meta": {
+          "short_name": "DOS",
+          "title": "DOS Name Service",
+          "description": "ENSv2-compatible .dos names on DOS Chain Mainnet.",
+          "icon_url": "https://doschain.com/favicon.ico",
+          "docs_url": "https://docs.doschain.com"
+        },
+        "specific": {
+          "type": "ens_like",
+          "registry_contract": "__ROOT_REGISTRY_ADDRESS__",
+          "try_offchain_resolve": false
+        }
+      }
+    }
+  }
+}

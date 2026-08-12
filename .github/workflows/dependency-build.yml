@@ -27,7 +27,10 @@ on:
       - "docs/DOScan-ARCHITECTURE.md"
       - "docs/reports/doscan-frontend-env-audit.vi.html"
       - "scripts/render-testnet-bens.py"
+      - "scripts/render-mainnet-bens.py"
       - "scripts/validate-testnet-bens.py"
+      - ".github/scripts/mainnet-bens-runtime.sh"
+      - ".github/scripts/mainnet-bens-ui.spec.mjs"
       - ".github/workflows/deploy-config.yml"
       - ".github/workflows/dependency-build.yml"
       - ".github/workflows/publish-regular-docker-image-on-demand.yml"
@@ -48,7 +51,7 @@ env:
   ELIXIR_VERSION: "1.19.4"
   MIX_ENV: prod
   DOS_NAMES_REPOSITORY: https://github.com/DOS/DOS-Names-Contracts.git
-  DOS_NAMES_SUBGRAPH_REF: 34c365152a8558f79fc8976d340906e502e84ae0
+  DOS_NAMES_SUBGRAPH_REF: 6224395661280a739c20ebd8a420913a0dd7fd6e
 
 jobs:
   workflow-scripts:
@@ -63,6 +66,9 @@ jobs:
 
       - name: Validate Testnet BENS configuration
         run: python scripts/validate-testnet-bens.py
+
+      - name: Validate Mainnet BENS configuration
+        run: python -m unittest discover -s .github/scripts/tests -p 'test_validate_mainnet_bens.py' -v
 
       - name: Verify immutable DOS Names runtime artifact
         run: |
@@ -83,6 +89,15 @@ jobs:
             "${RUNNER_TEMP}/dos-names-subgraph.yaml"
           python scripts/render-testnet-bens.py
           test -s "${RUNNER_TEMP}/dos-names-subgraph.yaml"
+          test -s docker-compose/bens/config.json
+          cp "${checkout}/contracts/deployments/dos-mainnet-7979.json" \
+            docker-compose/bens/deployment.json
+          node "${checkout}/subgraph/dos-names/scripts/render-manifest.mjs" \
+            docker-compose/bens/deployment.json \
+            "${checkout}/subgraph/dos-names/subgraph.template.yaml" \
+            "${RUNNER_TEMP}/dos-names-mainnet-subgraph.yaml"
+          python scripts/render-mainnet-bens.py
+          test -s "${RUNNER_TEMP}/dos-names-mainnet-subgraph.yaml"
           test -s docker-compose/bens/config.json
   token-lists:
     name: Validate DOS Chain token list reference

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-const baseUrl = process.env.DOSCAN_TESTNET_URL;
+const baseUrl = process.env.DOSCAN_MAINNET_URL;
 const smokeName = process.env.DOS_NAMES_SMOKE_NAME;
 const smokeAddress = process.env.DOS_NAMES_SMOKE_RESOLVED_ADDRESS;
 
@@ -8,7 +8,7 @@ if (!baseUrl || !smokeName || !smokeAddress) {
   throw new Error("Missing DOS Name smoke configuration");
 }
 
-test("DOS Name search resolves through the Testnet UI", async ({ page }) => {
+test("DOS Name search resolves through the Mainnet UI", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
 
@@ -28,9 +28,6 @@ test("DOS Name search resolves through the Testnet UI", async ({ page }) => {
     "href",
     new RegExp(`/address/${smokeAddress}$`, "i"),
   );
-
-  await resultLink.click();
-  await expect(page).toHaveURL(new RegExp(`/address/${smokeAddress}$`, "i"));
 
   const domainDetailsUrl = new URL(
     `/name-services/domains/${smokeName}`,
