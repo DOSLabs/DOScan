@@ -32,6 +32,14 @@ def load_deployment(path: Path) -> dict[str, object]:
         raise ValueError(
             "Deployment manifest deploymentBlock must be a non-negative integer"
         )
+    final_deployment_block = deployment.get("finalDeploymentBlock")
+    if (
+        not isinstance(final_deployment_block, int)
+        or final_deployment_block < deployment_block
+    ):
+        raise ValueError(
+            "Deployment manifest finalDeploymentBlock must be an integer at or after deploymentBlock"
+        )
     contracts = deployment.get("contracts")
     if not isinstance(contracts, dict):
         raise ValueError("Deployment manifest contracts must be an object")
@@ -43,6 +51,13 @@ def load_deployment(path: Path) -> dict[str, object]:
             raise ValueError(f"Deployment contract {field} must not be the zero address")
     if deployment.get("smokeName") != "bens-smoke.dos":
         raise ValueError("Deployment manifest smokeName must be bens-smoke.dos")
+    smoke_resolved_address = deployment.get("smokeResolvedAddress")
+    if (
+        not isinstance(smoke_resolved_address, str)
+        or not ADDRESS_RE.fullmatch(smoke_resolved_address)
+        or int(smoke_resolved_address, 16) == 0
+    ):
+        raise ValueError("Deployment manifest smokeResolvedAddress is invalid")
     return deployment
 
 

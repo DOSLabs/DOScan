@@ -618,6 +618,9 @@ jobs:
       - name: Validate Mainnet and Testnet environment parity
         run: python scripts/validate-blockscout-env-parity.py
 
+      - name: Validate Testnet BENS configuration
+        run: python scripts/validate-testnet-bens.py
+
       - name: Validate testnet Caddy configuration
         run: |
           set -euo pipefail
@@ -657,6 +660,8 @@ jobs:
             docker-compose/bens/subgraph/subgraph.template.yaml \
             docker-compose/bens/subgraph/subgraph.yaml
           python scripts/render-testnet-bens.py
+          echo "DOS_NAMES_SMOKE_NAME=$(jq -er '.smokeName' docker-compose/bens/deployment.json)" >> "${GITHUB_ENV}"
+          echo "DOS_NAMES_SMOKE_RESOLVED_ADDRESS=$(jq -er '.smokeResolvedAddress' docker-compose/bens/deployment.json)" >> "${GITHUB_ENV}"
 
       - name: Package testnet deployment configuration
         run: |
@@ -716,6 +721,7 @@ jobs:
             --tunnel-through-iap \
             --command='
               set -euo pipefail
+              umask 077
 
               RUN_ID='"${GITHUB_RUN_ID}"'
               RUN_ATTEMPT='"${GITHUB_RUN_ATTEMPT}"'
@@ -892,15 +898,87 @@ jobs:
                   echo "TESTNET ROLLBACK FAILED; restored frontend runtime is unhealthy" >&2
                   return 1
                 fi
+                restored_stack_healthy=0
                 for attempt in $(seq 1 30); do
                   if curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null; then
-                    echo "Testnet rollback completed successfully" >&2
-                    return 0
+                    restored_stack_healthy=1
+                    break
                   fi
                   sleep 5
                 done
-                echo "TESTNET ROLLBACK FAILED; restored stack is not healthy" >&2
-                return 1
+                if [ "${restored_stack_healthy}" -ne 1 ]; then
+                  echo "TESTNET ROLLBACK FAILED; restored stack is not healthy" >&2
+                  return 1
+                fi
+
+                if sudo test -f "${BACKUP}/bens-existed" &&
+                   sudo test -f "${BACKUP}/bens-state-existed"; then
+                  old_deployment="${BACKUP}/bens/deployment.json"
+                  if ! sudo jq -e \
+                    '"'"'.chainId == 3939 and
+                     (.finalDeploymentBlock | type == "number") and
+                     (.smokeName | type == "string") and
+                     (.smokeResolvedAddress | type == "string")'"'"' \
+                    "${old_deployment}" >/dev/null; then
+                    echo "TESTNET ROLLBACK FAILED; prior BENS deployment metadata is invalid" >&2
+                    return 1
+                  fi
+                  old_final_block="$(sudo jq -er '"'"'.finalDeploymentBlock'"'"' "${old_deployment}")"
+                  old_smoke_name="$(sudo jq -er '"'"'.smokeName'"'"' "${old_deployment}")"
+                  old_smoke_address="$(sudo jq -er '"'"'.smokeResolvedAddress'"'"' "${old_deployment}")"
+                  restored_bens_healthy=0
+                  for attempt in $(seq 1 30); do
+                    restored_graph_status="$(
+                      sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                        docker compose exec -T backend curl -fsS \
+                        -H "Content-Type: application/json" \
+                        --data-binary '"'"'{"query":"{ _meta { block { number } hasIndexingErrors } }"}'"'"' \
+                        http://bens-graph-node:8000/subgraphs/name/dos-names 2>/dev/null || true
+                    )"
+                    restored_smoke_response="$(
+                      curl -fsS -H "Host: test.doscan.io" \
+                        "http://127.0.0.1:13080/name-service/api/v1/3939/domains/${old_smoke_name}" 2>/dev/null || true
+                    )"
+                    restored_reverse_response="$(
+                      curl -fsS -H "Host: test.doscan.io" \
+                        "http://127.0.0.1:13080/name-service/api/v1/3939/addresses/${old_smoke_address}?protocol_id=dos-names" 2>/dev/null || true
+                    )"
+                    restored_search_response="$(
+                      curl -fsS -H "Host: test.doscan.io" \
+                        "http://127.0.0.1:13080/api/v2/search?q=${old_smoke_name}" 2>/dev/null || true
+                    )"
+                    if curl -fsS -H "Host: test.doscan.io" \
+                         http://127.0.0.1:13080/name-service/health | grep -q '"'"'"SERVING"'"'"' &&
+                       curl -fsS -H "Host: test.doscan.io" \
+                         "http://127.0.0.1:13080/name-service/api/v1/protocols?chain_id=3939" | grep -q '"'"'"dos-names"'"'"' &&
+                       jq -e --argjson final_block "${old_final_block}" \
+                         '"'"'.data._meta.hasIndexingErrors == false and
+                          (.data._meta.block.number | tonumber) >= $final_block'"'"' \
+                         <<<"${restored_graph_status}" >/dev/null 2>&1 &&
+                       jq -e --arg name "${old_smoke_name}" --arg address "${old_smoke_address}" \
+                         '"'"'.name == $name and
+                          (.resolved_address.hash | ascii_downcase) == ($address | ascii_downcase)'"'"' \
+                         <<<"${restored_smoke_response}" >/dev/null 2>&1 &&
+                       jq -e --arg name "${old_smoke_name}" \
+                         '"'"'.domain.name == $name'"'"' <<<"${restored_reverse_response}" >/dev/null 2>&1 &&
+                       jq -e --arg name "${old_smoke_name}" --arg address "${old_smoke_address}" \
+                         '"'"'any(.items[];
+                           .type == "ens_domain" and (.name // .ens_info.name) == $name and
+                           (.address_hash | ascii_downcase) == ($address | ascii_downcase))'"'"' \
+                         <<<"${restored_search_response}" >/dev/null 2>&1; then
+                      restored_bens_healthy=1
+                      break
+                    fi
+                    sleep 5
+                  done
+                  if [ "${restored_bens_healthy}" -ne 1 ]; then
+                    echo "TESTNET ROLLBACK FAILED; restored BENS protocol is not healthy" >&2
+                    return 1
+                  fi
+                fi
+
+                echo "Testnet rollback completed successfully" >&2
+                return 0
               }
 
               finish() {
@@ -924,13 +1002,19 @@ jobs:
               jq -e \
                 '"'"'.chainId == 3939 and
                  (.deploymentBlock | type == "number" and . >= 0) and
+                 (.finalDeploymentBlock | type == "number" and . >= .deploymentBlock) and
                  .smokeName == "bens-smoke.dos" and
+                 (.smokeResolvedAddress | type == "string" and
+                  test("^0x[0-9a-fA-F]{40}$") and
+                  ascii_downcase != "0x0000000000000000000000000000000000000000") and
                  ([.contracts.dosRegistry, .contracts.dosRegistrar,
                    .contracts.permissionedResolverImplementation,
                    .contracts.rootRegistry] | all(type == "string"))'"'"' \
                 "${DEPLOYMENT_JSON}" >/dev/null
               DEPLOYMENT_BLOCK="$(jq -er ".deploymentBlock" "${DEPLOYMENT_JSON}")"
+              FINAL_DEPLOYMENT_BLOCK="$(jq -er ".finalDeploymentBlock" "${DEPLOYMENT_JSON}")"
               SMOKE_NAME="$(jq -er ".smokeName" "${DEPLOYMENT_JSON}")"
+              SMOKE_RESOLVED_ADDRESS="$(jq -er ".smokeResolvedAddress" "${DEPLOYMENT_JSON}")"
               while read -r contract_name contract_address; do
                 rpc_body="$(
                   jq -cn --arg address "${contract_address}" \
@@ -970,17 +1054,52 @@ jobs:
                 exit 1
               fi
 
-              if ! sudo test -s "${BENS_SECRETS_ENV}"; then
-                bens_db_password="$(openssl rand -hex 32)"
-                printf \
-                  'POSTGRES_PASSWORD=%s\npostgres_pass=%s\nBENS__DATABASE__CONNECT__URL=postgresql://graph-node:%s@bens-db:5432/graph-node\n' \
-                  "${bens_db_password}" "${bens_db_password}" "${bens_db_password}" |
-                  sudo tee "${BENS_SECRETS_ENV}" >/dev/null
+              canonical_bens_key_count="$(
+                sudo grep -Ec '"'"'^DOSCAN_BENS_DB_PASSWORD='"'"' "${SECRETS_ENV}" || true
+              )"
+              canonical_bens_password_count="$(
+                sudo grep -Ec '"'"'^DOSCAN_BENS_DB_PASSWORD=[0-9a-f]{64}$'"'"' "${SECRETS_ENV}" || true
+              )"
+              if [ "${canonical_bens_key_count}" -eq 0 ]; then
+                if sudo test -s "${BENS_SECRETS_ENV}"; then
+                  bens_db_password="$(
+                    sudo awk -F= '"'"'$1 == "POSTGRES_PASSWORD" { print $2 }'"'"' "${BENS_SECRETS_ENV}"
+                  )"
+                else
+                  bens_db_password="$(openssl rand -hex 32)"
+                fi
+                if ! grep -Eq '"'"'^[0-9a-f]{64}$'"'"' <<<"${bens_db_password}"; then
+                  echo "Existing Testnet BENS database password is invalid; refusing deployment" >&2
+                  exit 1
+                fi
+                canonical_secrets_tmp="$(mktemp /tmp/doscan-testnet-secrets.XXXXXX)"
+                sudo cat "${SECRETS_ENV}" > "${canonical_secrets_tmp}"
+                printf '"'"'DOSCAN_BENS_DB_PASSWORD=%s\n'"'"' "${bens_db_password}" >> "${canonical_secrets_tmp}"
+                sudo install -m 0600 "${canonical_secrets_tmp}" "${SECRETS_ENV}"
+                rm -f "${canonical_secrets_tmp}"
                 unset bens_db_password
-                sudo chmod 0600 "${BENS_SECRETS_ENV}"
+              elif [ "${canonical_bens_key_count}" -ne 1 ] ||
+                   [ "${canonical_bens_password_count}" -ne 1 ]; then
+                echo "Testnet canonical BENS database password is missing or duplicated; refusing deployment" >&2
+                exit 1
               fi
-              if [ "$(sudo grep -Ec '^(POSTGRES_PASSWORD|postgres_pass|BENS__DATABASE__CONNECT__URL)=.+$' "${BENS_SECRETS_ENV}")" -ne 3 ]; then
-                echo "Existing Testnet BENS database secrets are incomplete; refusing deployment" >&2
+
+              bens_db_password="$(
+                sudo awk -F= '"'"'$1 == "DOSCAN_BENS_DB_PASSWORD" { print $2 }'"'"' "${SECRETS_ENV}"
+              )"
+              if ! grep -Eq '"'"'^[0-9a-f]{64}$'"'"' <<<"${bens_db_password}"; then
+                echo "Testnet canonical BENS database password is invalid; refusing deployment" >&2
+                exit 1
+              fi
+              bens_secrets_tmp="$(mktemp /tmp/doscan-testnet-bens-secrets.XXXXXX)"
+              printf \
+                '"'"'POSTGRES_PASSWORD=%s\npostgres_pass=%s\nBENS__DATABASE__CONNECT__URL=postgresql://graph-node:%s@bens-db:5432/graph-node\n'"'"' \
+                "${bens_db_password}" "${bens_db_password}" "${bens_db_password}" > "${bens_secrets_tmp}"
+              sudo install -m 0600 "${bens_secrets_tmp}" "${BENS_SECRETS_ENV}"
+              rm -f "${bens_secrets_tmp}"
+              unset bens_db_password
+              if [ "$(sudo grep -Ec '"'"'^(POSTGRES_PASSWORD|postgres_pass|BENS__DATABASE__CONNECT__URL)=.+$'"'"' "${BENS_SECRETS_ENV}")" -ne 3 ]; then
+                echo "BENS database secrets derived from canonical password are incomplete; refusing deployment" >&2
                 exit 1
               fi
 
@@ -1114,9 +1233,9 @@ jobs:
                     --data-binary '"'"'{"query":"{ _meta { block { number } hasIndexingErrors } }"}'"'"' \
                     http://bens-graph-node:8000/subgraphs/name/dos-names 2>/dev/null || true
                 )"
-                if jq -e --argjson deployment_block "${DEPLOYMENT_BLOCK}" \
+                if jq -e --argjson final_deployment_block "${FINAL_DEPLOYMENT_BLOCK}" \
                   '"'"'.data._meta.hasIndexingErrors == false and
-                   (.data._meta.block.number | tonumber) >= $deployment_block'"'"' \
+                   (.data._meta.block.number | tonumber) >= $final_deployment_block'"'"' \
                   <<<"${graph_status}" >/dev/null 2>&1; then
                   graph_synced=1
                   break
@@ -1124,7 +1243,7 @@ jobs:
                 sleep 5
               done
               if [ "${graph_synced}" -ne 1 ]; then
-                echo "DOS Names subgraph did not index deployment block ${DEPLOYMENT_BLOCK}" >&2
+                echo "DOS Names subgraph did not index final deployment block ${FINAL_DEPLOYMENT_BLOCK}" >&2
                 sudo docker compose logs --tail=150 bens-graph-node
                 exit 1
               fi
@@ -1196,7 +1315,11 @@ jobs:
                   curl -fsS -H "Host: test.doscan.io" \
                     "http://127.0.0.1:13080${smoke_lookup_path}"
                 )" &&
-                  jq -e --arg smoke_name "${SMOKE_NAME}" '"'"'.name == $smoke_name'"'"' \
+                  jq -e \
+                    --arg smoke_name "${SMOKE_NAME}" \
+                    --arg smoke_address "${SMOKE_RESOLVED_ADDRESS}" \
+                    '"'"'.name == $smoke_name and
+                     (.resolved_address.hash | ascii_downcase) == ($smoke_address | ascii_downcase)'"'"' \
                     <<<"${smoke_response}" >/dev/null; then
                   smoke_lookup_ok=1
                   break
@@ -1208,6 +1331,18 @@ jobs:
                 sudo docker compose logs --tail=150 caddy bens bens-graph-node
                 exit 1
               fi
+              curl -fsS -H "Host: test.doscan.io" \
+                "http://127.0.0.1:13080/name-service/api/v1/3939/addresses/${SMOKE_RESOLVED_ADDRESS}?protocol_id=dos-names" | \
+                jq -e --arg smoke_name "${SMOKE_NAME}" '"'"'.domain.name == $smoke_name'"'"' >/dev/null
+              curl -fsS -H "Host: test.doscan.io" \
+                "http://127.0.0.1:13080/api/v2/search?q=${SMOKE_NAME}" | \
+                jq -e \
+                  --arg smoke_name "${SMOKE_NAME}" \
+                  --arg smoke_address "${SMOKE_RESOLVED_ADDRESS}" \
+                  '"'"'any(.items[];
+                    .type == "ens_domain" and
+                    (.name // .ens_info.name) == $smoke_name and
+                    (.address_hash | ascii_downcase) == ($smoke_address | ascii_downcase))'"'"' >/dev/null
 
               for attempt in $(seq 1 30); do
                 if curl -fsS \
@@ -1276,7 +1411,23 @@ jobs:
                 grep -q '"dos-names"'
               curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                 "https://test.doscan.io/name-service/api/v1/3939/domains/${SMOKE_NAME}" | \
-                jq -e --arg smoke_name "${SMOKE_NAME}" '"'"'.name == $smoke_name'"'"' >/dev/null
+                jq -e \
+                  --arg smoke_name "${SMOKE_NAME}" \
+                  --arg smoke_address "${SMOKE_RESOLVED_ADDRESS}" \
+                  '"'"'.name == $smoke_name and
+                   (.resolved_address.hash | ascii_downcase) == ($smoke_address | ascii_downcase)'"'"' >/dev/null
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                "https://test.doscan.io/name-service/api/v1/3939/addresses/${SMOKE_RESOLVED_ADDRESS}?protocol_id=dos-names" | \
+                jq -e --arg smoke_name "${SMOKE_NAME}" '"'"'.domain.name == $smoke_name'"'"' >/dev/null
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                "https://test.doscan.io/api/v2/search?q=${SMOKE_NAME}" | \
+                jq -e \
+                  --arg smoke_name "${SMOKE_NAME}" \
+                  --arg smoke_address "${SMOKE_RESOLVED_ADDRESS}" \
+                  '"'"'any(.items[];
+                    .type == "ens_domain" and
+                    (.name // .ens_info.name) == $smoke_name and
+                    (.address_hash | ascii_downcase) == ($smoke_address | ascii_downcase))'"'"' >/dev/null
               for metadata_url in \
                 "https://test.doscan.io/metadata-api/api/v1/metadata" \
                 "https://test.doscan.io/api/v1/metadata"; do
@@ -1296,6 +1447,20 @@ jobs:
               sudo docker compose ps
               echo "GCP testnet deployment completed"
             '
+
+      - name: Verify Testnet DOS Name UI with Playwright
+        env:
+          DOSCAN_TESTNET_URL: https://test.doscan.io/
+        run: |
+          set -euo pipefail
+          playwright_dir="$(mktemp -d "${RUNNER_TEMP}/doscan-playwright.XXXXXX")"
+          trap 'rm -rf "${playwright_dir}"' EXIT
+          cp .github/scripts/testnet-bens-ui.spec.mjs "${playwright_dir}/"
+          cd "${playwright_dir}"
+          npm init --yes >/dev/null
+          npm install --no-save --package-lock=false @playwright/test@1.55.0 >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+          npx playwright test testnet-bens-ui.spec.mjs --reporter=line
 
   deploy-beta:
     if: >

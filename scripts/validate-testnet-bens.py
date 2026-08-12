@@ -16,6 +16,7 @@ FRONTEND_ENV = ROOT / "docker-compose" / "envs" / "common-frontend-testnet.env"
 BENS_TEMPLATE = ROOT / "docker-compose" / "bens" / "config.template.json"
 DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy-config.yml"
 DEPENDENCY_WORKFLOW = ROOT / ".github" / "workflows" / "dependency-build.yml"
+PLAYWRIGHT_SPEC = ROOT / ".github" / "scripts" / "testnet-bens-ui.spec.mjs"
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -39,6 +40,7 @@ def validate() -> list[str]:
         BENS_TEMPLATE,
         DEPLOY_WORKFLOW,
         DEPENDENCY_WORKFLOW,
+        PLAYWRIGHT_SPEC,
     )
     for path in required_files:
         if not path.is_file():
@@ -118,6 +120,27 @@ def validate() -> list[str]:
         errors.append("The deployment workflow must fetch from DOS Names")
     if "contracts/deployments/dos-testnet-3939.json" not in workflow:
         errors.append("The deployment workflow must consume the DOS Names manifest")
+    testnet_job = workflow.split("  deploy-testnet:", 1)
+    if len(testnet_job) != 2 or "run: python scripts/validate-testnet-bens.py" not in testnet_job[1].split(
+        "\n  deploy-beta:", 1
+    )[0]:
+        errors.append("The Testnet deploy job must run the BENS validator directly")
+    for acceptance_marker in (
+        "FINAL_DEPLOYMENT_BLOCK",
+        "SMOKE_RESOLVED_ADDRESS",
+        ".resolved_address.hash",
+        "/addresses/${SMOKE_RESOLVED_ADDRESS}",
+        "/api/v2/search?q=${SMOKE_NAME}",
+        "Verify Testnet DOS Name UI with Playwright",
+    ):
+        if acceptance_marker not in workflow:
+            errors.append(
+                f"The Testnet deployment acceptance gate is missing {acceptance_marker}"
+            )
+    if "DOSCAN_BENS_DB_PASSWORD" not in workflow or (
+        "BENS database secrets derived from canonical password" not in workflow
+    ):
+        errors.append("BENS database credentials must derive from one canonical secret")
     dependency_ref_match = re.search(
         r"DOS_NAMES_SUBGRAPH_REF: ([0-9a-f]{40})", dependency_workflow
     )

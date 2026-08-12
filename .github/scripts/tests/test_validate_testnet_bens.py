@@ -65,9 +65,15 @@ class ValidateTestnetBensTests(unittest.TestCase):
 
         self.assertIn('method":"eth_getCode"', workflow)
         self.assertIn("hasIndexingErrors", workflow)
+        self.assertIn("FINAL_DEPLOYMENT_BLOCK", workflow)
         self.assertIn("bens-smoke.dos", workflow)
+        self.assertIn("SMOKE_RESOLVED_ADDRESS", workflow)
+        self.assertIn(".resolved_address.hash", workflow)
+        self.assertIn("/addresses/${SMOKE_RESOLVED_ADDRESS}", workflow)
+        self.assertIn("/api/v2/search?q=${SMOKE_NAME}", workflow)
         self.assertIn("bens-graph-node.dump", workflow)
         self.assertIn("bens-ipfs.tgz", workflow)
+        self.assertIn("Verify Testnet DOS Name UI with Playwright", workflow)
 
         dependency_workflow = (
             ROOT / ".github" / "workflows" / "dependency-build.yml"
@@ -75,6 +81,29 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn(
             "cat-file -e FETCH_HEAD:contracts/deployments/dos-testnet-3939.json",
             dependency_workflow,
+        )
+
+    def test_testnet_job_runs_the_bens_validator_directly(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        testnet_job = workflow.split("  deploy-testnet:", 1)[1].split(
+            "\n  deploy-beta:", 1
+        )[0]
+
+        self.assertIn("run: python scripts/validate-testnet-bens.py", testnet_job)
+
+    def test_bens_password_has_one_canonical_secret_source(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("DOSCAN_BENS_DB_PASSWORD", workflow)
+        self.assertIn("BENS database secrets derived from canonical password", workflow)
+
+    def test_playwright_acceptance_spec_exists(self):
+        self.assertTrue(
+            (ROOT / ".github" / "scripts" / "testnet-bens-ui.spec.mjs").is_file()
         )
 
     def test_renderer_rejects_wrong_chain(self):
@@ -105,7 +134,9 @@ class ValidateTestnetBensTests(unittest.TestCase):
                     {
                         "chainId": 3939,
                         "deploymentBlock": 12,
+                        "finalDeploymentBlock": 18,
                         "smokeName": "bens-smoke.dos",
+                        "smokeResolvedAddress": "0x5555555555555555555555555555555555555555",
                         "contracts": {
                             "dosRegistry": "0x1111111111111111111111111111111111111111",
                             "dosRegistrar": "0x3333333333333333333333333333333333333333",
@@ -125,6 +156,29 @@ class ValidateTestnetBensTests(unittest.TestCase):
             rendered = output_path.read_text(encoding="utf-8")
             self.assertIn("0x2222222222222222222222222222222222222222", rendered)
             self.assertNotIn("__ROOT_REGISTRY_ADDRESS__", rendered)
+
+    def test_renderer_rejects_final_block_before_deployment(self):
+        renderer_path = ROOT / "scripts" / "render-testnet-bens.py"
+        spec = importlib.util.spec_from_file_location("render_testnet_bens", renderer_path)
+        renderer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(renderer)
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = Path(directory) / "deployment.json"
+            deployment.write_text(
+                json.dumps(
+                    {
+                        "chainId": 3939,
+                        "deploymentBlock": 12,
+                        "finalDeploymentBlock": 11,
+                        "smokeName": "bens-smoke.dos",
+                        "smokeResolvedAddress": "0x5555555555555555555555555555555555555555",
+                        "contracts": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "finalDeploymentBlock"):
+                renderer.load_deployment(deployment)
 
 
 if __name__ == "__main__":
