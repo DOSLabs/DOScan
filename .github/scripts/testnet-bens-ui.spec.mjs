@@ -12,7 +12,9 @@ test("DOS Name search resolves through the Testnet UI", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
 
-  const searchInput = page.locator('input[placeholder*="search" i]').first();
+  const searchInput = page
+    .locator('input[placeholder*="search" i]:visible')
+    .first();
   await expect(searchInput).toBeVisible({ timeout: 30_000 });
 
   const searchResponse = page.waitForResponse(
@@ -37,11 +39,9 @@ test("DOS Name search resolves through the Testnet UI", async ({ page }) => {
     baseUrl,
   );
   await page.goto(domainDetailsUrl.toString(), { waitUntil: "domcontentloaded" });
+  await expect(
+    page.getByText(smokeAddress, { exact: false }).first(),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(smokeName, { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Oops! Something went wrong")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: smokeName })).toBeVisible({
-    timeout: 30_000,
-  });
-  await expect(page.getByText(smokeAddress, { exact: false }).first()).toBeVisible({
-    timeout: 30_000,
-  });
 });

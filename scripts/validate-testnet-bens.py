@@ -147,7 +147,7 @@ def validate() -> list[str]:
             errors.append(f"{key} must be {expected!r}, got {actual!r}")
 
     expected_frontend = {
-        "NEXT_PUBLIC_NAME_SERVICE_API_HOST": "https://test.doscan.io/name-service",
+        "NEXT_PUBLIC_NAME_SERVICE_API_HOST": "https://test.doscan.io",
         "NEXT_PUBLIC_NAME_SERVICE_PROTOCOLS": "['dos-names']",
     }
     for key, expected in expected_frontend.items():

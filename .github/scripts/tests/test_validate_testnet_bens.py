@@ -496,6 +496,26 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn("/name-services/domains/", ui_test)
         self.assertIn('getByText("Oops! Something went wrong")', ui_test)
 
+    def test_frontend_bens_host_has_no_path_and_caddy_routes_bens_api(self):
+        frontend_env = (
+            ROOT / "docker-compose" / "envs" / "common-frontend-testnet.env"
+        ).read_text(encoding="utf-8")
+        caddy = (ROOT / "docker-compose" / "Caddyfile-gcp-testnet").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "NEXT_PUBLIC_NAME_SERVICE_API_HOST=https://test.doscan.io",
+            frontend_env,
+        )
+        self.assertNotIn(
+            "NEXT_PUBLIC_NAME_SERVICE_API_HOST=https://test.doscan.io/name-service",
+            frontend_env,
+        )
+        self.assertIn("@bens_api path", caddy)
+        self.assertIn("/api/v1/domains*", caddy)
+        self.assertIn("/api/v1/addresses/*", caddy)
+        self.assertIn("reverse_proxy bens:8050", caddy)
+
     def test_renderer_rejects_wrong_chain(self):
         renderer_path = ROOT / "scripts" / "render-testnet-bens.py"
         spec = importlib.util.spec_from_file_location("render_testnet_bens", renderer_path)

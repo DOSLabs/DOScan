@@ -328,8 +328,7 @@ jobs:
                 fi
 
                 if [ "${l1_rc}" -ne 0 ] || [ "${edge_rc}" -ne 0 ] ||
-                   ! curl -fsS http://127.0.0.1:13080/api/v2/stats >/dev/null ||
-                   ! curl -fsS http://127.0.0.1:13080/public-metrics >/dev/null ||
+                   ! bens_wait_restored_core_http ||
                    ! curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                      https://doscan.io/api/v2/stats >/dev/null ||
                    ! curl --fail --silent --show-error --retry 6 --retry-delay 5 \
@@ -590,7 +589,7 @@ jobs:
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://doscan.io/metadata-api\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
-              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_API_HOST: \"https://doscan.io/name-service\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_API_HOST: \"https://doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_NAME_SERVICE_PROTOCOLS: \"['"'"'dos-names'"'"']\"" <<<"${frontend_env}"
               verify_frontend_wallets
 
@@ -641,7 +640,7 @@ jobs:
               grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_CROSS_CHAIN_TXS_ENABLED: \"true\"" <<<"${frontend_env}"
-              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_API_HOST: \"https://doscan.io/name-service\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_API_HOST: \"https://doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_NAME_SERVICE_PROTOCOLS: \"['"'"'dos-names'"'"']\"" <<<"${frontend_env}"
               verify_frontend_wallets
               curl --fail --silent --show-error --retry 6 --retry-delay 5 \
@@ -1414,7 +1413,7 @@ jobs:
                 exit 1
               fi
               grep -Fq "NEXT_PUBLIC_HAS_USER_OPS: \"true\"" <<<"${frontend_env}"
-              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_API_HOST: \"https://test.doscan.io/name-service\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_API_HOST: \"https://test.doscan.io\"" <<<"${frontend_env}"
               grep -Pq "NEXT_PUBLIC_NAME_SERVICE_PROTOCOLS: .*\\x27dos-names\\x27" <<<"${frontend_env}"
 
               for attempt in $(seq 1 30); do
@@ -1521,7 +1520,7 @@ jobs:
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://test.doscan.io/metadata-api\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://test.doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
-              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_API_HOST: \"https://test.doscan.io/name-service\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_API_HOST: \"https://test.doscan.io\"" <<<"${frontend_env}"
               grep -Pq "NEXT_PUBLIC_NAME_SERVICE_PROTOCOLS: .*\\x27dos-names\\x27" <<<"${frontend_env}"
               verify_frontend_wallets
               if grep -F "NEXT_PUBLIC_NETWORK_EXPLORERS:" <<<"${frontend_env}" | grep -Fq "https://test.doscan.io/"; then
