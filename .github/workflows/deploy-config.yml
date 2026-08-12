@@ -1035,13 +1035,14 @@ jobs:
               FINAL_DEPLOYMENT_BLOCK="$(jq -er ".finalDeploymentBlock" "${DEPLOYMENT_JSON}")"
               SMOKE_NAME="$(jq -er ".smokeName" "${DEPLOYMENT_JSON}")"
               SMOKE_RESOLVED_ADDRESS="$(jq -er ".smokeResolvedAddress" "${DEPLOYMENT_JSON}")"
+              TESTNET_RPC_CANONICAL_INTERNAL_URL="http://127.0.0.1:9650/ext/bc/JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9/rpc"
               while read -r contract_name contract_address; do
                 rpc_body="$(
                   jq -cn --arg address "${contract_address}" \
                     '"'"'{"jsonrpc":"2.0","id":1,"method":"eth_getCode","params":[$address,"latest"]}'"'"'
                 )"
                 contract_code="$(
-                  testnet_rpc_request "${rpc_body}" |
+                  testnet_rpc_request "${rpc_body}" 0 "${TESTNET_RPC_CANONICAL_INTERNAL_URL}" |
                     jq -er ".result"
                 )"
                 if [ "${contract_code}" = "0x" ] || [ "${contract_code}" = "0x0" ]; then

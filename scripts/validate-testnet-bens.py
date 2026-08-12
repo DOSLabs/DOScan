@@ -19,6 +19,12 @@ DEPENDENCY_WORKFLOW = ROOT / ".github" / "workflows" / "dependency-build.yml"
 PLAYWRIGHT_SPEC = ROOT / ".github" / "scripts" / "testnet-bens-ui.spec.mjs"
 RPC_RETRY_SCRIPT = ROOT / ".github" / "scripts" / "retry-testnet-rpc.sh"
 SUBGRAPH_DEPLOY_SCRIPT = ROOT / "docker-compose" / "bens" / "deploy-subgraph.sh"
+CANONICAL_TESTNET_BLOCKCHAIN = "JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9"
+RETIRED_TESTNET_BLOCKCHAIN = "2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ"
+CANONICAL_TESTNET_INTERNAL_RPC = (
+    "http://10.148.0.7:9650/ext/bc/"
+    f"{CANONICAL_TESTNET_BLOCKCHAIN}/rpc"
+)
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -61,6 +67,28 @@ def validate() -> list[str]:
     dependency_workflow = DEPENDENCY_WORKFLOW.read_text(encoding="utf-8")
     rpc_retry_script = RPC_RETRY_SCRIPT.read_text(encoding="utf-8")
     subgraph_deploy_script = SUBGRAPH_DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    for path, content in (
+        (COMPOSE, compose),
+        (CADDY, caddy),
+        (BACKEND_ENV, BACKEND_ENV.read_text(encoding="utf-8")),
+    ):
+        if CANONICAL_TESTNET_BLOCKCHAIN not in content:
+            errors.append(
+                f"{path.relative_to(ROOT)} must target the canonical Testnet blockchain"
+            )
+        if RETIRED_TESTNET_BLOCKCHAIN in content:
+            errors.append(
+                f"{path.relative_to(ROOT)} must not target the retired Testnet blockchain"
+            )
+    if caddy.count(CANONICAL_TESTNET_BLOCKCHAIN) != 2:
+        errors.append(
+            "Caddy Testnet RPC and WebSocket routes must both target the canonical blockchain"
+        )
+    if caddy.count('X-DOS-RPC-Origin "dos-testnet-r0-JASJZyVT"') != 2:
+        errors.append("Caddy must identify both canonical Testnet RPC routes")
+    if f"ethereum: dos-testnet:{CANONICAL_TESTNET_INTERNAL_RPC}" not in compose:
+        errors.append("Graph Node must bootstrap from the canonical internal Testnet RPC")
 
     for service in ("bens-db:", "bens-ipfs:", "bens-graph-node:", "bens:"):
         if service not in compose:
@@ -143,6 +171,8 @@ def validate() -> list[str]:
         errors.append("ENSv2 token IDs must not use the ENSv1 native NFT mapping")
     if networks.get("3939", {}).get("use_protocols") != ["dos-names"]:
         errors.append("BENS network 3939 must enable only dos-names")
+    if networks.get("3939", {}).get("rpc_url") != CANONICAL_TESTNET_INTERNAL_RPC:
+        errors.append("BENS must use the canonical internal Testnet RPC")
 
     ref_match = re.search(r"DOS_NAMES_SUBGRAPH_REF: ([0-9a-f]{40})", workflow)
     if ref_match is None:
