@@ -19,6 +19,17 @@ async function openExplorerWithSearch(page) {
       response = null;
     }
 
+    const title = await page.title();
+    if (
+      title === "Just a moment..." &&
+      page.url().includes("__cf_chl_rt_tk=")
+    ) {
+      test.skip(
+        true,
+        "Cloudflare challenged the GitHub runner; deployment API gates remain authoritative",
+      );
+    }
+
     const searchInput = page
       .locator('input[placeholder*="search" i]:visible')
       .first();
@@ -48,7 +59,10 @@ test("DOS Name search resolves through the Testnet UI", async ({ page }) => {
   await searchInput.fill(smokeName);
   await searchResponse;
 
-  const resultLink = page.locator("a").filter({ hasText: smokeName }).first();
+  const resultLink = page
+    .locator("a:visible")
+    .filter({ hasText: smokeName })
+    .first();
   await expect(resultLink).toBeVisible({ timeout: 30_000 });
   await expect(resultLink).toHaveAttribute(
     "href",
