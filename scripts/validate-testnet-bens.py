@@ -19,6 +19,8 @@ DEPENDENCY_WORKFLOW = ROOT / ".github" / "workflows" / "dependency-build.yml"
 PLAYWRIGHT_SPEC = ROOT / ".github" / "scripts" / "testnet-bens-ui.spec.mjs"
 RPC_RETRY_SCRIPT = ROOT / ".github" / "scripts" / "retry-testnet-rpc.sh"
 SUBGRAPH_DEPLOY_SCRIPT = ROOT / "docker-compose" / "bens" / "deploy-subgraph.sh"
+CANONICAL_TESTNET_BLOCKCHAIN = "JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9"
+RETIRED_TESTNET_BLOCKCHAIN = "2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ"
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -61,6 +63,26 @@ def validate() -> list[str]:
     dependency_workflow = DEPENDENCY_WORKFLOW.read_text(encoding="utf-8")
     rpc_retry_script = RPC_RETRY_SCRIPT.read_text(encoding="utf-8")
     subgraph_deploy_script = SUBGRAPH_DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    for path, content in (
+        (COMPOSE, compose),
+        (CADDY, caddy),
+        (BACKEND_ENV, BACKEND_ENV.read_text(encoding="utf-8")),
+    ):
+        if CANONICAL_TESTNET_BLOCKCHAIN not in content:
+            errors.append(
+                f"{path.relative_to(ROOT)} must target the canonical Testnet blockchain"
+            )
+        if RETIRED_TESTNET_BLOCKCHAIN in content:
+            errors.append(
+                f"{path.relative_to(ROOT)} must not target the retired Testnet blockchain"
+            )
+    if caddy.count(CANONICAL_TESTNET_BLOCKCHAIN) != 2:
+        errors.append(
+            "Caddy Testnet RPC and WebSocket routes must both target the canonical blockchain"
+        )
+    if caddy.count('X-DOS-RPC-Origin "dos-testnet-r0-JASJZyVT"') != 2:
+        errors.append("Caddy must identify both canonical Testnet RPC routes")
 
     for service in ("bens-db:", "bens-ipfs:", "bens-graph-node:", "bens:"):
         if service not in compose:

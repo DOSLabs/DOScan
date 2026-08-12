@@ -84,6 +84,29 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn("X-DOS-RPC-Origin: dos-testnet-r0-", public_rpc_gate)
         self.assertNotIn("archive-dos-testnet-r0", public_rpc_gate)
 
+    def test_all_testnet_runtime_rpc_targets_use_the_canonical_blockchain(self):
+        canonical_blockchain = (
+            "JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9"
+        )
+        retired_blockchain = (
+            "2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ"
+        )
+        paths = (
+            ROOT / "docker-compose" / "Caddyfile-gcp-testnet",
+            ROOT / "docker-compose" / "docker-compose-testnet.yml",
+            ROOT / "docker-compose" / "envs" / "common-blockscout-testnet.env",
+        )
+
+        for path in paths:
+            with self.subTest(path=path.relative_to(ROOT)):
+                content = path.read_text(encoding="utf-8")
+                self.assertIn(canonical_blockchain, content)
+                self.assertNotIn(retired_blockchain, content)
+
+        caddy = paths[0].read_text(encoding="utf-8")
+        self.assertEqual(2, caddy.count(canonical_blockchain))
+        self.assertEqual(2, caddy.count('X-DOS-RPC-Origin "dos-testnet-r0-JASJZyVT"'))
+
     def test_deployer_invokes_graph_cli_without_executable_shims(self):
         compose = (
             ROOT / "docker-compose" / "docker-compose-testnet.yml"

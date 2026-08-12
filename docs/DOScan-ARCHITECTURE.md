@@ -110,7 +110,7 @@ Beta does not share the Mainnet Blockscout database.
 | Environment | Backend RPC | Blockchain ID | Fetcher constraints |
 |---|---|---|---|
 | Mainnet | `http://host.docker.internal:9650/ext/bc/2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk/rpc` | `2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk` | Pending and internal transaction fetchers enabled |
-| Testnet | `http://10.148.0.7:9650/ext/bc/2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ/rpc` | `2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ` | Pending and internal transaction fetchers disabled because the RPC lacks `txpool_content` and debug tracing |
+| Testnet | `http://10.148.0.7:9650/ext/bc/JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9/rpc` | `JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9` | Pending and internal transaction fetchers disabled because the RPC lacks `txpool_content` and debug tracing |
 | Beta | Mainnet host archive RPC | Mainnet blockchain ID | Lower indexing concurrency than Mainnet |
 
 The archive nodes run in Docker containers outside the DOScan Compose projects. The explorer must use the local archive RPC instead of sending indexing traffic through public Cloudflare endpoints.
