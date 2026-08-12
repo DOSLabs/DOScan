@@ -141,7 +141,7 @@ services:
           node node_modules/@graphprotocol/graph-cli/bin/run create dos-names \
             --node http://bens-graph-node:8020 || true
           subgraph_ready() {
-            node -e 'fetch("http://bens-graph-node:8000/subgraphs/name/dos-names", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({query: "{ _meta { block { number } hasIndexingErrors } }"})}).then(async (response) => { const body = await response.json(); if (!response.ok || !body.data || !body.data._meta) process.exit(1); }).catch(() => process.exit(1));'
+            node -e 'const expectedDeployment = process.argv[1]; fetch("http://bens-graph-node:8000/subgraphs/name/dos-names", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({query: "{ _meta { deployment hasIndexingErrors } }"})}).then(async (response) => { const body = await response.json(); if (!response.ok || body.errors || !body.data || !body.data._meta || body.data._meta.deployment !== expectedDeployment || body.data._meta.hasIndexingErrors !== false) process.exit(1); }).catch(() => process.exit(1));' "$${subgraph_ipfs_hash}"
           }
           wait_for_subgraph() {
             for readiness_attempt in 1 2 3 4 5 6; do
