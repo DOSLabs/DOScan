@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -10,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_PATH = ROOT / "scripts" / "validate-testnet-bens.py"
+RPC_RETRY_SCRIPT = ROOT / ".github" / "scripts" / "retry-testnet-rpc.sh"
 
 
 def load_module():
@@ -60,6 +62,7 @@ class ValidateTestnetBensTests(unittest.TestCase):
         workflow = (
             ROOT / ".github" / "workflows" / "deploy-config.yml"
         ).read_text(encoding="utf-8")
+        retry_script = RPC_RETRY_SCRIPT.read_text(encoding="utf-8")
 
         self.assertEqual(
             canonical_rpc,
@@ -69,7 +72,8 @@ class ValidateTestnetBensTests(unittest.TestCase):
         bytecode_gate = workflow.split('contract_code="$(\n', 1)[1].split(
             'if [ "${contract_code}"', 1
         )[0]
-        self.assertIn(canonical_rpc, bytecode_gate)
+        self.assertIn(canonical_rpc, retry_script)
+        self.assertIn('testnet_rpc_request "${rpc_body}"', bytecode_gate)
         self.assertNotIn("10.148.0.7", bytecode_gate)
         public_rpc_gate = workflow.split('rpc_response="$(\n', 1)[1].split(
             'sudo docker compose ps', 1
@@ -103,6 +107,67 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn('docker pull "${CADDY_IMAGE}"', validation_step)
         self.assertIn("for attempt in 1 2 3", validation_step)
         self.assertIn('if [ "${attempt}" -eq 3 ]', validation_step)
+
+    def test_rpc_retry_discards_failed_attempt_output(self):
+        bash = "bash"
+        if os.name == "nt":
+            bash = r"C:\Program Files\Git\bin\bash.exe"
+
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            curl_path = directory_path / "fake-curl"
+            counter_path = directory_path / "counter"
+            curl_path.write_text(
+                "#!/usr/bin/env bash\n"
+                f'counter="{counter_path.as_posix()}"\n'
+                'attempt="$(cat "${counter}" 2>/dev/null || echo 0)"\n'
+                'attempt="$((attempt + 1))"\n'
+                'printf "%s" "${attempt}" > "${counter}"\n'
+                'if [ "${FAKE_CURL_ALWAYS_FAIL:-0}" -eq 1 ]; then\n'
+                '  printf \'%s\' \'{"result":"0x"}\'\n'
+                "  exit 92\n"
+                "fi\n"
+                'if [ "${attempt}" -eq 1 ]; then\n'
+                '  printf \'%s\' \'{"result":"0x"}\'\n'
+                "  exit 92\n"
+                "fi\n"
+                'printf \'%s\' \'{"result":"0x1234"}\'\n',
+                encoding="utf-8",
+            )
+            curl_path.chmod(0o755)
+            command = (
+                f'source "{RPC_RETRY_SCRIPT.as_posix()}"; '
+                f'TESTNET_RPC_CURL_BIN="{curl_path.as_posix()}"; '
+                "TESTNET_RPC_RETRY_DELAY_SECONDS=0; "
+                "testnet_rpc_request '{}'"
+            )
+
+            result = subprocess.run(
+                [bash, "-c", command],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            failure_command = (
+                f'source "{RPC_RETRY_SCRIPT.as_posix()}"; '
+                f'TESTNET_RPC_CURL_BIN="{curl_path.as_posix()}"; '
+                "TESTNET_RPC_RETRY_DELAY_SECONDS=0; "
+                "export FAKE_CURL_ALWAYS_FAIL=1; "
+                f'rm -f "{counter_path.as_posix()}"; '
+                "if testnet_rpc_request '{}'; then exit 99; fi; "
+                f'cat "{counter_path.as_posix()}"'
+            )
+            failure_result = subprocess.run(
+                [bash, "-c", failure_command],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual('{"result":"0x1234"}', result.stdout)
+        self.assertEqual(0, failure_result.returncode, failure_result.stderr)
+        self.assertEqual("3", failure_result.stdout)
 
     def test_deployment_fetches_an_immutable_dos_names_revision(self):
         workflow = (
