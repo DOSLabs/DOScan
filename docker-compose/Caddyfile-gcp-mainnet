@@ -76,6 +76,9 @@
 	handle /visualize/* {
 		reverse_proxy visualizer:8050
 	}
+	handle_path /name-service/* {
+		reverse_proxy bens:8050
+	}
 	handle {
 		reverse_proxy frontend:3000
 	}

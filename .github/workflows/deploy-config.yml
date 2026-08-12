@@ -23,7 +23,10 @@ on:
       - "docker-compose/envs/common-visualizer.env"
       - "scripts/validate-blockscout-env-parity.py"
       - "scripts/render-testnet-bens.py"
+      - "scripts/render-mainnet-bens.py"
       - "scripts/validate-testnet-bens.py"
+      - ".github/scripts/mainnet-bens-runtime.sh"
+      - ".github/scripts/mainnet-bens-ui.spec.mjs"
       - ".github/workflows/deploy-config.yml"
   workflow_dispatch:
     inputs:
@@ -53,7 +56,7 @@ env:
   GCP_TESTNET_ZONE: asia-southeast1-a
   GCP_TESTNET_INSTANCE: dos-testnet-r0
   DOS_NAMES_REPOSITORY: https://github.com/DOS/DOS-Names-Contracts.git
-  DOS_NAMES_SUBGRAPH_REF: 34c365152a8558f79fc8976d340906e502e84ae0
+  DOS_NAMES_SUBGRAPH_REF: 6224395661280a739c20ebd8a420913a0dd7fd6e
 
 jobs:
   deploy-mainnet:
@@ -71,6 +74,9 @@ jobs:
 
       - name: Validate Testnet BENS configuration
         run: python scripts/validate-testnet-bens.py
+
+      - name: Validate Mainnet BENS configuration
+        run: python -m unittest discover -s .github/scripts/tests -p 'test_validate_mainnet_bens.py' -v
 
       - name: Validate Caddy configuration
         run: |
@@ -108,6 +114,32 @@ jobs:
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
 
+      - name: Prepare immutable DOS Names Mainnet runtime package
+        run: |
+          set -euo pipefail
+          checkout="${RUNNER_TEMP}/dos-names-mainnet"
+          rm -rf "${checkout}" docker-compose/bens/subgraph
+          git init -q "${checkout}"
+          git -C "${checkout}" remote add origin "${DOS_NAMES_REPOSITORY}"
+          git -C "${checkout}" fetch --filter=blob:none origin \
+            refs/heads/dos:refs/remotes/origin/dos
+          git -C "${checkout}" merge-base --is-ancestor \
+            "${DOS_NAMES_SUBGRAPH_REF}" refs/remotes/origin/dos
+          git -C "${checkout}" checkout --detach -q "${DOS_NAMES_SUBGRAPH_REF}"
+          [ "$(git -C "${checkout}" rev-parse HEAD)" = "${DOS_NAMES_SUBGRAPH_REF}" ]
+          test -f "${checkout}/subgraph/dos-names/subgraph.template.yaml"
+          test -f "${checkout}/contracts/deployments/dos-mainnet-7979.json"
+          cp -a "${checkout}/subgraph/dos-names" docker-compose/bens/subgraph
+          cp "${checkout}/contracts/deployments/dos-mainnet-7979.json" \
+            docker-compose/bens/deployment.json
+          node docker-compose/bens/subgraph/scripts/render-manifest.mjs \
+            docker-compose/bens/deployment.json \
+            docker-compose/bens/subgraph/subgraph.template.yaml \
+            docker-compose/bens/subgraph/subgraph.yaml
+          python scripts/render-mainnet-bens.py
+          echo "DOS_NAMES_SMOKE_NAME=$(jq -er '.smokeName' docker-compose/bens/deployment.json)" >> "${GITHUB_ENV}"
+          echo "DOS_NAMES_SMOKE_RESOLVED_ADDRESS=$(jq -er '.smokeResolvedAddress' docker-compose/bens/deployment.json)" >> "${GITHUB_ENV}"
+
       - name: Package deployment configuration
         run: |
           set -euo pipefail
@@ -131,8 +163,10 @@ jobs:
           unset nft_media_json nft_media_access_key_id nft_media_secret_access_key
 
           tar -czf /tmp/doscan-config.tgz \
+            .github/scripts/mainnet-bens-runtime.sh \
             docker-compose/docker-compose-mainnet.yml \
             docker-compose/Caddyfile-gcp-mainnet \
+            docker-compose/bens \
             docker-compose/configs/interchain-indexer-chains.json \
             docker-compose/configs/interchain-indexer-bridges.json \
             docker-compose/Caddyfile-gcp-edge \
@@ -243,6 +277,10 @@ jobs:
                 set +e
                 restore_rc=0
 
+                if declare -F bens_rollback >/dev/null 2>&1; then
+                  bens_rollback || restore_rc=1
+                fi
+
                 cd "${L1_PATH}"; rollback_services=""
                 for service in ${TOUCHED_SERVICES}; do
                   if grep -q "^${service} " "${SRC}/old-service-hashes"; then rollback_services="${rollback_services} ${service}"; else sudo docker compose rm -sf "${service}" || restore_rc=1; fi
@@ -329,6 +367,7 @@ jobs:
               trap finish EXIT
 
               tar -xzf "${ARCHIVE}" -C "${SRC}"
+              . "${SRC}/.github/scripts/mainnet-bens-runtime.sh"
               sudo mkdir -p "${BACKUP}" "${L1_PATH}/envs" "${L1_PATH}/configs" "${EDGE_PATH}" "${SHARED_ENV_PATH}"
 
               sudo cp -a "${L1_PATH}/compose.yml" "${BACKUP}/compose.yml"
@@ -354,6 +393,7 @@ jobs:
               cd "${L1_PATH}"
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" \
                 docker compose config --hash="*" > "${SRC}/old-service-hashes"
+              bens_prepare
 
               if ! sudo cmp -s "${SRC}/docker-compose/envs/common-blockscout.env" \
                    "${L1_PATH}/envs/common-blockscout.env" ||
@@ -416,6 +456,10 @@ jobs:
 
               sudo install -m 0644 "${SRC}/docker-compose/docker-compose-mainnet.yml" "${L1_PATH}/compose.yml"
               sudo install -m 0644 "${SRC}/docker-compose/Caddyfile-gcp-mainnet" "${L1_PATH}/Caddyfile-gcp-mainnet"
+              sudo rm -rf "${L1_PATH}/bens"
+              sudo cp -a "${SRC}/docker-compose/bens" "${L1_PATH}/bens"
+              sudo chmod 0755 "${L1_PATH}/bens"
+              sudo chmod 0644 "${L1_PATH}/bens/config.json"
               for file in interchain-indexer-{chains,bridges}.json; do sudo install -m 0644 "${SRC}/docker-compose/configs/${file}" "${L1_PATH}/configs/${file}"; done
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-blockscout.env" "${L1_PATH}/envs/common-blockscout.env"
               sudo install -m 0644 "${SRC}/docker-compose/docker-compose-gcp-edge.yml" "${EDGE_PATH}/compose.yml"
@@ -438,12 +482,15 @@ jobs:
                   !($1 in old) || old[$1] != $2 { print $1 }
                 '"'"' "${SRC}/old-service-hashes" "${SRC}/new-service-hashes"
               )"
+              TOUCHED_SERVICES="$(grep -Ev '^bens(-db|-ipfs|-graph-node|-deployer)?$' <<<"${TOUCHED_SERVICES}" || true)"
               if [ "${BACKEND_ENV_CHANGED}" -eq 1 ] && ! grep -qw backend <<<"${TOUCHED_SERVICES}"; then
                 TOUCHED_SERVICES="${TOUCHED_SERVICES} backend"
               fi
               if [ "${FRONTEND_ENV_CHANGED}" -eq 1 ] && ! grep -qw frontend <<<"${TOUCHED_SERVICES}"; then
                 TOUCHED_SERVICES="${TOUCHED_SERVICES} frontend"
               fi
+
+              bens_deploy
 
               for service in ${TOUCHED_SERVICES}; do
                 case "${service}" in
@@ -543,7 +590,24 @@ jobs:
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://doscan.io/metadata-api\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_API_HOST: \"https://doscan.io/name-service\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_PROTOCOLS: \"['dos-names']\"" <<<"${frontend_env}"
               verify_frontend_wallets
+
+              backend_env="$(bens_compose exec -T backend env)"
+              grep -Fxq "MICROSERVICE_BENS_ENABLED=true" <<<"${backend_env}"
+              grep -Fxq "MICROSERVICE_BENS_URL=http://bens:8050/" <<<"${backend_env}"
+              grep -Fxq "MICROSERVICE_BENS_PROTOCOLS=dos-names" <<<"${backend_env}"
+
+              smoke_lookup_path="/name-service/api/v1/7979/domains/${SMOKE_NAME}"
+              curl -fsS http://127.0.0.1:13080/name-service/health | grep -q '"SERVING"'
+              curl -fsS "http://127.0.0.1:13080/name-service/api/v1/protocols?chain_id=7979" | grep -q '"dos-names"'
+              local_domain="$(curl -fsS "http://127.0.0.1:13080${smoke_lookup_path}")"
+              jq -e --arg name "${SMOKE_NAME}" --arg address "${SMOKE_RESOLVED_ADDRESS}" \
+                '.name == $name and (.resolved_address.hash | ascii_downcase) == ($address | ascii_downcase)' \
+                <<<"${local_domain}" >/dev/null
+              local_reverse="$(curl -fsS "http://127.0.0.1:13080/name-service/api/v1/7979/addresses/${SMOKE_RESOLVED_ADDRESS}?protocol_id=dos-names")"
+              jq -e --arg name "${SMOKE_NAME}" '.domain.name == $name' <<<"${local_reverse}" >/dev/null
 
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/stats >/dev/null
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/public-metrics >/dev/null
@@ -577,10 +641,33 @@ jobs:
               grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_CROSS_CHAIN_TXS_ENABLED: \"true\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_API_HOST: \"https://doscan.io/name-service\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_PROTOCOLS: \"['dos-names']\"" <<<"${frontend_env}"
               verify_frontend_wallets
               curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                 https://doscan.io/api/v1/chains/7979/pools >/dev/null
               curl -fsS --retry 6 --retry-delay 5 https://doscan.io/api/v1/status/indexers | grep -Eq '"'"'"name":"avalanche"[^}]*"state":"running"'"'"'
+
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                https://doscan.io/name-service/health | grep -q '"SERVING"'
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                "https://doscan.io/name-service/api/v1/protocols?chain_id=7979" | grep -q '"dos-names"'
+              public_domain="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                "https://doscan.io${smoke_lookup_path}")"
+              jq -e --arg name "${SMOKE_NAME}" --arg address "${SMOKE_RESOLVED_ADDRESS}" \
+                '.name == $name and (.resolved_address.hash | ascii_downcase) == ($address | ascii_downcase)' \
+                <<<"${public_domain}" >/dev/null
+              public_reverse="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                "https://doscan.io/name-service/api/v1/7979/addresses/${SMOKE_RESOLVED_ADDRESS}?protocol_id=dos-names")"
+              jq -e --arg name "${SMOKE_NAME}" '.domain.name == $name' <<<"${public_reverse}" >/dev/null
+              search_result="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                "https://doscan.io/api/v2/search?q=${SMOKE_NAME}")"
+              jq -e --arg name "${SMOKE_NAME}" --arg address "${SMOKE_RESOLVED_ADDRESS}" \
+                'any(.items[]?;
+                  .type == "ens_domain" and
+                  (.name // .ens_info.name) == $name and
+                  (.address_hash | ascii_downcase) == ($address | ascii_downcase))' \
+                <<<"${search_result}" >/dev/null
 
               DEPLOYMENT_STARTED=0
               for metadata_url in \
@@ -616,6 +703,20 @@ jobs:
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${BLOCKSCOUT_SECRETS}" DOSCAN_BASE_ENV_DIR="${SHARED_ENV_PATH}" docker compose ps
               echo "GCP mainnet deployment completed"
             '
+
+      - name: Verify Mainnet DOS Name UI with Playwright
+        env:
+          DOSCAN_MAINNET_URL: https://doscan.io/
+        run: |
+          set -euo pipefail
+          playwright_dir="$(mktemp -d "${RUNNER_TEMP}/doscan-mainnet-playwright.XXXXXX")"
+          trap 'rm -rf "${playwright_dir}"' EXIT
+          cp .github/scripts/mainnet-bens-ui.spec.mjs "${playwright_dir}/"
+          cd "${playwright_dir}"
+          npm init --yes >/dev/null
+          npm install --no-save --package-lock=false @playwright/test@1.55.0 >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+          npx playwright test mainnet-bens-ui.spec.mjs --reporter=line
 
   deploy-testnet:
     if: >

@@ -488,9 +488,13 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn("BENS database secrets derived from canonical password", workflow)
 
     def test_playwright_acceptance_spec_exists(self):
-        self.assertTrue(
-            (ROOT / ".github" / "scripts" / "testnet-bens-ui.spec.mjs").is_file()
-        )
+        ui_test_path = ROOT / ".github" / "scripts" / "testnet-bens-ui.spec.mjs"
+        self.assertTrue(ui_test_path.is_file())
+
+        ui_test = ui_test_path.read_text(encoding="utf-8")
+        self.assertIn("timeout: 30_000", ui_test)
+        self.assertIn("/name-services/domains/", ui_test)
+        self.assertIn('getByText("Oops! Something went wrong")', ui_test)
 
     def test_renderer_rejects_wrong_chain(self):
         renderer_path = ROOT / "scripts" / "render-testnet-bens.py"
