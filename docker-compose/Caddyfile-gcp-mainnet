@@ -44,6 +44,10 @@
 			header_up -Authorization
 		}
 	}
+	@bens_api path /api/v1/protocols /api/v1/domains* /api/v1/addresses:lookup /api/v1/addresses/*
+	handle @bens_api {
+		reverse_proxy bens:8050
+	}
 	handle /api/* {
 		reverse_proxy backend:4000
 	}

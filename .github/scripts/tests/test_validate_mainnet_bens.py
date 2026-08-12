@@ -24,6 +24,23 @@ MAINNET_RPC = (
 )
 
 
+def bash_executable() -> str:
+    git_bash = Path("C:/Program Files/Git/bin/bash.exe")
+    bash = str(git_bash) if git_bash.exists() else shutil.which("bash")
+    if bash is None:
+        raise RuntimeError("bash is required for Mainnet BENS runtime tests")
+    return bash
+
+
+def run_bash(script: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [bash_executable(), "-c", script],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
 def read_env(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
@@ -98,7 +115,7 @@ class MainnetBensConfigurationTests(unittest.TestCase):
         self.assertEqual(backend["MICROSERVICE_BENS_PROTOCOLS"], "dos-names")
         self.assertEqual(
             frontend["NEXT_PUBLIC_NAME_SERVICE_API_HOST"],
-            "https://doscan.io/name-service",
+            "https://doscan.io",
         )
         self.assertEqual(
             frontend["NEXT_PUBLIC_NAME_SERVICE_PROTOCOLS"], "['dos-names']"
@@ -107,6 +124,9 @@ class MainnetBensConfigurationTests(unittest.TestCase):
     def test_mainnet_caddy_exposes_bens_without_core_changes(self):
         caddy = CADDY.read_text(encoding="utf-8")
         self.assertIn("handle_path /name-service/*", caddy)
+        self.assertIn("@bens_api path", caddy)
+        self.assertIn("/api/v1/domains*", caddy)
+        self.assertIn("/api/v1/addresses/*", caddy)
         self.assertIn("reverse_proxy bens:8050", caddy)
 
     def test_mainnet_bens_config_targets_chain_7979(self):
@@ -138,15 +158,64 @@ class MainnetBensConfigurationTests(unittest.TestCase):
             for step in workflow["jobs"]["deploy-mainnet"]["steps"]
             if step.get("name") == "Apply configuration and verify services"
         )
-        git_bash = Path("C:/Program Files/Git/bin/bash.exe")
-        bash = str(git_bash) if git_bash.exists() else shutil.which("bash")
-        self.assertIsNotNone(bash)
         result = subprocess.run(
-            [bash, "-n"],
+            [bash_executable(), "-n"],
             input=apply_script,
             text=True,
             capture_output=True,
             check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_graph_admin_readiness_accepts_an_http_response_without_mutation(self):
+        runtime = RUNTIME.as_posix()
+        result = run_bash(
+            f"""
+            set -euo pipefail
+            L1_PATH=/tmp/doscan-mainnet-test
+            BACKUP=/tmp/doscan-mainnet-backup-test
+            source '{runtime}'
+            calls=0
+            captured=''
+            bens_compose() {{
+              calls=$((calls + 1))
+              captured="$*"
+              return 0
+            }}
+            sleep() {{ :; }}
+            bens_wait_graph_admin
+            [ "${{calls}}" -eq 1 ]
+            grep -Fq 'curl --silent --show-error' <<<"${{captured}}"
+            ! grep -Fq -- '--fail' <<<"${{captured}}"
+            """
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_rollback_core_health_retries_transient_caddy_restart(self):
+        runtime = RUNTIME.as_posix()
+        result = run_bash(
+            f"""
+            set -euo pipefail
+            L1_PATH=/tmp/doscan-mainnet-test
+            BACKUP=/tmp/doscan-mainnet-backup-test
+            source '{runtime}'
+            calls=0
+            curl() {{
+              calls=$((calls + 1))
+              [ "${{calls}}" -ge 2 ]
+            }}
+            sleep() {{ :; }}
+            bens_wait_restored_core_http
+            [ "${{calls}}" -eq 3 ]
+
+            calls=0
+            curl() {{
+              calls=$((calls + 1))
+              return 1
+            }}
+            ! bens_wait_restored_core_http
+            [ "${{calls}}" -eq 24 ]
+            """
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 

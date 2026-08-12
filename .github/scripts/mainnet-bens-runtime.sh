@@ -228,14 +228,12 @@ bens_wait_healthy() {
   done
 }
 
-bens_deploy() {
-  local deploy_output subgraph_ipfs_hash meta domain reverse
-  cd "${L1_PATH}"
-  bens_compose pull bens-db bens-ipfs bens-graph-node bens bens-deployer
-  bens_compose up -d bens-db bens-ipfs bens-graph-node
+bens_wait_graph_admin() {
   for attempt in $(seq 1 60); do
-    if bens_compose exec -T backend curl -fsS http://bens-graph-node:8020/ >/dev/null; then
-      break
+    if bens_compose exec -T backend curl --silent --show-error \
+      --connect-timeout 10 --max-time 20 --output /dev/null \
+      http://bens-graph-node:8020/; then
+      return 0
     fi
     if [ "${attempt}" -eq 60 ]; then
       echo "Mainnet BENS Graph Node did not become ready" >&2
@@ -243,6 +241,28 @@ bens_deploy() {
     fi
     sleep 5
   done
+}
+
+bens_wait_restored_core_http() {
+  for attempt in $(seq 1 24); do
+    if curl --fail --silent --show-error --connect-timeout 10 --max-time 20 \
+         http://127.0.0.1:13080/api/v2/stats >/dev/null &&
+       curl --fail --silent --show-error --connect-timeout 10 --max-time 20 \
+         http://127.0.0.1:13080/public-metrics >/dev/null; then
+      return 0
+    fi
+    sleep 5
+  done
+  echo "Mainnet restored core HTTP endpoints did not become ready" >&2
+  return 1
+}
+
+bens_deploy() {
+  local deploy_output subgraph_ipfs_hash meta domain reverse
+  cd "${L1_PATH}"
+  bens_compose pull bens-db bens-ipfs bens-graph-node bens bens-deployer
+  bens_compose up -d bens-db bens-ipfs bens-graph-node
+  bens_wait_graph_admin
 
   deploy_output="$(BENS_SUBGRAPH_VERSION="github-${DEPLOY_ID}" bens_compose --profile bens-deploy run --rm bens-deployer 2>&1)"
   printf '%s\n' "${deploy_output}"
