@@ -1,8 +1,12 @@
 import json
 import importlib.util
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -126,6 +130,25 @@ class MainnetBensConfigurationTests(unittest.TestCase):
         self.assertIn("BENS_SUBGRAPH_VERSION", RUNTIME.read_text(encoding="utf-8"))
         self.assertIn("/name-service/api/v1/7979/domains/${SMOKE_NAME}", mainnet_job)
         self.assertIn("Verify Mainnet DOS Name UI with Playwright", mainnet_job)
+
+    def test_mainnet_apply_script_parses_as_bash(self):
+        workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        apply_script = next(
+            step["run"]
+            for step in workflow["jobs"]["deploy-mainnet"]["steps"]
+            if step.get("name") == "Apply configuration and verify services"
+        )
+        git_bash = Path("C:/Program Files/Git/bin/bash.exe")
+        bash = str(git_bash) if git_bash.exists() else shutil.which("bash")
+        self.assertIsNotNone(bash)
+        result = subprocess.run(
+            [bash, "-n"],
+            input=apply_script,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_mainnet_runtime_is_atomic_and_checks_the_exact_subgraph(self):
         runtime = RUNTIME.read_text(encoding="utf-8")

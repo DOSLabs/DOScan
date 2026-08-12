@@ -482,7 +482,7 @@ jobs:
                   !($1 in old) || old[$1] != $2 { print $1 }
                 '"'"' "${SRC}/old-service-hashes" "${SRC}/new-service-hashes"
               )"
-              TOUCHED_SERVICES="$(grep -Ev '^bens(-db|-ipfs|-graph-node|-deployer)?$' <<<"${TOUCHED_SERVICES}" || true)"
+              TOUCHED_SERVICES="$(grep -Ev '"'"'^bens(-db|-ipfs|-graph-node|-deployer)?$'"'"' <<<"${TOUCHED_SERVICES}" || true)"
               if [ "${BACKEND_ENV_CHANGED}" -eq 1 ] && ! grep -qw backend <<<"${TOUCHED_SERVICES}"; then
                 TOUCHED_SERVICES="${TOUCHED_SERVICES} backend"
               fi
@@ -591,7 +591,7 @@ jobs:
               grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_NAME_SERVICE_API_HOST: \"https://doscan.io/name-service\"" <<<"${frontend_env}"
-              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_PROTOCOLS: \"['dos-names']\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_PROTOCOLS: \"['"'"'dos-names'"'"']\"" <<<"${frontend_env}"
               verify_frontend_wallets
 
               backend_env="$(bens_compose exec -T backend env)"
@@ -600,14 +600,14 @@ jobs:
               grep -Fxq "MICROSERVICE_BENS_PROTOCOLS=dos-names" <<<"${backend_env}"
 
               smoke_lookup_path="/name-service/api/v1/7979/domains/${SMOKE_NAME}"
-              curl -fsS http://127.0.0.1:13080/name-service/health | grep -q '"SERVING"'
-              curl -fsS "http://127.0.0.1:13080/name-service/api/v1/protocols?chain_id=7979" | grep -q '"dos-names"'
+              curl -fsS http://127.0.0.1:13080/name-service/health | grep -q '"'"'"SERVING"'"'"'
+              curl -fsS "http://127.0.0.1:13080/name-service/api/v1/protocols?chain_id=7979" | grep -q '"'"'"dos-names"'"'"'
               local_domain="$(curl -fsS "http://127.0.0.1:13080${smoke_lookup_path}")"
               jq -e --arg name "${SMOKE_NAME}" --arg address "${SMOKE_RESOLVED_ADDRESS}" \
-                '.name == $name and (.resolved_address.hash | ascii_downcase) == ($address | ascii_downcase)' \
+                '"'"'.name == $name and (.resolved_address.hash | ascii_downcase) == ($address | ascii_downcase)'"'"' \
                 <<<"${local_domain}" >/dev/null
               local_reverse="$(curl -fsS "http://127.0.0.1:13080/name-service/api/v1/7979/addresses/${SMOKE_RESOLVED_ADDRESS}?protocol_id=dos-names")"
-              jq -e --arg name "${SMOKE_NAME}" '.domain.name == $name' <<<"${local_reverse}" >/dev/null
+              jq -e --arg name "${SMOKE_NAME}" '"'"'.domain.name == $name'"'"' <<<"${local_reverse}" >/dev/null
 
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/api/v2/stats >/dev/null
               curl --fail --silent --show-error --retry 6 --retry-delay 5 https://doscan.io/public-metrics >/dev/null
@@ -642,31 +642,31 @@ jobs:
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_CROSS_CHAIN_TXS_ENABLED: \"true\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_NAME_SERVICE_API_HOST: \"https://doscan.io/name-service\"" <<<"${frontend_env}"
-              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_PROTOCOLS: \"['dos-names']\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_PROTOCOLS: \"['"'"'dos-names'"'"']\"" <<<"${frontend_env}"
               verify_frontend_wallets
               curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                 https://doscan.io/api/v1/chains/7979/pools >/dev/null
               curl -fsS --retry 6 --retry-delay 5 https://doscan.io/api/v1/status/indexers | grep -Eq '"'"'"name":"avalanche"[^}]*"state":"running"'"'"'
 
               curl --fail --silent --show-error --retry 6 --retry-delay 5 \
-                https://doscan.io/name-service/health | grep -q '"SERVING"'
+                https://doscan.io/name-service/health | grep -q '"'"'"SERVING"'"'"'
               curl --fail --silent --show-error --retry 6 --retry-delay 5 \
-                "https://doscan.io/name-service/api/v1/protocols?chain_id=7979" | grep -q '"dos-names"'
+                "https://doscan.io/name-service/api/v1/protocols?chain_id=7979" | grep -q '"'"'"dos-names"'"'"'
               public_domain="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                 "https://doscan.io${smoke_lookup_path}")"
               jq -e --arg name "${SMOKE_NAME}" --arg address "${SMOKE_RESOLVED_ADDRESS}" \
-                '.name == $name and (.resolved_address.hash | ascii_downcase) == ($address | ascii_downcase)' \
+                '"'"'.name == $name and (.resolved_address.hash | ascii_downcase) == ($address | ascii_downcase)'"'"' \
                 <<<"${public_domain}" >/dev/null
               public_reverse="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                 "https://doscan.io/name-service/api/v1/7979/addresses/${SMOKE_RESOLVED_ADDRESS}?protocol_id=dos-names")"
-              jq -e --arg name "${SMOKE_NAME}" '.domain.name == $name' <<<"${public_reverse}" >/dev/null
+              jq -e --arg name "${SMOKE_NAME}" '"'"'.domain.name == $name'"'"' <<<"${public_reverse}" >/dev/null
               search_result="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                 "https://doscan.io/api/v2/search?q=${SMOKE_NAME}")"
               jq -e --arg name "${SMOKE_NAME}" --arg address "${SMOKE_RESOLVED_ADDRESS}" \
-                'any(.items[]?;
+                '"'"'any(.items[]?;
                   .type == "ens_domain" and
                   (.name // .ens_info.name) == $name and
-                  (.address_hash | ascii_downcase) == ($address | ascii_downcase))' \
+                  (.address_hash | ascii_downcase) == ($address | ascii_downcase))'"'"' \
                 <<<"${search_result}" >/dev/null
 
               DEPLOYMENT_STARTED=0
@@ -677,7 +677,7 @@ jobs:
                   curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                     "${metadata_url}?addresses=0x0000000000000000000000000000000000000000&chainId=7979&tagsLimit=1"
                 )"
-                grep -q '"addresses"' <<<"${metadata_response}"
+                grep -q '"'"'"addresses"'"'"' <<<"${metadata_response}"
               done
 
               check_public_rpc() {
