@@ -143,6 +143,25 @@ class MainnetBensConfigurationTests(unittest.TestCase):
         self.assertIn("for attempt in $(seq 1 60)", runtime)
         self.assertIn("docker volume rm", runtime)
 
+    def test_mainnet_rollback_never_drops_database_after_incomplete_backup(self):
+        runtime = RUNTIME.read_text(encoding="utf-8")
+        self.assertIn("BENS_BACKUP_COMPLETE=0", runtime)
+        self.assertIn("pg_restore --list /backup/bens-graph-node.dump", runtime)
+        self.assertIn("tar -tzf /backup/bens-ipfs.tgz", runtime)
+        incomplete_guard = runtime.index(
+            'if [ "${BENS_BACKUP_COMPLETE}" -ne 1 ]; then'
+        )
+        destructive_restore = runtime.index(
+            "bens_compose exec -T bens-db dropdb --force"
+        )
+        self.assertLess(incomplete_guard, destructive_restore)
+        guarded_section = runtime[incomplete_guard:destructive_restore]
+        self.assertIn(
+            "bens_compose up -d bens-db bens-ipfs bens-graph-node bens",
+            guarded_section,
+        )
+        self.assertIn("return", guarded_section)
+
 
 if __name__ == "__main__":
     unittest.main()

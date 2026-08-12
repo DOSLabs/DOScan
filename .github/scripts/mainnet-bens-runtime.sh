@@ -8,6 +8,7 @@ BENS_DB_VOLUME="doscan-l1_bens_postgres_data"
 BENS_IPFS_VOLUME="doscan-l1_bens_ipfs_data"
 BENS_STATE_EXISTED=0
 BENS_PREPARED=0
+BENS_BACKUP_COMPLETE=0
 BENS_KUBO_IMAGE="ipfs/kubo:v0.43.0@sha256:63f5502f7a01b82a675e45bae81b2f5dfa90248ec4a86cd0a58c218347e1f2d2"
 
 bens_compose() {
@@ -118,6 +119,17 @@ bens_prepare() {
       -ec "tar -C /data/ipfs -czf /backup/bens-ipfs.tgz ."
     sudo test -s "${BACKUP}/bens-graph-node.dump"
     sudo test -s "${BACKUP}/bens-ipfs.tgz"
+    sudo docker run --rm \
+      -v "${BACKUP}:/backup:ro" \
+      --entrypoint /bin/sh \
+      "postgres:16.10@sha256:21f6013073bc6b92830a2129570e2f5ec42a6c734b5a985a41e83aa58f54c3c1" \
+      -ec 'pg_restore --list /backup/bens-graph-node.dump >/dev/null'
+    sudo docker run --rm \
+      -v "${BACKUP}:/backup:ro" \
+      --entrypoint /bin/sh \
+      "${BENS_KUBO_IMAGE}" \
+      -ec 'tar -tzf /backup/bens-ipfs.tgz >/dev/null'
+    BENS_BACKUP_COMPLETE=1
     sudo touch "${BACKUP}/bens-state-existed"
   else
     BENS_PREPARED=1
@@ -129,6 +141,19 @@ bens_query_meta() {
     -H 'Content-Type: application/json' \
     --data '{"query":"{ _meta { deployment block { number } hasIndexingErrors } }"}' \
     http://bens-graph-node:8000/subgraphs/name/dos-names
+}
+
+bens_wait_healthy() {
+  for attempt in $(seq 1 60); do
+    if bens_compose exec -T backend curl -fsS http://bens:8050/health | grep -q '"SERVING"'; then
+      return 0
+    fi
+    if [ "${attempt}" -eq 60 ]; then
+      echo "Mainnet BENS did not become healthy" >&2
+      return 1
+    fi
+    sleep 5
+  done
 }
 
 bens_deploy() {
@@ -171,16 +196,7 @@ bens_deploy() {
   done
 
   bens_compose up -d bens
-  for attempt in $(seq 1 60); do
-    if bens_compose exec -T backend curl -fsS http://bens:8050/health | grep -q '"SERVING"'; then
-      break
-    fi
-    if [ "${attempt}" -eq 60 ]; then
-      echo "Mainnet BENS did not become healthy" >&2
-      return 1
-    fi
-    sleep 5
-  done
+  bens_wait_healthy
 
   domain="$(bens_compose exec -T backend curl -fsS "http://bens:8050/api/v1/7979/domains/${SMOKE_NAME}")"
   jq -e --arg name "${SMOKE_NAME}" --arg address "${SMOKE_RESOLVED_ADDRESS}" \
@@ -208,8 +224,16 @@ bens_rollback() {
 
   sudo cp -a "${BACKUP}/compose.yml" "${L1_PATH}/compose.yml" || restore_rc=1
   if [ "${BENS_STATE_EXISTED}" -eq 1 ]; then
-    sudo test -s "${BACKUP}/bens-graph-node.dump" || restore_rc=1
-    sudo test -s "${BACKUP}/bens-ipfs.tgz" || restore_rc=1
+    if [ "${BENS_BACKUP_COMPLETE}" -ne 1 ]; then
+      bens_compose up -d bens-db bens-ipfs bens-graph-node bens || restore_rc=1
+      bens_wait_healthy || restore_rc=1
+      return "${restore_rc}"
+    fi
+    if ! sudo test -s "${BACKUP}/bens-graph-node.dump" ||
+       ! sudo test -s "${BACKUP}/bens-ipfs.tgz"; then
+      echo "Mainnet BENS backup is incomplete; refusing destructive restore" >&2
+      return 1
+    fi
     bens_compose up -d bens-db || restore_rc=1
     for attempt in $(seq 1 30); do
       if bens_compose exec -T bens-db pg_isready -U graph-node -d graph-node; then
@@ -230,13 +254,7 @@ bens_rollback() {
       "${BENS_KUBO_IMAGE}" \
       -ec 'find /data/ipfs -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; tar -C /data/ipfs -xzf /backup/bens-ipfs.tgz' || restore_rc=1
     bens_compose up -d bens-db bens-ipfs bens-graph-node bens || restore_rc=1
-    for attempt in $(seq 1 60); do
-      if bens_compose exec -T backend curl -fsS http://bens:8050/health | grep -q '"SERVING"'; then
-        break
-      fi
-      [ "${attempt}" -eq 60 ] && restore_rc=1
-      sleep 5
-    done
+    bens_wait_healthy || restore_rc=1
   else
     for volume in "${BENS_DB_VOLUME}" "${BENS_IPFS_VOLUME}"; do
       sudo docker volume rm "${volume}" >/dev/null 2>&1 || true
