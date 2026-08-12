@@ -54,6 +54,7 @@ The `2d53484e` build retains the behavior introduced by DOS patch `86fd0dd5`, wh
 | Account Abstraction | Enabled | Enabled | `user-ops-indexer:8050`, EntryPoint v0.6, v0.7, and v0.8 |
 | Stats service | Enabled | Enabled | Separate Stats database in each environment |
 | Metadata Service | Enabled | Enabled | Backend integration plus same-origin Caddy proxy |
+| BENS / DOS Name Service | Disabled | Enabled | Official BENS API with the DOS Names ENSv2 subgraph under `/name-service` |
 | Sourcify | Enabled | Enabled | `https://sourcify.dev/server` |
 | Decode non-contract calls | Enabled | Enabled | `DECODE_NOT_A_CONTRACT_CALLS=true` |
 | Interchain Indexer | Enabled | Not deployed | Mainnet indexes Avalanche C-Chain and DOS Chain cross-chain messages |
@@ -90,7 +91,7 @@ The detailed frontend environment audit is maintained in [Frontend Environment A
 
 | Feature | Status | Reason or prerequisite |
 |---|---|---|
-| BENS / name service | Disabled | No DOS or `.dos` BENS protocol is configured for chain 7979 or 3939 |
+| BENS / name service on Mainnet | Disabled | Testnet-only rollout must pass acceptance checks before Mainnet activation |
 | Multichain Search | Disabled | No dedicated Multichain Search service is deployed |
 | User accounts and Auth0 | Disabled | Requires a supported identity and email stack |
 | CSV export | Disabled | Requires the export service and anti-abuse configuration |
