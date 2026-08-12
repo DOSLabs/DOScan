@@ -702,6 +702,7 @@ jobs:
           unset nft_media_json nft_media_access_key_id nft_media_secret_access_key
 
           tar -czf /tmp/doscan-testnet-config.tgz \
+            .github/scripts/retry-testnet-rpc.sh \
             docker-compose/docker-compose-testnet.yml \
             docker-compose/Caddyfile-gcp-testnet \
             docker-compose/bens \
@@ -1014,6 +1015,7 @@ jobs:
               trap finish EXIT
 
               tar -xzf "${ARCHIVE}" -C "${SRC}"
+              . "${SRC}/.github/scripts/retry-testnet-rpc.sh"
               DEPLOYMENT_JSON="${SRC}/docker-compose/bens/deployment.json"
               jq -e \
                 '"'"'.chainId == 3939 and
@@ -1038,8 +1040,7 @@ jobs:
                     '"'"'{"jsonrpc":"2.0","id":1,"method":"eth_getCode","params":[$address,"latest"]}'"'"'
                 )"
                 contract_code="$(
-                  curl -fsS -H "Content-Type: application/json" --data "${rpc_body}" \
-                    https://test.doschain.com/ |
+                  testnet_rpc_request "${rpc_body}" |
                     jq -er ".result"
                 )"
                 if [ "${contract_code}" = "0x" ] || [ "${contract_code}" = "0x0" ]; then
@@ -1455,8 +1456,7 @@ jobs:
                 grep -q '"addresses"' <<<"${metadata_response}"
               done
               rpc_response="$(
-                curl --fail --silent --show-error --retry 6 --retry-delay 5 \
-                  -D - -H "Content-Type: application/json" --data "${rpc_body}" https://test.doschain.com/
+                testnet_rpc_request "${rpc_body}" 1
               )"
               grep -q "\"result\":\"0xf63\"" <<<"${rpc_response}"
               grep -qi "X-DOS-RPC-Origin: dos-testnet-r0-" <<<"${rpc_response}"

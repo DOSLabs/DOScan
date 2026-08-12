@@ -17,6 +17,7 @@ BENS_TEMPLATE = ROOT / "docker-compose" / "bens" / "config.template.json"
 DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy-config.yml"
 DEPENDENCY_WORKFLOW = ROOT / ".github" / "workflows" / "dependency-build.yml"
 PLAYWRIGHT_SPEC = ROOT / ".github" / "scripts" / "testnet-bens-ui.spec.mjs"
+RPC_RETRY_SCRIPT = ROOT / ".github" / "scripts" / "retry-testnet-rpc.sh"
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -41,6 +42,7 @@ def validate() -> list[str]:
         DEPLOY_WORKFLOW,
         DEPENDENCY_WORKFLOW,
         PLAYWRIGHT_SPEC,
+        RPC_RETRY_SCRIPT,
     )
     for path in required_files:
         if not path.is_file():
@@ -55,6 +57,7 @@ def validate() -> list[str]:
     config = json.loads(BENS_TEMPLATE.read_text(encoding="utf-8"))
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
     dependency_workflow = DEPENDENCY_WORKFLOW.read_text(encoding="utf-8")
+    rpc_retry_script = RPC_RETRY_SCRIPT.read_text(encoding="utf-8")
 
     for service in ("bens-db:", "bens-ipfs:", "bens-graph-node:", "bens:"):
         if service not in compose:
@@ -160,6 +163,18 @@ def validate() -> list[str]:
         "BENS database secrets derived from canonical password" not in workflow
     ):
         errors.append("BENS database credentials must derive from one canonical secret")
+    if (
+        ".github/scripts/retry-testnet-rpc.sh" not in workflow
+        or '. "${SRC}/.github/scripts/retry-testnet-rpc.sh"' not in workflow
+        or "testnet_rpc_request" not in workflow
+    ):
+        errors.append("Testnet deployment must package and use the RPC retry helper")
+    if (
+        "https://test.doschain.com/" not in rpc_retry_script
+        or "for attempt in 1 2 3" not in rpc_retry_script
+        or "--http1.1" not in rpc_retry_script
+    ):
+        errors.append("Testnet RPC retry helper must be bounded and use the canonical RPC")
     if (
         "pull_caddy_image()" not in workflow
         or 'docker pull "${CADDY_IMAGE}"' not in workflow
