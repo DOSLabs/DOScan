@@ -91,9 +91,25 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn(f"{graph_cli} build", compose)
         self.assertIn(f"{graph_cli} create dos-names", compose)
         self.assertIn(f"{graph_cli} deploy dos-names", compose)
+        self.assertIn("for deploy_attempt in 2 3", compose)
+        self.assertIn('--ipfs-hash "$${subgraph_ipfs_hash}"', compose)
+        self.assertIn("wait_for_subgraph", compose)
         self.assertNotIn("npm run codegen", compose)
         self.assertNotIn("npm run build", compose)
         self.assertNotIn("npx graph", compose)
+
+    def test_bens_runtime_config_is_readable_by_the_non_root_image_user(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        install_block = workflow.rsplit(
+            'sudo rm -rf "${DEPLOY_PATH}/bens"', 1
+        )[1].split('cd "${DEPLOY_PATH}"', 1)[0]
+
+        self.assertIn('sudo chmod 0755 "${DEPLOY_PATH}/bens"', install_block)
+        self.assertIn(
+            'sudo chmod 0644 "${DEPLOY_PATH}/bens/config.json"', install_block
+        )
 
     def test_caddy_validation_retries_the_pinned_image_pull(self):
         workflow = (
