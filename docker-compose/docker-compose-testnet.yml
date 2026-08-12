@@ -128,72 +128,13 @@ services:
     working_dir: /work
     volumes:
       - ./bens/subgraph:/source:ro
+      - ./bens/deploy-subgraph.sh:/runtime/deploy-subgraph.sh:ro
     tmpfs:
       - /work
     command:
       - /bin/sh
       - -ec
-      - |
-          cp -a /source/. /work/
-          npm ci
-          node node_modules/@graphprotocol/graph-cli/bin/run codegen --output-dir src/types/
-          node node_modules/@graphprotocol/graph-cli/bin/run build
-          node node_modules/@graphprotocol/graph-cli/bin/run create dos-names \
-            --node http://bens-graph-node:8020 || true
-          subgraph_ready() {
-            node -e 'const expectedDeployment = process.argv[1]; fetch("http://bens-graph-node:8000/subgraphs/name/dos-names", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({query: "{ _meta { deployment hasIndexingErrors } }"})}).then(async (response) => { const body = await response.json(); if (!response.ok || body.errors || !body.data || !body.data._meta || body.data._meta.deployment !== expectedDeployment || body.data._meta.hasIndexingErrors !== false) process.exit(1); }).catch(() => process.exit(1));' "$${subgraph_ipfs_hash}"
-          }
-          wait_for_subgraph() {
-            for readiness_attempt in 1 2 3 4 5 6; do
-              if subgraph_ready; then
-                return 0
-              fi
-              sleep 5
-            done
-            return 1
-          }
-          deploy_log="/tmp/dos-names-deploy.log"
-          set +e
-          node node_modules/@graphprotocol/graph-cli/bin/run deploy dos-names \
-            --ipfs http://bens-ipfs:5001 \
-            --node http://bens-graph-node:8020 \
-            --version-label "$${BENS_SUBGRAPH_VERSION:-testnet}" \
-            >"$${deploy_log}" 2>&1
-          deploy_rc="$${?}"
-          set -e
-          cat "$${deploy_log}"
-          subgraph_ipfs_hash="$$(grep -Eo '(Build completed|Subgraph IPFS hash): Qm[1-9A-HJ-NP-Za-km-z]{44}' "$${deploy_log}" | grep -Eo 'Qm[1-9A-HJ-NP-Za-km-z]{44}' | tail -n 1)"
-          if [ -z "$${subgraph_ipfs_hash}" ]; then
-            echo "Graph CLI did not report the uploaded subgraph IPFS hash" >&2
-            exit 1
-          fi
-          subgraph_deployed=0
-          if wait_for_subgraph; then
-            subgraph_deployed=1
-          else
-            echo "Initial Graph deploy exited $${deploy_rc} without an active subgraph; retrying the uploaded IPFS hash" >&2
-            for deploy_attempt in 2 3; do
-              set +e
-              node node_modules/@graphprotocol/graph-cli/bin/run deploy dos-names \
-                --ipfs http://bens-ipfs:5001 \
-                --ipfs-hash "$${subgraph_ipfs_hash}" \
-                --node http://bens-graph-node:8020 \
-                --version-label "$${BENS_SUBGRAPH_VERSION:-testnet}" \
-                >"$${deploy_log}" 2>&1
-              deploy_rc="$${?}"
-              set -e
-              cat "$${deploy_log}"
-              if wait_for_subgraph; then
-                subgraph_deployed=1
-                break
-              fi
-              echo "Graph deploy attempt $${deploy_attempt} exited $${deploy_rc} without an active subgraph" >&2
-            done
-          fi
-          if [ "$${subgraph_deployed}" -ne 1 ]; then
-            echo "DOS Names subgraph was not activated after three deploy attempts" >&2
-            exit 1
-          fi
+      - exec /bin/sh /runtime/deploy-subgraph.sh
 
   backend:
     image: ghcr.io/dos/doscan:11.2.6.commit.99eb6e8a@sha256:60b6655e9c02028a8ce6a6eb5a7a1db6d4c23ab616e68a26319e00787089e084
