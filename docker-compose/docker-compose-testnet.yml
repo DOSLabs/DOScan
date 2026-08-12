@@ -162,7 +162,7 @@ services:
           deploy_rc="$${?}"
           set -e
           cat "$${deploy_log}"
-          subgraph_ipfs_hash="$$(grep -Eo 'Qm[1-9A-HJ-NP-Za-km-z]{44}' "$${deploy_log}" | tail -n 1)"
+          subgraph_ipfs_hash="$$(grep -Eo '(Build completed|Subgraph IPFS hash): Qm[1-9A-HJ-NP-Za-km-z]{44}' "$${deploy_log}" | grep -Eo 'Qm[1-9A-HJ-NP-Za-km-z]{44}' | tail -n 1)"
           if [ -z "$${subgraph_ipfs_hash}" ]; then
             echo "Graph CLI did not report the uploaded subgraph IPFS hash" >&2
             exit 1

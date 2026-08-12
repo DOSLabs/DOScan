@@ -105,6 +105,7 @@ class ValidateTestnetBensTests(unittest.TestCase):
         workflow = (
             ROOT / ".github" / "workflows" / "deploy-config.yml"
         ).read_text(encoding="utf-8")
+        self.assertIn('sudo rm -rf "${DEPLOY_PATH}/bens"', workflow)
         install_block = workflow.rsplit(
             'sudo rm -rf "${DEPLOY_PATH}/bens"', 1
         )[1].split('cd "${DEPLOY_PATH}"', 1)[0]
