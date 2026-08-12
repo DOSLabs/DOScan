@@ -15,6 +15,7 @@ BACKEND_ENV = ROOT / "docker-compose" / "envs" / "common-blockscout-testnet.env"
 FRONTEND_ENV = ROOT / "docker-compose" / "envs" / "common-frontend-testnet.env"
 BENS_TEMPLATE = ROOT / "docker-compose" / "bens" / "config.template.json"
 DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy-config.yml"
+DEPENDENCY_WORKFLOW = ROOT / ".github" / "workflows" / "dependency-build.yml"
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -37,6 +38,7 @@ def validate() -> list[str]:
         FRONTEND_ENV,
         BENS_TEMPLATE,
         DEPLOY_WORKFLOW,
+        DEPENDENCY_WORKFLOW,
     )
     for path in required_files:
         if not path.is_file():
@@ -50,6 +52,7 @@ def validate() -> list[str]:
     frontend_env = read_env(FRONTEND_ENV)
     config = json.loads(BENS_TEMPLATE.read_text(encoding="utf-8"))
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    dependency_workflow = DEPENDENCY_WORKFLOW.read_text(encoding="utf-8")
 
     for service in ("bens-db:", "bens-ipfs:", "bens-graph-node:", "bens:"):
         if service not in compose:
@@ -115,6 +118,17 @@ def validate() -> list[str]:
         errors.append("The deployment workflow must fetch from DOS Names")
     if "contracts/deployments/dos-testnet-3939.json" not in workflow:
         errors.append("The deployment workflow must consume the DOS Names manifest")
+    dependency_ref_match = re.search(
+        r"DOS_NAMES_SUBGRAPH_REF: ([0-9a-f]{40})", dependency_workflow
+    )
+    if (
+        ref_match is not None
+        and dependency_ref_match is not None
+        and ref_match.group(1) != dependency_ref_match.group(1)
+    ):
+        errors.append("Deploy and dependency workflows must pin the same DOS Names commit")
+    if "cat-file -e FETCH_HEAD:contracts/deployments/dos-testnet-3939.json" not in dependency_workflow:
+        errors.append("Dependency CI must prove the pinned DOS Names deployment manifest exists")
 
     return errors
 

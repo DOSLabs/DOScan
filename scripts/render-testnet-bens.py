@@ -15,6 +15,12 @@ ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 REPLACEMENTS = {
     "__ROOT_REGISTRY_ADDRESS__": "rootRegistry",
 }
+REQUIRED_CONTRACTS = {
+    "dosRegistry",
+    "dosRegistrar",
+    "permissionedResolverImplementation",
+    "rootRegistry",
+}
 
 
 def load_deployment(path: Path) -> dict[str, object]:
@@ -29,10 +35,14 @@ def load_deployment(path: Path) -> dict[str, object]:
     contracts = deployment.get("contracts")
     if not isinstance(contracts, dict):
         raise ValueError("Deployment manifest contracts must be an object")
-    for field in REPLACEMENTS.values():
+    for field in REQUIRED_CONTRACTS:
         value = contracts.get(field)
         if not isinstance(value, str) or not ADDRESS_RE.fullmatch(value):
             raise ValueError(f"Deployment contract {field} has an invalid address")
+        if int(value, 16) == 0:
+            raise ValueError(f"Deployment contract {field} must not be the zero address")
+    if deployment.get("smokeName") != "bens-smoke.dos":
+        raise ValueError("Deployment manifest smokeName must be bens-smoke.dos")
     return deployment
 
 

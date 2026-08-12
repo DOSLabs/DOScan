@@ -58,6 +58,25 @@ class ValidateTestnetBensTests(unittest.TestCase):
             workflow,
         )
 
+    def test_deployment_proves_contracts_indexing_and_real_lookup(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('method":"eth_getCode"', workflow)
+        self.assertIn("hasIndexingErrors", workflow)
+        self.assertIn("bens-smoke.dos", workflow)
+        self.assertIn("bens-graph-node.dump", workflow)
+        self.assertIn("bens-ipfs.tgz", workflow)
+
+        dependency_workflow = (
+            ROOT / ".github" / "workflows" / "dependency-build.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "cat-file -e FETCH_HEAD:contracts/deployments/dos-testnet-3939.json",
+            dependency_workflow,
+        )
+
     def test_renderer_rejects_wrong_chain(self):
         renderer_path = ROOT / "scripts" / "render-testnet-bens.py"
         spec = importlib.util.spec_from_file_location("render_testnet_bens", renderer_path)
@@ -86,7 +105,11 @@ class ValidateTestnetBensTests(unittest.TestCase):
                     {
                         "chainId": 3939,
                         "deploymentBlock": 12,
+                        "smokeName": "bens-smoke.dos",
                         "contracts": {
+                            "dosRegistry": "0x1111111111111111111111111111111111111111",
+                            "dosRegistrar": "0x3333333333333333333333333333333333333333",
+                            "permissionedResolverImplementation": "0x4444444444444444444444444444444444444444",
                             "rootRegistry": "0x2222222222222222222222222222222222222222",
                         },
                     }

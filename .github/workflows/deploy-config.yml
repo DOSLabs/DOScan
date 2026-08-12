@@ -728,6 +728,9 @@ jobs:
               SECRETS_ENV="${DEPLOY_PATH}/envs/common-blockscout-secrets.env"
               BENS_SECRETS_ENV="${DEPLOY_PATH}/envs/bens-secrets.env"
               NFT_MEDIA_SECRETS="${SRC}/common-blockscout-nft-media.env"
+              BENS_DB_VOLUME="doscan-testnet_bens_postgres_data"
+              BENS_IPFS_VOLUME="doscan-testnet_bens_ipfs_data"
+              BENS_PREDEPLOY_STOPPED=0
               DEPLOYMENT_STARTED=0
 
               cleanup() {
@@ -798,6 +801,54 @@ jobs:
                   sudo rm -rf "${DEPLOY_PATH}/bens" || restore_rc=1
                 fi
 
+                if sudo test -f "${BACKUP}/bens-state-existed"; then
+                  sudo test -s "${BACKUP}/bens-graph-node.dump" || restore_rc=1
+                  sudo test -s "${BACKUP}/bens-ipfs.tgz" || restore_rc=1
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                    docker compose up -d bens-db || restore_rc=1
+                  for attempt in $(seq 1 20); do
+                    if sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                      DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                      docker compose exec -T bens-db pg_isready -U graph-node -d graph-node; then
+                      break
+                    fi
+                    if [ "${attempt}" -eq 20 ]; then
+                      restore_rc=1
+                    fi
+                    sleep 3
+                  done
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                    docker compose exec -T bens-db dropdb --force -U graph-node graph-node ||
+                    restore_rc=1
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                    docker compose exec -T bens-db createdb -U graph-node graph-node ||
+                    restore_rc=1
+                  sudo cat "${BACKUP}/bens-graph-node.dump" |
+                    sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                      DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                      docker compose exec -T bens-db pg_restore -U graph-node -d graph-node \
+                        --no-owner --no-privileges ||
+                    restore_rc=1
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                    docker compose stop bens-db || restore_rc=1
+                  sudo docker run --rm --user 0:0 --entrypoint /bin/sh \
+                    -v "${BENS_IPFS_VOLUME}:/data/ipfs" \
+                    -v "${BACKUP}:/backup:ro" \
+                    ipfs/kubo:v0.43.0@sha256:63f5502f7a01b82a675e45bae81b2f5dfa90248ec4a86cd0a58c218347e1f2d2 \
+                    -ec '"'"'find /data/ipfs -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; tar -C /data/ipfs -xzf /backup/bens-ipfs.tgz'"'"' ||
+                    restore_rc=1
+                else
+                  for volume in "${BENS_DB_VOLUME}" "${BENS_IPFS_VOLUME}"; do
+                    if sudo docker volume inspect "${volume}" >/dev/null 2>&1; then
+                      sudo docker volume rm "${volume}" || restore_rc=1
+                    fi
+                  done
+                fi
+
                 if [ "${restore_rc}" -ne 0 ]; then
                   echo "TESTNET ROLLBACK FAILED; manual recovery is required from ${BACKUP}" >&2
                   return 1
@@ -857,6 +908,11 @@ jobs:
                 trap - EXIT
                 if [ "${rc}" -ne 0 ] && [ "${DEPLOYMENT_STARTED}" -eq 1 ]; then
                   rollback || rc=2
+                elif [ "${rc}" -ne 0 ] && [ "${BENS_PREDEPLOY_STOPPED}" -eq 1 ]; then
+                  cd "${DEPLOY_PATH}"
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                    docker compose up -d bens-db bens-ipfs bens-graph-node bens || rc=2
                 fi
                 cleanup
                 exit "${rc}"
@@ -864,6 +920,32 @@ jobs:
               trap finish EXIT
 
               tar -xzf "${ARCHIVE}" -C "${SRC}"
+              DEPLOYMENT_JSON="${SRC}/docker-compose/bens/deployment.json"
+              jq -e \
+                '"'"'.chainId == 3939 and
+                 (.deploymentBlock | type == "number" and . >= 0) and
+                 .smokeName == "bens-smoke.dos" and
+                 ([.contracts.dosRegistry, .contracts.dosRegistrar,
+                   .contracts.permissionedResolverImplementation,
+                   .contracts.rootRegistry] | all(type == "string"))'"'"' \
+                "${DEPLOYMENT_JSON}" >/dev/null
+              DEPLOYMENT_BLOCK="$(jq -er ".deploymentBlock" "${DEPLOYMENT_JSON}")"
+              SMOKE_NAME="$(jq -er ".smokeName" "${DEPLOYMENT_JSON}")"
+              while read -r contract_name contract_address; do
+                rpc_body="$(
+                  jq -cn --arg address "${contract_address}" \
+                    '"'"'{"jsonrpc":"2.0","id":1,"method":"eth_getCode","params":[$address,"latest"]}'"'"'
+                )"
+                contract_code="$(
+                  curl -fsS -H "Content-Type: application/json" --data "${rpc_body}" \
+                    http://10.148.0.7:9650/ext/bc/2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ/rpc |
+                    jq -er ".result"
+                )"
+                if [ "${contract_code}" = "0x" ] || [ "${contract_code}" = "0x0" ]; then
+                  echo "DOS Names ${contract_name} has no Testnet bytecode at ${contract_address}" >&2
+                  exit 1
+                fi
+              done < <(jq -er '"'"'.contracts | to_entries[] | "\(.key) \(.value)"'"'"' "${DEPLOYMENT_JSON}")
               sudo mkdir -p "${BACKUP}" "${DEPLOY_PATH}/envs"
 
               sudo cp -a "${DEPLOY_PATH}/docker-compose.yml" "${BACKUP}/docker-compose.yml" 2>/dev/null || true
@@ -930,6 +1012,44 @@ jobs:
               fi
 
               cd "${DEPLOY_PATH}"
+              bens_db_exists="$(sudo docker volume inspect "${BENS_DB_VOLUME}" >/dev/null 2>&1 && echo 1 || echo 0)"
+              bens_ipfs_exists="$(sudo docker volume inspect "${BENS_IPFS_VOLUME}" >/dev/null 2>&1 && echo 1 || echo 0)"
+              if [ "${bens_db_exists}" != "${bens_ipfs_exists}" ]; then
+                echo "Testnet BENS volumes are incomplete; refusing deployment" >&2
+                exit 1
+              fi
+              if [ "${bens_db_exists}" -eq 1 ]; then
+                existing_services="$(
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                    docker compose config --services
+                )"
+                for service in bens-db bens-ipfs bens-graph-node bens; do
+                  if ! grep -qx "${service}" <<<"${existing_services}"; then
+                    echo "BENS volume exists but current Compose lacks ${service}" >&2
+                    exit 1
+                  fi
+                done
+                BENS_PREDEPLOY_STOPPED=1
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                  DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                  docker compose stop bens bens-graph-node
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                  DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                  docker compose exec -T bens-db pg_dump -U graph-node -Fc graph-node |
+                  sudo tee "${BACKUP}/bens-graph-node.dump" >/dev/null
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                  DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                  docker compose stop bens-db bens-ipfs
+                sudo docker run --rm --user 0:0 --entrypoint /bin/sh \
+                  -v "${BENS_IPFS_VOLUME}:/data/ipfs:ro" \
+                  -v "${BACKUP}:/backup" \
+                  ipfs/kubo:v0.43.0@sha256:63f5502f7a01b82a675e45bae81b2f5dfa90248ec4a86cd0a58c218347e1f2d2 \
+                  -ec "tar -C /data/ipfs -czf /backup/bens-ipfs.tgz ."
+                sudo test -s "${BACKUP}/bens-graph-node.dump"
+                sudo test -s "${BACKUP}/bens-ipfs.tgz"
+                sudo touch "${BACKUP}/bens-state-existed"
+              fi
               sudo docker compose exec -T db pg_dump -U postgres -Fc blockscout |
                 sudo tee "${BACKUP}/blockscout.dump" >/dev/null
               sudo docker compose exec -T db pg_dump -U postgres -Fc stats |
@@ -937,6 +1057,7 @@ jobs:
               sudo test -s "${BACKUP}/blockscout.dump"
               sudo test -s "${BACKUP}/stats.dump"
               DEPLOYMENT_STARTED=1
+              BENS_PREDEPLOY_STOPPED=0
 
               if [ "$(grep -Ec "^NFT_MEDIA_HANDLER_AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)=.+$" "${NFT_MEDIA_SECRETS}")" -ne 2 ]; then
                 echo "NFT media credential file is missing required values" >&2
@@ -983,6 +1104,30 @@ jobs:
                 docker compose --profile bens-deploy run --rm bens-deployer
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
                 docker compose up -d bens
+
+              graph_synced=0
+              for attempt in $(seq 1 60); do
+                graph_status="$(
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    docker compose exec -T backend curl -fsS \
+                    -H "Content-Type: application/json" \
+                    --data-binary '"'"'{"query":"{ _meta { block { number } hasIndexingErrors } }"}'"'"' \
+                    http://bens-graph-node:8000/subgraphs/name/dos-names 2>/dev/null || true
+                )"
+                if jq -e --argjson deployment_block "${DEPLOYMENT_BLOCK}" \
+                  '"'"'.data._meta.hasIndexingErrors == false and
+                   (.data._meta.block.number | tonumber) >= $deployment_block'"'"' \
+                  <<<"${graph_status}" >/dev/null 2>&1; then
+                  graph_synced=1
+                  break
+                fi
+                sleep 5
+              done
+              if [ "${graph_synced}" -ne 1 ]; then
+                echo "DOS Names subgraph did not index deployment block ${DEPLOYMENT_BLOCK}" >&2
+                sudo docker compose logs --tail=150 bens-graph-node
+                exit 1
+              fi
 
               STATELESS_SERVICES="backend frontend smart-contract-verifier visualizer sig-provider user-ops-indexer stats caddy"
               for service in ${STATELESS_SERVICES}; do
@@ -1043,6 +1188,26 @@ jobs:
                 fi
                 sleep 5
               done
+
+              smoke_lookup_path="/name-service/api/v1/3939/domains/${SMOKE_NAME}"
+              smoke_lookup_ok=0
+              for attempt in $(seq 1 30); do
+                if smoke_response="$(
+                  curl -fsS -H "Host: test.doscan.io" \
+                    "http://127.0.0.1:13080${smoke_lookup_path}"
+                )" &&
+                  jq -e --arg smoke_name "${SMOKE_NAME}" '"'"'.name == $smoke_name'"'"' \
+                    <<<"${smoke_response}" >/dev/null; then
+                  smoke_lookup_ok=1
+                  break
+                fi
+                sleep 5
+              done
+              if [ "${smoke_lookup_ok}" -ne 1 ]; then
+                echo "Local Caddy/BENS lookup failed for ${SMOKE_NAME}" >&2
+                sudo docker compose logs --tail=150 caddy bens bens-graph-node
+                exit 1
+              fi
 
               for attempt in $(seq 1 30); do
                 if curl -fsS \
@@ -1109,6 +1274,9 @@ jobs:
               curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                 "https://test.doscan.io/name-service/api/v1/protocols?chain_id=3939" | \
                 grep -q '"dos-names"'
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                "https://test.doscan.io/name-service/api/v1/3939/domains/${SMOKE_NAME}" | \
+                jq -e --arg smoke_name "${SMOKE_NAME}" '"'"'.name == $smoke_name'"'"' >/dev/null
               for metadata_url in \
                 "https://test.doscan.io/metadata-api/api/v1/metadata" \
                 "https://test.doscan.io/api/v1/metadata"; do

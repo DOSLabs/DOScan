@@ -47,6 +47,8 @@ env:
   OTP_VERSION: "27.3.4.6"
   ELIXIR_VERSION: "1.19.4"
   MIX_ENV: prod
+  DOS_NAMES_REPOSITORY: https://github.com/DOS/DOS-Names-Contracts.git
+  DOS_NAMES_SUBGRAPH_REF: 45836c7164ac103fa93c4f810015925a1f8220cb
 
 jobs:
   workflow-scripts:
@@ -61,6 +63,17 @@ jobs:
 
       - name: Validate Testnet BENS configuration
         run: python scripts/validate-testnet-bens.py
+
+      - name: Verify immutable DOS Names runtime artifact
+        run: |
+          set -euo pipefail
+          checkout="${RUNNER_TEMP}/dos-names"
+          git init "${checkout}"
+          git -C "${checkout}" remote add origin "${DOS_NAMES_REPOSITORY}"
+          git -C "${checkout}" fetch --depth=1 origin "${DOS_NAMES_SUBGRAPH_REF}"
+          [ "$(git -C "${checkout}" rev-parse FETCH_HEAD)" = "${DOS_NAMES_SUBGRAPH_REF}" ]
+          git -C "${checkout}" cat-file -e FETCH_HEAD:subgraph/dos-names/subgraph.template.yaml
+          git -C "${checkout}" cat-file -e FETCH_HEAD:contracts/deployments/dos-testnet-3939.json
   token-lists:
     name: Validate DOS Chain token list reference
     runs-on: ubuntu-latest
