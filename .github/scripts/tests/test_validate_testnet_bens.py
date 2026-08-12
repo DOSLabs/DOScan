@@ -1,5 +1,8 @@
 import importlib.util
 import json
+import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -85,6 +88,43 @@ class ValidateTestnetBensTests(unittest.TestCase):
             dependency_workflow,
         )
         self.assertIn("python scripts/render-testnet-bens.py", dependency_workflow)
+
+    def test_remote_manifest_gate_accepts_a_valid_deployment(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        gate = workflow.split('DEPLOYMENT_JSON="${SRC}/docker-compose/bens/deployment.json"', 1)[
+            1
+        ].split('DEPLOYMENT_BLOCK="$(jq -er', 1)[0]
+        match = re.search(r"'\"'\"'(.*?)'\"'\"'", gate, re.DOTALL)
+        self.assertIsNotNone(match)
+        jq_filter = match.group(1)
+        deployment = {
+            "chainId": 3939,
+            "deploymentBlock": 120,
+            "finalDeploymentBlock": 166,
+            "smokeName": "bens-smoke.dos",
+            "smokeResolvedAddress": "0x5555555555555555555555555555555555555555",
+            "contracts": {
+                "dosRegistry": "0x1111111111111111111111111111111111111111",
+                "dosRegistrar": "0x2222222222222222222222222222222222222222",
+                "permissionedResolverImplementation": "0x3333333333333333333333333333333333333333",
+                "rootRegistry": "0x4444444444444444444444444444444444444444",
+            },
+        }
+        command = ["jq", "-e", jq_filter]
+        if shutil.which("jq") is None:
+            command = ["wsl.exe", "jq", "-e", jq_filter]
+
+        result = subprocess.run(
+            command,
+            input=json.dumps(deployment),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
 
     def test_testnet_job_runs_the_bens_validator_directly(self):
         workflow = (
