@@ -120,6 +120,8 @@ def validate() -> list[str]:
         errors.append("The deployment workflow must fetch from DOS Names")
     if "contracts/deployments/dos-testnet-3939.json" not in workflow:
         errors.append("The deployment workflow must consume the DOS Names manifest")
+    if "merge-base --is-ancestor" not in workflow or "refs/remotes/origin/dos" not in workflow:
+        errors.append("The deployment workflow must prove the DOS Names pin belongs to branch dos")
     testnet_job = workflow.split("  deploy-testnet:", 1)
     if len(testnet_job) != 2 or "run: python scripts/validate-testnet-bens.py" not in testnet_job[1].split(
         "\n  deploy-beta:", 1
@@ -150,7 +152,10 @@ def validate() -> list[str]:
         and ref_match.group(1) != dependency_ref_match.group(1)
     ):
         errors.append("Deploy and dependency workflows must pin the same DOS Names commit")
-    if "cat-file -e FETCH_HEAD:contracts/deployments/dos-testnet-3939.json" not in dependency_workflow:
+    if (
+        'cat-file -e "${DOS_NAMES_SUBGRAPH_REF}":contracts/deployments/dos-testnet-3939.json'
+        not in dependency_workflow
+    ):
         errors.append("Dependency CI must prove the pinned DOS Names deployment manifest exists")
 
     return errors

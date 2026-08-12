@@ -53,7 +53,7 @@ env:
   GCP_TESTNET_ZONE: asia-southeast1-a
   GCP_TESTNET_INSTANCE: dos-testnet-r0
   DOS_NAMES_REPOSITORY: https://github.com/DOS/DOS-Names-Contracts.git
-  DOS_NAMES_SUBGRAPH_REF: a48f2798d0e8cbb620251febc2fa4e41c6ee750e
+  DOS_NAMES_SUBGRAPH_REF: 34c365152a8558f79fc8976d340906e502e84ae0
 
 jobs:
   deploy-mainnet:
@@ -647,9 +647,12 @@ jobs:
           rm -rf "${checkout}" docker-compose/bens/subgraph
           git init -q "${checkout}"
           git -C "${checkout}" remote add origin "${DOS_NAMES_REPOSITORY}"
-          git -C "${checkout}" fetch --depth=1 origin "${DOS_NAMES_SUBGRAPH_REF}"
-          [ "$(git -C "${checkout}" rev-parse FETCH_HEAD)" = "${DOS_NAMES_SUBGRAPH_REF}" ]
-          git -C "${checkout}" checkout --detach -q FETCH_HEAD
+          git -C "${checkout}" fetch --filter=blob:none origin \
+            refs/heads/dos:refs/remotes/origin/dos
+          git -C "${checkout}" merge-base --is-ancestor \
+            "${DOS_NAMES_SUBGRAPH_REF}" refs/remotes/origin/dos
+          git -C "${checkout}" checkout --detach -q "${DOS_NAMES_SUBGRAPH_REF}"
+          [ "$(git -C "${checkout}" rev-parse HEAD)" = "${DOS_NAMES_SUBGRAPH_REF}" ]
           test -f "${checkout}/subgraph/dos-names/subgraph.template.yaml"
           test -f "${checkout}/contracts/deployments/dos-testnet-3939.json"
           cp -a "${checkout}/subgraph/dos-names" docker-compose/bens/subgraph

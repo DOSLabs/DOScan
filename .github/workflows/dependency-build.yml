@@ -48,7 +48,7 @@ env:
   ELIXIR_VERSION: "1.19.4"
   MIX_ENV: prod
   DOS_NAMES_REPOSITORY: https://github.com/DOS/DOS-Names-Contracts.git
-  DOS_NAMES_SUBGRAPH_REF: a48f2798d0e8cbb620251febc2fa4e41c6ee750e
+  DOS_NAMES_SUBGRAPH_REF: 34c365152a8558f79fc8976d340906e502e84ae0
 
 jobs:
   workflow-scripts:
@@ -70,10 +70,12 @@ jobs:
           checkout="${RUNNER_TEMP}/dos-names"
           git init "${checkout}"
           git -C "${checkout}" remote add origin "${DOS_NAMES_REPOSITORY}"
-          git -C "${checkout}" fetch --depth=1 origin "${DOS_NAMES_SUBGRAPH_REF}"
-          [ "$(git -C "${checkout}" rev-parse FETCH_HEAD)" = "${DOS_NAMES_SUBGRAPH_REF}" ]
-          git -C "${checkout}" cat-file -e FETCH_HEAD:subgraph/dos-names/subgraph.template.yaml
-          git -C "${checkout}" cat-file -e FETCH_HEAD:contracts/deployments/dos-testnet-3939.json
+          git -C "${checkout}" fetch --filter=blob:none origin \
+            refs/heads/dos:refs/remotes/origin/dos
+          git -C "${checkout}" merge-base --is-ancestor \
+            "${DOS_NAMES_SUBGRAPH_REF}" refs/remotes/origin/dos
+          git -C "${checkout}" cat-file -e "${DOS_NAMES_SUBGRAPH_REF}":subgraph/dos-names/subgraph.template.yaml
+          git -C "${checkout}" cat-file -e "${DOS_NAMES_SUBGRAPH_REF}":contracts/deployments/dos-testnet-3939.json
   token-lists:
     name: Validate DOS Chain token list reference
     runs-on: ubuntu-latest

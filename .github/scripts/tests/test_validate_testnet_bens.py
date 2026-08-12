@@ -57,6 +57,8 @@ class ValidateTestnetBensTests(unittest.TestCase):
             "https://github.com/DOS/DOS-Names-Contracts.git",
             workflow,
         )
+        self.assertIn("merge-base --is-ancestor", workflow)
+        self.assertIn("refs/remotes/origin/dos", workflow)
 
     def test_deployment_proves_contracts_indexing_and_real_lookup(self):
         workflow = (
@@ -79,7 +81,7 @@ class ValidateTestnetBensTests(unittest.TestCase):
             ROOT / ".github" / "workflows" / "dependency-build.yml"
         ).read_text(encoding="utf-8")
         self.assertIn(
-            "cat-file -e FETCH_HEAD:contracts/deployments/dos-testnet-3939.json",
+            'cat-file -e "${DOS_NAMES_SUBGRAPH_REF}":contracts/deployments/dos-testnet-3939.json',
             dependency_workflow,
         )
 
