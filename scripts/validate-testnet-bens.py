@@ -18,6 +18,7 @@ DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy-config.yml"
 DEPENDENCY_WORKFLOW = ROOT / ".github" / "workflows" / "dependency-build.yml"
 PLAYWRIGHT_SPEC = ROOT / ".github" / "scripts" / "testnet-bens-ui.spec.mjs"
 RPC_RETRY_SCRIPT = ROOT / ".github" / "scripts" / "retry-testnet-rpc.sh"
+SUBGRAPH_DEPLOY_SCRIPT = ROOT / "docker-compose" / "bens" / "deploy-subgraph.sh"
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -43,6 +44,7 @@ def validate() -> list[str]:
         DEPENDENCY_WORKFLOW,
         PLAYWRIGHT_SPEC,
         RPC_RETRY_SCRIPT,
+        SUBGRAPH_DEPLOY_SCRIPT,
     )
     for path in required_files:
         if not path.is_file():
@@ -58,6 +60,7 @@ def validate() -> list[str]:
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
     dependency_workflow = DEPENDENCY_WORKFLOW.read_text(encoding="utf-8")
     rpc_retry_script = RPC_RETRY_SCRIPT.read_text(encoding="utf-8")
+    subgraph_deploy_script = SUBGRAPH_DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
     for service in ("bens-db:", "bens-ipfs:", "bens-graph-node:", "bens:"):
         if service not in compose:
@@ -79,21 +82,29 @@ def validate() -> list[str]:
         errors.append("Every database client must load the dedicated BENS secret file")
     if "./bens/subgraph:/source:ro" not in compose:
         errors.append("The deployer must mount the fetched DOS Names subgraph")
+    if "./bens/deploy-subgraph.sh:/runtime/deploy-subgraph.sh:ro" not in compose:
+        errors.append("The deployer must mount the reviewed subgraph deploy script")
+    if "exec /bin/sh /runtime/deploy-subgraph.sh" not in compose:
+        errors.append("The deployer must run the reviewed subgraph deploy script")
+    if "BENS_SUBGRAPH_VERSION: ${BENS_SUBGRAPH_VERSION:-testnet}" not in compose:
+        errors.append("The deployer must receive the workflow's unique version label")
     graph_cli = "node node_modules/@graphprotocol/graph-cli/bin/run"
+    if graph_cli not in subgraph_deploy_script:
+        errors.append("The deployer must invoke Graph CLI through Node")
     for command in (
         "codegen --output-dir src/types/",
         "build",
         "create dos-names",
         "deploy dos-names",
     ):
-        if f"{graph_cli} {command}" not in compose:
+        if f"run_graph_cli {command}" not in subgraph_deploy_script:
             errors.append(
                 f"The deployer must invoke Graph CLI through Node for {command}"
             )
     if (
-        "npm run codegen" in compose
-        or "npm run build" in compose
-        or "npx graph" in compose
+        "npm run codegen" in subgraph_deploy_script
+        or "npm run build" in subgraph_deploy_script
+        or "npx graph" in subgraph_deploy_script
     ):
         errors.append("The deployer must not rely on executable Graph CLI shims")
 

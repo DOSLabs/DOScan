@@ -1218,6 +1218,8 @@ jobs:
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-visualizer.env" "${DEPLOY_PATH}/envs/common-visualizer.env"
               sudo rm -rf "${DEPLOY_PATH}/bens"
               sudo cp -a "${SRC}/docker-compose/bens" "${DEPLOY_PATH}/bens"
+              sudo chmod 0755 "${DEPLOY_PATH}/bens"
+              sudo chmod 0644 "${DEPLOY_PATH}/bens/config.json"
 
               cd "${DEPLOY_PATH}"
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose config -q

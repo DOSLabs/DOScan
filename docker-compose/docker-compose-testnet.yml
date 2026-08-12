@@ -120,6 +120,8 @@ services:
   bens-deployer:
     image: node:22.18.0-alpine3.22@sha256:1b2479dd35a99687d6638f5976fd235e26c5b37e8122f786fcd5fe231d63de5b
     profiles: ["bens-deploy"]
+    environment:
+      BENS_SUBGRAPH_VERSION: ${BENS_SUBGRAPH_VERSION:-testnet}
     depends_on:
       bens-graph-node:
         condition: service_started
@@ -128,22 +130,13 @@ services:
     working_dir: /work
     volumes:
       - ./bens/subgraph:/source:ro
+      - ./bens/deploy-subgraph.sh:/runtime/deploy-subgraph.sh:ro
     tmpfs:
       - /work
     command:
       - /bin/sh
       - -ec
-      - |
-          cp -a /source/. /work/
-          npm ci
-          node node_modules/@graphprotocol/graph-cli/bin/run codegen --output-dir src/types/
-          node node_modules/@graphprotocol/graph-cli/bin/run build
-          node node_modules/@graphprotocol/graph-cli/bin/run create dos-names \
-            --node http://bens-graph-node:8020 || true
-          node node_modules/@graphprotocol/graph-cli/bin/run deploy dos-names \
-            --ipfs http://bens-ipfs:5001 \
-            --node http://bens-graph-node:8020 \
-            --version-label "$${BENS_SUBGRAPH_VERSION:-testnet}"
+      - exec /bin/sh /runtime/deploy-subgraph.sh
 
   backend:
     image: ghcr.io/dos/doscan:11.2.6.commit.99eb6e8a@sha256:60b6655e9c02028a8ce6a6eb5a7a1db6d4c23ab616e68a26319e00787089e084

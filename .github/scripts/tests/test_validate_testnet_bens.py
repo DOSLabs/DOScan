@@ -1,10 +1,12 @@
 import importlib.util
+import http.server
 import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -12,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_PATH = ROOT / "scripts" / "validate-testnet-bens.py"
 RPC_RETRY_SCRIPT = ROOT / ".github" / "scripts" / "retry-testnet-rpc.sh"
+SUBGRAPH_DEPLOY_SCRIPT = ROOT / "docker-compose" / "bens" / "deploy-subgraph.sh"
 
 
 def load_module():
@@ -85,15 +88,194 @@ class ValidateTestnetBensTests(unittest.TestCase):
         compose = (
             ROOT / "docker-compose" / "docker-compose-testnet.yml"
         ).read_text(encoding="utf-8")
-        graph_cli = "node node_modules/@graphprotocol/graph-cli/bin/run"
+        deploy_script = SUBGRAPH_DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
-        self.assertIn(f"{graph_cli} codegen --output-dir src/types/", compose)
-        self.assertIn(f"{graph_cli} build", compose)
-        self.assertIn(f"{graph_cli} create dos-names", compose)
-        self.assertIn(f"{graph_cli} deploy dos-names", compose)
-        self.assertNotIn("npm run codegen", compose)
-        self.assertNotIn("npm run build", compose)
-        self.assertNotIn("npx graph", compose)
+        self.assertIn("exec /bin/sh /runtime/deploy-subgraph.sh", compose)
+        self.assertIn("run_graph_cli codegen --output-dir src/types/", deploy_script)
+        self.assertIn("run_graph_cli build", deploy_script)
+        self.assertIn("run_graph_cli create dos-names", deploy_script)
+        self.assertIn("run_graph_cli deploy dos-names", deploy_script)
+        self.assertNotIn("npm run codegen", deploy_script)
+        self.assertNotIn("npm run build", deploy_script)
+        self.assertNotIn("npx graph", deploy_script)
+
+    def test_deployer_forwards_the_unique_subgraph_version(self):
+        compose = (
+            ROOT / "docker-compose" / "docker-compose-testnet.yml"
+        ).read_text(encoding="utf-8")
+        deployer = compose.split("  bens-deployer:", 1)[1].split("\n  backend:", 1)[0]
+
+        self.assertIn(
+            "BENS_SUBGRAPH_VERSION: ${BENS_SUBGRAPH_VERSION:-testnet}", deployer
+        )
+        self.assertIn(
+            'BENS_SUBGRAPH_VERSION="github-${DEPLOY_ID}"',
+            (ROOT / ".github" / "workflows" / "deploy-config.yml").read_text(
+                encoding="utf-8"
+            ),
+        )
+
+    def test_subgraph_retry_uses_manifest_cid_and_rejects_unready_states(self):
+        manifest_cid = "Qm" + "B" * 44
+        asset_cid = "Qm" + "A" * 44
+        old_cid = "Qm" + "C" * 44
+        ready = {
+            "data": {
+                "_meta": {
+                    "deployment": manifest_cid,
+                    "hasIndexingErrors": False,
+                }
+            }
+        }
+        rejected_states = [
+            {
+                "data": {
+                    "_meta": {
+                        "deployment": old_cid,
+                        "hasIndexingErrors": False,
+                    }
+                }
+            },
+            {
+                "errors": [{"message": "indexing unavailable"}],
+                "data": {
+                    "_meta": {
+                        "deployment": manifest_cid,
+                        "hasIndexingErrors": False,
+                    }
+                },
+            },
+            {"data": {}},
+            {
+                "data": {
+                    "_meta": {
+                        "deployment": manifest_cid,
+                        "hasIndexingErrors": True,
+                    }
+                }
+            },
+        ]
+
+        for rejected in rejected_states:
+            with self.subTest(rejected=rejected):
+                result, calls = self._run_subgraph_deployer(
+                    [rejected, ready], manifest_cid, asset_cid
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                deploy_calls = [call for call in calls if call.startswith("deploy ")]
+                self.assertEqual(2, len(deploy_calls), calls)
+                self.assertNotIn("--ipfs-hash", deploy_calls[0])
+                self.assertIn(f"--ipfs-hash {manifest_cid}", deploy_calls[1])
+                self.assertNotIn(asset_cid, deploy_calls[1])
+                self.assertEqual(1, calls.count("build"), calls)
+
+        result, calls = self._run_subgraph_deployer(
+            [rejected_states[0]] * 3, manifest_cid, asset_cid
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(3, len([call for call in calls if call.startswith("deploy ")]))
+        self.assertEqual(1, calls.count("build"), calls)
+
+    def _run_subgraph_deployer(self, responses, manifest_cid, asset_cid):
+        class ResponseHandler(http.server.BaseHTTPRequestHandler):
+            queue = list(responses)
+
+            def do_POST(self):
+                length = int(self.headers.get("content-length", "0"))
+                self.rfile.read(length)
+                body = self.queue.pop(0) if self.queue else responses[-1]
+                payload = json.dumps(body).encode("utf-8")
+                self.send_response(200)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, _format, *_args):
+                return
+
+        bash = "bash"
+        if os.name == "nt":
+            bash = r"C:\Program Files\Git\bin\bash.exe"
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), ResponseHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source = root / "source"
+                work = root / "work"
+                source.mkdir()
+                (source / "package.json").write_text("{}", encoding="utf-8")
+                calls_path = root / "graph-calls"
+                graph_runner = root / "fake-graph-cli.sh"
+                graph_runner.write_text(
+                    "#!/bin/sh\n"
+                    'printf "%s\\n" "$*" >> "$DOSCAN_GRAPH_CALLS"\n'
+                    'if [ "$1" != "deploy" ]; then exit 0; fi\n'
+                    'case " $* " in\n'
+                    '  *" --ipfs-hash "*) exit 1 ;;\n'
+                    "esac\n"
+                    f'printf "%s\\n" "Add file to IPFS .. {asset_cid}"\n'
+                    f'printf "%s\\n" "Build completed: {manifest_cid}"\n'
+                    'printf "%s\\n" "HTTP error deploying the subgraph ECONNRESET"\n'
+                    "exit 1\n",
+                    encoding="utf-8",
+                )
+                graph_runner.chmod(0o755)
+                npm_runner = root / "fake-npm.sh"
+                npm_runner.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                npm_runner.chmod(0o755)
+                environment = os.environ.copy()
+                environment.update(
+                    {
+                        "DOSCAN_GRAPH_ADMIN_URL": "http://127.0.0.1:1",
+                        "DOSCAN_GRAPH_QUERY_URL": (
+                            f"http://127.0.0.1:{server.server_port}/graphql"
+                        ),
+                        "DOSCAN_GRAPH_IPFS_URL": "http://127.0.0.1:2",
+                        "DOSCAN_GRAPH_CLI_RUNNER": graph_runner.as_posix(),
+                        "DOSCAN_GRAPH_CALLS": calls_path.as_posix(),
+                        "DOSCAN_NPM_RUNNER": npm_runner.as_posix(),
+                        "DOSCAN_SUBGRAPH_SOURCE_DIR": source.as_posix(),
+                        "DOSCAN_SUBGRAPH_WORK_DIR": work.as_posix(),
+                        "DOSCAN_SUBGRAPH_DEPLOY_LOG": (root / "deploy.log").as_posix(),
+                        "DOSCAN_SUBGRAPH_READINESS_ATTEMPTS": "1",
+                        "DOSCAN_SUBGRAPH_RETRY_DELAY_SECONDS": "0",
+                    }
+                )
+                result = subprocess.run(
+                    [bash, SUBGRAPH_DEPLOY_SCRIPT.as_posix()],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    env=environment,
+                )
+                calls = (
+                    calls_path.read_text(encoding="utf-8").splitlines()
+                    if calls_path.exists()
+                    else []
+                )
+                return result, calls
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_bens_runtime_config_is_readable_by_the_non_root_image_user(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn('sudo rm -rf "${DEPLOY_PATH}/bens"', workflow)
+        install_block = workflow.rsplit(
+            'sudo rm -rf "${DEPLOY_PATH}/bens"', 1
+        )[1].split('cd "${DEPLOY_PATH}"', 1)[0]
+
+        self.assertIn('sudo chmod 0755 "${DEPLOY_PATH}/bens"', install_block)
+        self.assertIn(
+            'sudo chmod 0644 "${DEPLOY_PATH}/bens/config.json"', install_block
+        )
 
     def test_caddy_validation_retries_the_pinned_image_pull(self):
         workflow = (
