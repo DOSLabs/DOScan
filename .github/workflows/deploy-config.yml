@@ -1026,7 +1026,7 @@ jobs:
                 )"
                 contract_code="$(
                   curl -fsS -H "Content-Type: application/json" --data "${rpc_body}" \
-                    http://10.148.0.7:9650/ext/bc/2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ/rpc |
+                    https://test.doschain.com/ |
                     jq -er ".result"
                 )"
                 if [ "${contract_code}" = "0x" ] || [ "${contract_code}" = "0x0" ]; then
@@ -1446,7 +1446,7 @@ jobs:
                   -D - -H "Content-Type: application/json" --data "${rpc_body}" https://test.doschain.com/
               )"
               grep -q "\"result\":\"0xf63\"" <<<"${rpc_response}"
-              grep -qi "X-DOS-RPC-Origin: archive-dos-testnet-r0" <<<"${rpc_response}"
+              grep -qi "X-DOS-RPC-Origin: dos-testnet-r0-" <<<"${rpc_response}"
 
               sudo docker compose ps
               echo "GCP testnet deployment completed"

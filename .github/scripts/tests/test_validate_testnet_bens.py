@@ -47,6 +47,36 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertNotIn("doscan-bens-internal", compose)
         self.assertIn("DOSCAN_BENS_SECRETS_ENV", compose)
 
+    def test_bens_uses_the_canonical_public_testnet_rpc(self):
+        canonical_rpc = "https://test.doschain.com/"
+        template = json.loads(
+            (ROOT / "docker-compose" / "bens" / "config.template.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        compose = (
+            ROOT / "docker-compose" / "docker-compose-testnet.yml"
+        ).read_text(encoding="utf-8")
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(
+            canonical_rpc,
+            template["subgraphs_reader"]["networks"]["3939"]["rpc_url"],
+        )
+        self.assertIn(f"ethereum: dos-testnet:{canonical_rpc}", compose)
+        bytecode_gate = workflow.split('contract_code="$(\n', 1)[1].split(
+            'if [ "${contract_code}"', 1
+        )[0]
+        self.assertIn(canonical_rpc, bytecode_gate)
+        self.assertNotIn("10.148.0.7", bytecode_gate)
+        public_rpc_gate = workflow.split('rpc_response="$(\n', 1)[1].split(
+            'sudo docker compose ps', 1
+        )[0]
+        self.assertIn("X-DOS-RPC-Origin: dos-testnet-r0-", public_rpc_gate)
+        self.assertNotIn("archive-dos-testnet-r0", public_rpc_gate)
+
     def test_deployment_fetches_an_immutable_dos_names_revision(self):
         workflow = (
             ROOT / ".github" / "workflows" / "deploy-config.yml"
