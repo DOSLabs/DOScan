@@ -77,6 +77,10 @@ class MainnetBensConfigurationTests(unittest.TestCase):
         ):
             self.assertIn(image, compose)
         self.assertIn(f"ethereum: dos-mainnet:{MAINNET_RPC}", compose)
+        bens_service = compose.split("\n  bens:\n", 1)[1].split(
+            "\n  bens-deployer:\n", 1
+        )[0]
+        self.assertIn("host.docker.internal:host-gateway", bens_service)
         self.assertIn("bens_postgres_data:", compose)
         self.assertIn("bens_ipfs_data:", compose)
         self.assertEqual(compose.count("DOSCAN_BENS_SECRETS_ENV"), 3)

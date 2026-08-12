@@ -101,6 +101,8 @@ services:
     pull_policy: always
     platform: linux/amd64
     restart: unless-stopped
+    extra_hosts:
+      - host.docker.internal:host-gateway
     depends_on:
       bens-db:
         condition: service_healthy
