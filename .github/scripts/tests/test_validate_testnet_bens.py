@@ -77,6 +77,33 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn("X-DOS-RPC-Origin: dos-testnet-r0-", public_rpc_gate)
         self.assertNotIn("archive-dos-testnet-r0", public_rpc_gate)
 
+    def test_deployer_invokes_graph_cli_without_executable_shims(self):
+        compose = (
+            ROOT / "docker-compose" / "docker-compose-testnet.yml"
+        ).read_text(encoding="utf-8")
+        graph_cli = "node node_modules/@graphprotocol/graph-cli/bin/run"
+
+        self.assertIn(f"{graph_cli} codegen --output-dir src/types/", compose)
+        self.assertIn(f"{graph_cli} build", compose)
+        self.assertIn(f"{graph_cli} create dos-names", compose)
+        self.assertIn(f"{graph_cli} deploy dos-names", compose)
+        self.assertNotIn("npm run codegen", compose)
+        self.assertNotIn("npm run build", compose)
+        self.assertNotIn("npx graph", compose)
+
+    def test_caddy_validation_retries_the_pinned_image_pull(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        validation_step = workflow.split("- name: Validate Caddy configuration", 1)[
+            1
+        ].split("- name: Authenticate to Google Cloud", 1)[0]
+
+        self.assertIn("pull_caddy_image()", validation_step)
+        self.assertIn('docker pull "${CADDY_IMAGE}"', validation_step)
+        self.assertIn("for attempt in 1 2 3", validation_step)
+        self.assertIn('if [ "${attempt}" -eq 3 ]', validation_step)
+
     def test_deployment_fetches_an_immutable_dos_names_revision(self):
         workflow = (
             ROOT / ".github" / "workflows" / "deploy-config.yml"
