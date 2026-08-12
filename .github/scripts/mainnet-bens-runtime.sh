@@ -81,6 +81,17 @@ bens_validate_manifest_and_chain() {
   done < <(jq -r '.contracts | to_entries[] | select(.key != "wrappedDOS") | .value' "${deployment}")
 }
 
+bens_require_current_services() {
+  local service services
+  services="$(bens_compose config --services)"
+  for service in bens-db bens-ipfs bens-graph-node bens; do
+    if ! grep -Fx "${service}" <<<"${services}" >/dev/null; then
+      echo "Mainnet BENS volume exists but current Compose lacks ${service}" >&2
+      return 1
+    fi
+  done
+}
+
 bens_prepare() {
   local db_exists ipfs_exists
   bens_validate_manifest_and_chain
@@ -99,12 +110,7 @@ bens_prepare() {
   fi
 
   if [ "${db_exists}" -eq 1 ]; then
-    for service in bens-db bens-ipfs bens-graph-node bens; do
-      if ! bens_compose config --services | grep -qx "${service}"; then
-        echo "Mainnet BENS volume exists but current Compose lacks ${service}" >&2
-        return 1
-      fi
-    done
+    bens_require_current_services
     BENS_STATE_EXISTED=1
     BENS_PREPARED=1
     bens_capture_prior_state

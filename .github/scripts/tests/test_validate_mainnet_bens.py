@@ -151,6 +151,35 @@ class MainnetBensConfigurationTests(unittest.TestCase):
         self.assertIn("/name-service/api/v1/7979/domains/${SMOKE_NAME}", mainnet_job)
         self.assertIn("Verify Mainnet DOS Name UI with Playwright", mainnet_job)
 
+    def test_existing_bens_service_check_consumes_the_complete_compose_output(self):
+        runtime = RUNTIME.as_posix()
+        result = run_bash(
+            f"""
+            set -euo pipefail
+            L1_PATH=/tmp/doscan-mainnet-test
+            BACKUP=/tmp/doscan-mainnet-backup-test
+            source '{runtime}'
+            bens_compose() {{
+              printf '%s\\n' \
+                bens-db bens-ipfs bens-graph-node bens \
+                smart-contract-verifier frontend caddy visualizer sig-provider
+            }}
+            bens_require_current_services
+            """
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_mainnet_playwright_retries_a_transient_frontend_restart(self):
+        ui_test = (
+            ROOT / ".github" / "scripts" / "mainnet-bens-ui.spec.mjs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("openExplorerWithSearch", ui_test)
+        self.assertIn("attempt <= 6", ui_test)
+        self.assertIn("page.waitForTimeout(5_000)", ui_test)
+        self.assertIn("response?.ok()", ui_test)
+        self.assertIn("page.setViewportSize", ui_test)
+
     def test_mainnet_apply_script_parses_as_bash(self):
         workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
         apply_script = next(
