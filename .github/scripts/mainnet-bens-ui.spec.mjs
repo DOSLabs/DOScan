@@ -8,13 +8,37 @@ if (!baseUrl || !smokeName || !smokeAddress) {
   throw new Error("Missing DOS Name smoke configuration");
 }
 
+async function openExplorerWithSearch(page) {
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    let response;
+    try {
+      response = await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
+    } catch {
+      response = null;
+    }
+
+    const searchInput = page
+      .locator('input[placeholder*="search" i]:visible')
+      .first();
+    if (response?.ok() && (await searchInput.isVisible())) {
+      return searchInput;
+    }
+
+    if (attempt < 6) {
+      await page.waitForTimeout(5_000);
+    }
+  }
+
+  throw new Error(
+    `Explorer search did not become visible: url=${page.url()} title=${await page.title()}`,
+  );
+}
+
 test("DOS Name search resolves through the Mainnet UI", async ({ page }) => {
   test.setTimeout(90_000);
-  await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
-
-  const searchInput = page
-    .locator('input[placeholder*="search" i]:visible')
-    .first();
+  const searchInput = await openExplorerWithSearch(page);
   await expect(searchInput).toBeVisible({ timeout: 30_000 });
 
   const searchResponse = page.waitForResponse(

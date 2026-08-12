@@ -495,6 +495,11 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn("timeout: 30_000", ui_test)
         self.assertIn("/name-services/domains/", ui_test)
         self.assertIn('getByText("Oops! Something went wrong")', ui_test)
+        self.assertIn("openExplorerWithSearch", ui_test)
+        self.assertIn("attempt <= 6", ui_test)
+        self.assertIn("page.waitForTimeout(5_000)", ui_test)
+        self.assertIn("response?.ok()", ui_test)
+        self.assertIn("page.setViewportSize", ui_test)
 
     def test_frontend_bens_host_has_no_path_and_caddy_routes_bens_api(self):
         frontend_env = (
