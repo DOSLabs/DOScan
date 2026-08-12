@@ -99,6 +99,22 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertNotIn("npm run build", deploy_script)
         self.assertNotIn("npx graph", deploy_script)
 
+    def test_deployer_forwards_the_unique_subgraph_version(self):
+        compose = (
+            ROOT / "docker-compose" / "docker-compose-testnet.yml"
+        ).read_text(encoding="utf-8")
+        deployer = compose.split("  bens-deployer:", 1)[1].split("\n  backend:", 1)[0]
+
+        self.assertIn(
+            "BENS_SUBGRAPH_VERSION: ${BENS_SUBGRAPH_VERSION:-testnet}", deployer
+        )
+        self.assertIn(
+            'BENS_SUBGRAPH_VERSION="github-${DEPLOY_ID}"',
+            (ROOT / ".github" / "workflows" / "deploy-config.yml").read_text(
+                encoding="utf-8"
+            ),
+        )
+
     def test_subgraph_retry_uses_manifest_cid_and_rejects_unready_states(self):
         manifest_cid = "Qm" + "B" * 44
         asset_cid = "Qm" + "A" * 44

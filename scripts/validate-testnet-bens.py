@@ -86,6 +86,8 @@ def validate() -> list[str]:
         errors.append("The deployer must mount the reviewed subgraph deploy script")
     if "exec /bin/sh /runtime/deploy-subgraph.sh" not in compose:
         errors.append("The deployer must run the reviewed subgraph deploy script")
+    if "BENS_SUBGRAPH_VERSION: ${BENS_SUBGRAPH_VERSION:-testnet}" not in compose:
+        errors.append("The deployer must receive the workflow's unique version label")
     graph_cli = "node node_modules/@graphprotocol/graph-cli/bin/run"
     if graph_cli not in subgraph_deploy_script:
         errors.append("The deployer must invoke Graph CLI through Node")
