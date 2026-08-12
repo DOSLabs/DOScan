@@ -52,8 +52,12 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertNotIn("doscan-bens-internal", compose)
         self.assertIn("DOSCAN_BENS_SECRETS_ENV", compose)
 
-    def test_bens_uses_the_canonical_public_testnet_rpc(self):
-        canonical_rpc = "https://test.doschain.com/"
+    def test_bens_uses_canonical_testnet_rpcs(self):
+        public_rpc = "https://test.doschain.com/"
+        internal_rpc = (
+            "http://10.148.0.7:9650/ext/bc/"
+            "JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9/rpc"
+        )
         template = json.loads(
             (ROOT / "docker-compose" / "bens" / "config.template.json").read_text(
                 encoding="utf-8"
@@ -68,15 +72,27 @@ class ValidateTestnetBensTests(unittest.TestCase):
         retry_script = RPC_RETRY_SCRIPT.read_text(encoding="utf-8")
 
         self.assertEqual(
-            canonical_rpc,
+            internal_rpc,
             template["subgraphs_reader"]["networks"]["3939"]["rpc_url"],
         )
-        self.assertIn(f"ethereum: dos-testnet:{canonical_rpc}", compose)
+        self.assertIn(f"ethereum: dos-testnet:{internal_rpc}", compose)
+        self.assertNotIn("ethereum: dos-testnet:https://test.doschain.com/", compose)
         bytecode_gate = workflow.split('contract_code="$(\n', 1)[1].split(
             'if [ "${contract_code}"', 1
         )[0]
-        self.assertIn(canonical_rpc, retry_script)
-        self.assertIn('testnet_rpc_request "${rpc_body}"', bytecode_gate)
+        self.assertIn(public_rpc, retry_script)
+        self.assertIn(
+            'testnet_rpc_request "${rpc_body}" 0 "${TESTNET_RPC_CANONICAL_INTERNAL_URL}"',
+            bytecode_gate,
+        )
+        self.assertIn(
+            "http://127.0.0.1:9650/ext/bc/"
+            "JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9/rpc",
+            workflow,
+        )
+        self.assertNotIn('testnet_rpc_request "${rpc_body}" |', bytecode_gate)
+        self.assertIn('local endpoint="${3:-https://test.doschain.com/}"', retry_script)
+        self.assertIn('"${endpoint}"', retry_script)
         self.assertNotIn("10.148.0.7", bytecode_gate)
         public_rpc_gate = workflow.split('rpc_response="$(\n', 1)[1].split(
             'sudo docker compose ps', 1
