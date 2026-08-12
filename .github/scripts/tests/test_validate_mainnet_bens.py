@@ -1,5 +1,6 @@
 import json
 import importlib.util
+import re
 import shutil
 import subprocess
 import tempfile
@@ -179,6 +180,16 @@ class MainnetBensConfigurationTests(unittest.TestCase):
         self.assertIn("page.waitForTimeout(5_000)", ui_test)
         self.assertIn("response?.ok()", ui_test)
         self.assertIn("page.setViewportSize", ui_test)
+        self.assertIn('.locator("a:visible")', ui_test)
+        self.assertRegex(
+            ui_test,
+            re.compile(
+                r'if \(\s*title === "Just a moment\.\.\."\s*&&\s*'
+                r'page\.url\(\)\.includes\("__cf_chl_rt_tk="\)\s*\)\s*'
+                r'\{\s*test\.skip\(',
+                re.DOTALL,
+            ),
+        )
 
     def test_mainnet_apply_script_parses_as_bash(self):
         workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))

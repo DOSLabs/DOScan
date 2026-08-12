@@ -500,6 +500,16 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn("page.waitForTimeout(5_000)", ui_test)
         self.assertIn("response?.ok()", ui_test)
         self.assertIn("page.setViewportSize", ui_test)
+        self.assertIn('.locator("a:visible")', ui_test)
+        self.assertRegex(
+            ui_test,
+            re.compile(
+                r'if \(\s*title === "Just a moment\.\.\."\s*&&\s*'
+                r'page\.url\(\)\.includes\("__cf_chl_rt_tk="\)\s*\)\s*'
+                r'\{\s*test\.skip\(',
+                re.DOTALL,
+            ),
+        )
 
     def test_frontend_bens_host_has_no_path_and_caddy_routes_bens_api(self):
         frontend_env = (
