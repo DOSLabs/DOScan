@@ -116,4 +116,3 @@ ENSv2 does not provide the ENSv1 reverse registry assumed by `reverse_registry`.
 - `/name-service/api/v1/protocols` exposes `dos-names`.
 - A real `.dos` test name is indexed, searchable, resolves to its address, and appears in DOScan.
 - Playwright verifies the deployed Testnet UI after rollout.
-

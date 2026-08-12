@@ -81,9 +81,10 @@ class ValidateTestnetBensTests(unittest.TestCase):
             ROOT / ".github" / "workflows" / "dependency-build.yml"
         ).read_text(encoding="utf-8")
         self.assertIn(
-            'cat-file -e "${DOS_NAMES_SUBGRAPH_REF}":contracts/deployments/dos-testnet-3939.json',
+            "node \"${checkout}/subgraph/dos-names/scripts/render-manifest.mjs\"",
             dependency_workflow,
         )
+        self.assertIn("python scripts/render-testnet-bens.py", dependency_workflow)
 
     def test_testnet_job_runs_the_bens_validator_directly(self):
         workflow = (

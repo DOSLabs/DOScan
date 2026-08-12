@@ -153,10 +153,11 @@ def validate() -> list[str]:
     ):
         errors.append("Deploy and dependency workflows must pin the same DOS Names commit")
     if (
-        'cat-file -e "${DOS_NAMES_SUBGRAPH_REF}":contracts/deployments/dos-testnet-3939.json'
+        'node "${checkout}/subgraph/dos-names/scripts/render-manifest.mjs"'
         not in dependency_workflow
+        or "python scripts/render-testnet-bens.py" not in dependency_workflow
     ):
-        errors.append("Dependency CI must prove the pinned DOS Names deployment manifest exists")
+        errors.append("Dependency CI must render the pinned DOS Names runtime artifacts")
 
     return errors
 

@@ -74,8 +74,16 @@ jobs:
             refs/heads/dos:refs/remotes/origin/dos
           git -C "${checkout}" merge-base --is-ancestor \
             "${DOS_NAMES_SUBGRAPH_REF}" refs/remotes/origin/dos
-          git -C "${checkout}" cat-file -e "${DOS_NAMES_SUBGRAPH_REF}":subgraph/dos-names/subgraph.template.yaml
-          git -C "${checkout}" cat-file -e "${DOS_NAMES_SUBGRAPH_REF}":contracts/deployments/dos-testnet-3939.json
+          git -C "${checkout}" checkout --detach -q "${DOS_NAMES_SUBGRAPH_REF}"
+          cp "${checkout}/contracts/deployments/dos-testnet-3939.json" \
+            docker-compose/bens/deployment.json
+          node "${checkout}/subgraph/dos-names/scripts/render-manifest.mjs" \
+            docker-compose/bens/deployment.json \
+            "${checkout}/subgraph/dos-names/subgraph.template.yaml" \
+            "${RUNNER_TEMP}/dos-names-subgraph.yaml"
+          python scripts/render-testnet-bens.py
+          test -s "${RUNNER_TEMP}/dos-names-subgraph.yaml"
+          test -s docker-compose/bens/config.json
   token-lists:
     name: Validate DOS Chain token list reference
     runs-on: ubuntu-latest
