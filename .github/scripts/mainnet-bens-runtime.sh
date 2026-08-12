@@ -107,6 +107,7 @@ bens_prepare() {
     done
     BENS_STATE_EXISTED=1
     BENS_PREPARED=1
+    bens_capture_prior_state
     bens_compose stop bens bens-graph-node
     bens_compose exec -T bens-db pg_dump -U graph-node -Fc graph-node |
       sudo tee "${BACKUP}/bens-graph-node.dump" >/dev/null
@@ -141,6 +142,77 @@ bens_query_meta() {
     -H 'Content-Type: application/json' \
     --data '{"query":"{ _meta { deployment block { number } hasIndexingErrors } }"}' \
     http://bens-graph-node:8000/subgraphs/name/dos-names
+}
+
+bens_capture_prior_state() {
+  local deployment meta smoke_name smoke_address domain reverse search state_tmp
+  deployment="${L1_PATH}/bens/deployment.json"
+  sudo jq -e \
+    '.chainId == 7979 and (.finalDeploymentBlock | type == "number") and
+     (.smokeName | type == "string") and (.smokeResolvedAddress | type == "string")' \
+    "${deployment}" >/dev/null
+  smoke_name="$(sudo jq -er .smokeName "${deployment}")"
+  smoke_address="$(sudo jq -er .smokeResolvedAddress "${deployment}")"
+  meta="$(bens_query_meta)"
+  jq -e \
+    '.errors == null and (.data._meta.deployment | type == "string") and
+     .data._meta.hasIndexingErrors == false and
+     (.data._meta.block.number | tonumber) >= 0' <<<"${meta}" >/dev/null
+  domain="$(bens_compose exec -T backend curl -fsS "http://bens:8050/api/v1/7979/domains/${smoke_name}")"
+  reverse="$(bens_compose exec -T backend curl -fsS "http://bens:8050/api/v1/7979/addresses/${smoke_address}?protocol_id=dos-names")"
+  search="$(bens_compose exec -T backend curl -fsS "http://backend:4000/api/v2/search?q=${smoke_name}")"
+  jq -e --arg name "${smoke_name}" --arg address "${smoke_address}" \
+    '.name == $name and (.resolved_address.hash | ascii_downcase) == ($address | ascii_downcase)' \
+    <<<"${domain}" >/dev/null
+  jq -e --arg name "${smoke_name}" '.domain.name == $name' <<<"${reverse}" >/dev/null
+  jq -e --arg name "${smoke_name}" --arg address "${smoke_address}" \
+    'any(.items[]?; .type == "ens_domain" and (.name // .ens_info.name) == $name and
+     (.address_hash | ascii_downcase) == ($address | ascii_downcase))' <<<"${search}" >/dev/null
+  state_tmp="$(mktemp /tmp/doscan-mainnet-bens-state.XXXXXX)"
+  jq -n \
+    --arg deployment "$(jq -er .data._meta.deployment <<<"${meta}")" \
+    --argjson block "$(jq -er '.data._meta.block.number | tonumber' <<<"${meta}")" \
+    --arg smokeName "${smoke_name}" --arg smokeAddress "${smoke_address}" \
+    '{deployment: $deployment, block: $block, smokeName: $smokeName, smokeAddress: $smokeAddress}' \
+    > "${state_tmp}"
+  sudo install -m 0600 "${state_tmp}" "${BACKUP}/bens-prior-state.json"
+  rm -f "${state_tmp}"
+}
+
+bens_verify_restored_state() {
+  local prior expected_cid expected_block smoke_name smoke_address meta domain reverse search
+  prior="${BACKUP}/bens-prior-state.json"
+  sudo jq -e \
+    '(.deployment | type == "string") and (.block | type == "number") and
+     (.smokeName | type == "string") and (.smokeAddress | type == "string")' \
+    "${prior}" >/dev/null
+  expected_cid="$(sudo jq -er .deployment "${prior}")"
+  expected_block="$(sudo jq -er .block "${prior}")"
+  smoke_name="$(sudo jq -er .smokeName "${prior}")"
+  smoke_address="$(sudo jq -er .smokeAddress "${prior}")"
+  for attempt in $(seq 1 60); do
+    meta="$(bens_query_meta 2>/dev/null || true)"
+    domain="$(bens_compose exec -T backend curl -fsS "http://bens:8050/api/v1/7979/domains/${smoke_name}" 2>/dev/null || true)"
+    reverse="$(bens_compose exec -T backend curl -fsS "http://bens:8050/api/v1/7979/addresses/${smoke_address}?protocol_id=dos-names" 2>/dev/null || true)"
+    search="$(bens_compose exec -T backend curl -fsS "http://backend:4000/api/v2/search?q=${smoke_name}" 2>/dev/null || true)"
+    if jq -e --arg cid "${expected_cid}" --argjson block "${expected_block}" \
+         '.errors == null and .data._meta.deployment == $cid and
+          .data._meta.hasIndexingErrors == false and
+          (.data._meta.block.number | tonumber) >= $block' <<<"${meta}" >/dev/null 2>&1 &&
+       jq -e --arg name "${smoke_name}" --arg address "${smoke_address}" \
+         '.name == $name and (.resolved_address.hash | ascii_downcase) == ($address | ascii_downcase)' \
+         <<<"${domain}" >/dev/null 2>&1 &&
+       jq -e --arg name "${smoke_name}" '.domain.name == $name' <<<"${reverse}" >/dev/null 2>&1 &&
+       jq -e --arg name "${smoke_name}" --arg address "${smoke_address}" \
+         'any(.items[]?; .type == "ens_domain" and (.name // .ens_info.name) == $name and
+          (.address_hash | ascii_downcase) == ($address | ascii_downcase))' \
+         <<<"${search}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 5
+  done
+  echo "Mainnet restored BENS state failed exact deployment and lookup checks" >&2
+  return 1
 }
 
 bens_wait_healthy() {
@@ -207,13 +279,22 @@ bens_deploy() {
 }
 
 bens_rollback() {
-  local restore_rc=0
+  local restore_rc=0 service
   if [ "${BENS_PREPARED}" -ne 1 ]; then
     return 0
   fi
   set +e
   cd "${L1_PATH}"
-  bens_compose rm -sf bens bens-graph-node bens-ipfs bens-db >/dev/null 2>&1 || true
+  for service in bens bens-graph-node bens-ipfs bens-db; do
+    bens_compose rm -sf "${service}" >/dev/null 2>&1 || restore_rc=1
+    if [ -n "$(bens_compose ps -aq "${service}" 2>/dev/null)" ]; then
+      restore_rc=1
+    fi
+  done
+  if [ "${restore_rc}" -ne 0 ]; then
+    echo "Mainnet BENS rollback could not remove the new runtime containers" >&2
+    return 1
+  fi
 
   if sudo test -f "${BACKUP}/bens-existed"; then
     sudo rm -rf "${L1_PATH}/bens" || restore_rc=1
@@ -227,6 +308,7 @@ bens_rollback() {
     if [ "${BENS_BACKUP_COMPLETE}" -ne 1 ]; then
       bens_compose up -d bens-db bens-ipfs bens-graph-node bens || restore_rc=1
       bens_wait_healthy || restore_rc=1
+      bens_verify_restored_state || restore_rc=1
       return "${restore_rc}"
     fi
     if ! sudo test -s "${BACKUP}/bens-graph-node.dump" ||
@@ -255,9 +337,15 @@ bens_rollback() {
       -ec 'find /data/ipfs -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; tar -C /data/ipfs -xzf /backup/bens-ipfs.tgz' || restore_rc=1
     bens_compose up -d bens-db bens-ipfs bens-graph-node bens || restore_rc=1
     bens_wait_healthy || restore_rc=1
+    bens_verify_restored_state || restore_rc=1
   else
     for volume in "${BENS_DB_VOLUME}" "${BENS_IPFS_VOLUME}"; do
-      sudo docker volume rm "${volume}" >/dev/null 2>&1 || true
+      if sudo docker volume inspect "${volume}" >/dev/null 2>&1; then
+        sudo docker volume rm "${volume}" >/dev/null || restore_rc=1
+      fi
+      if sudo docker volume inspect "${volume}" >/dev/null 2>&1; then
+        restore_rc=1
+      fi
     done
     sudo rm -f "${BENS_SECRETS_ENV}" || restore_rc=1
   fi

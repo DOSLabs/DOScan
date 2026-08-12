@@ -152,6 +152,9 @@ class MainnetBensConfigurationTests(unittest.TestCase):
         self.assertIn("BENS_BACKUP_COMPLETE=0", runtime)
         self.assertIn("pg_restore --list /backup/bens-graph-node.dump", runtime)
         self.assertIn("tar -tzf /backup/bens-ipfs.tgz", runtime)
+        self.assertIn("bens_capture_prior_state", runtime)
+        self.assertIn("bens_verify_restored_state", runtime)
+        self.assertIn("http://backend:4000/api/v2/search", runtime)
         incomplete_guard = runtime.index(
             'if [ "${BENS_BACKUP_COMPLETE}" -ne 1 ]; then'
         )
@@ -165,6 +168,14 @@ class MainnetBensConfigurationTests(unittest.TestCase):
             guarded_section,
         )
         self.assertIn("return", guarded_section)
+
+    def test_first_install_rollback_proves_runtime_and_volumes_are_removed(self):
+        runtime = RUNTIME.read_text(encoding="utf-8")
+        self.assertIn('bens_compose ps -aq "${service}"', runtime)
+        self.assertIn('sudo docker volume rm "${volume}"', runtime)
+        self.assertGreaterEqual(
+            runtime.count('sudo docker volume inspect "${volume}"'), 2
+        )
 
 
 if __name__ == "__main__":
