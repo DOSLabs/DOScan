@@ -75,13 +75,26 @@ jobs:
       - name: Validate Caddy configuration
         run: |
           set -euo pipefail
+          CADDY_IMAGE="caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9"
+          pull_caddy_image() {
+            for attempt in 1 2 3; do
+              if docker pull "${CADDY_IMAGE}"; then
+                return 0
+              fi
+              if [ "${attempt}" -eq 3 ]; then
+                return 1
+              fi
+              sleep $((attempt * 5))
+            done
+          }
+          pull_caddy_image
           docker run --rm \
             -v "${PWD}/docker-compose/Caddyfile-gcp-edge:/etc/caddy/Caddyfile:ro" \
-            caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9 \
+            "${CADDY_IMAGE}" \
             caddy adapt --config /etc/caddy/Caddyfile >/dev/null
           docker run --rm \
             -v "${PWD}/docker-compose/Caddyfile-gcp-mainnet:/etc/caddy/Caddyfile:ro" \
-            caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9 \
+            "${CADDY_IMAGE}" \
             caddy validate --config /etc/caddy/Caddyfile
 
       - name: Authenticate to Google Cloud

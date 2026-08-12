@@ -76,6 +76,23 @@ def validate() -> list[str]:
         errors.append("Every database client must load the dedicated BENS secret file")
     if "./bens/subgraph:/source:ro" not in compose:
         errors.append("The deployer must mount the fetched DOS Names subgraph")
+    graph_cli = "node node_modules/@graphprotocol/graph-cli/bin/run"
+    for command in (
+        "codegen --output-dir src/types/",
+        "build",
+        "create dos-names",
+        "deploy dos-names",
+    ):
+        if f"{graph_cli} {command}" not in compose:
+            errors.append(
+                f"The deployer must invoke Graph CLI through Node for {command}"
+            )
+    if (
+        "npm run codegen" in compose
+        or "npm run build" in compose
+        or "npx graph" in compose
+    ):
+        errors.append("The deployer must not rely on executable Graph CLI shims")
 
     expected_backend = {
         "MICROSERVICE_BENS_ENABLED": "true",
@@ -143,6 +160,11 @@ def validate() -> list[str]:
         "BENS database secrets derived from canonical password" not in workflow
     ):
         errors.append("BENS database credentials must derive from one canonical secret")
+    if (
+        "pull_caddy_image()" not in workflow
+        or 'docker pull "${CADDY_IMAGE}"' not in workflow
+    ):
+        errors.append("Caddy validation must retry the pinned image pull")
     dependency_ref_match = re.search(
         r"DOS_NAMES_SUBGRAPH_REF: ([0-9a-f]{40})", dependency_workflow
     )
