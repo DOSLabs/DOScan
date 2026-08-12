@@ -11,6 +11,7 @@ on:
       - "docker-compose/Caddyfile-gcp-mainnet"
       - "docker-compose/Caddyfile-gcp-testnet"
       - "docker-compose/Caddyfile-gcp-edge"
+      - "docker-compose/bens/**"
       - "docker-compose/configs/interchain-indexer-*.json"
       - "docker-compose/envs/common-blockscout.env"
       - "docker-compose/envs/common-blockscout-mainnet.env"
@@ -21,6 +22,8 @@ on:
       - "docker-compose/envs/common-smart-contract-verifier.env"
       - "docker-compose/envs/common-visualizer.env"
       - "scripts/validate-blockscout-env-parity.py"
+      - "scripts/render-testnet-bens.py"
+      - "scripts/validate-testnet-bens.py"
       - ".github/workflows/deploy-config.yml"
   workflow_dispatch:
     inputs:
@@ -49,6 +52,8 @@ env:
   GCP_WORKLOAD_IDENTITY_PROVIDER: projects/535583621422/locations/global/workloadIdentityPools/github/providers/doscan-provider
   GCP_TESTNET_ZONE: asia-southeast1-a
   GCP_TESTNET_INSTANCE: dos-testnet-r0
+  DOS_NAMES_REPOSITORY: https://github.com/DOS/DOS-Names-Contracts.git
+  DOS_NAMES_SUBGRAPH_REF: 45836c7164ac103fa93c4f810015925a1f8220cb
 
 jobs:
   deploy-mainnet:
@@ -63,6 +68,9 @@ jobs:
 
       - name: Validate Mainnet and Testnet environment parity
         run: python scripts/validate-blockscout-env-parity.py
+
+      - name: Validate Testnet BENS configuration
+        run: python scripts/validate-testnet-bens.py
 
       - name: Validate Caddy configuration
         run: |
@@ -629,6 +637,27 @@ jobs:
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
 
+      - name: Prepare immutable DOS Names runtime package
+        run: |
+          set -euo pipefail
+          checkout="${RUNNER_TEMP}/dos-names"
+          rm -rf "${checkout}" docker-compose/bens/subgraph
+          git init -q "${checkout}"
+          git -C "${checkout}" remote add origin "${DOS_NAMES_REPOSITORY}"
+          git -C "${checkout}" fetch --depth=1 origin "${DOS_NAMES_SUBGRAPH_REF}"
+          [ "$(git -C "${checkout}" rev-parse FETCH_HEAD)" = "${DOS_NAMES_SUBGRAPH_REF}" ]
+          git -C "${checkout}" checkout --detach -q FETCH_HEAD
+          test -f "${checkout}/subgraph/dos-names/subgraph.template.yaml"
+          test -f "${checkout}/contracts/deployments/dos-testnet-3939.json"
+          cp -a "${checkout}/subgraph/dos-names" docker-compose/bens/subgraph
+          cp "${checkout}/contracts/deployments/dos-testnet-3939.json" \
+            docker-compose/bens/deployment.json
+          node docker-compose/bens/subgraph/scripts/render-manifest.mjs \
+            docker-compose/bens/deployment.json \
+            docker-compose/bens/subgraph/subgraph.template.yaml \
+            docker-compose/bens/subgraph/subgraph.yaml
+          python scripts/render-testnet-bens.py
+
       - name: Package testnet deployment configuration
         run: |
           set -euo pipefail
@@ -654,6 +683,7 @@ jobs:
           tar -czf /tmp/doscan-testnet-config.tgz \
             docker-compose/docker-compose-testnet.yml \
             docker-compose/Caddyfile-gcp-testnet \
+            docker-compose/bens \
             docker-compose/envs/common-blockscout.env \
             docker-compose/envs/common-blockscout-testnet.env \
             docker-compose/envs/common-frontend.env \
@@ -696,6 +726,7 @@ jobs:
               DEPLOY_PATH="/opt/doscan-testnet"
               BACKUP="${DEPLOY_PATH}/backups/github-${DEPLOY_ID}"
               SECRETS_ENV="${DEPLOY_PATH}/envs/common-blockscout-secrets.env"
+              BENS_SECRETS_ENV="${DEPLOY_PATH}/envs/bens-secrets.env"
               NFT_MEDIA_SECRETS="${SRC}/common-blockscout-nft-media.env"
               DEPLOYMENT_STARTED=0
 
@@ -713,6 +744,16 @@ jobs:
                 restore_rc=0
 
                 cd "${DEPLOY_PATH}"
+                current_services="$(
+                  sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    docker compose config --services 2>/dev/null || true
+                )"
+                for service in bens bens-graph-node bens-ipfs bens-db; do
+                  if grep -qx "${service}" <<<"${current_services}"; then
+                    sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                      docker compose rm -sf "${service}" || restore_rc=1
+                  fi
+                done
                 sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
                   docker compose stop backend stats || restore_rc=1
                 if ! user_ops_container_ids="$(
@@ -750,6 +791,12 @@ jobs:
                   sudo rm -f "${DEPLOY_PATH}/Caddyfile-gcp-testnet" || restore_rc=1
                 fi
                 sudo cp -a "${BACKUP}/envs/." "${DEPLOY_PATH}/envs/" || restore_rc=1
+                if sudo test -f "${BACKUP}/bens-existed"; then
+                  sudo rm -rf "${DEPLOY_PATH}/bens" || restore_rc=1
+                  sudo cp -a "${BACKUP}/bens" "${DEPLOY_PATH}/bens" || restore_rc=1
+                else
+                  sudo rm -rf "${DEPLOY_PATH}/bens" || restore_rc=1
+                fi
 
                 if [ "${restore_rc}" -ne 0 ]; then
                   echo "TESTNET ROLLBACK FAILED; manual recovery is required from ${BACKUP}" >&2
@@ -823,6 +870,10 @@ jobs:
               sudo cp -a "${DEPLOY_PATH}/Caddyfile" "${BACKUP}/Caddyfile" 2>/dev/null || true
               sudo cp -a "${DEPLOY_PATH}/Caddyfile-gcp-testnet" "${BACKUP}/Caddyfile-gcp-testnet" 2>/dev/null || true
               sudo cp -a "${DEPLOY_PATH}/envs" "${BACKUP}/envs" 2>/dev/null || true
+              if sudo test -d "${DEPLOY_PATH}/bens"; then
+                sudo cp -a "${DEPLOY_PATH}/bens" "${BACKUP}/bens"
+                sudo touch "${BACKUP}/bens-existed"
+              fi
 
               if ! sudo test -s "${SECRETS_ENV}"; then
                 sudo awk -F= \
@@ -834,6 +885,20 @@ jobs:
 
               if ! sudo grep -Eq "^SECRET_KEY_BASE=.+" "${SECRETS_ENV}"; then
                 echo "Existing Testnet SECRET_KEY_BASE is missing; refusing deployment" >&2
+                exit 1
+              fi
+
+              if ! sudo test -s "${BENS_SECRETS_ENV}"; then
+                bens_db_password="$(openssl rand -hex 32)"
+                printf \
+                  'POSTGRES_PASSWORD=%s\npostgres_pass=%s\nBENS__DATABASE__CONNECT__URL=postgresql://graph-node:%s@bens-db:5432/graph-node\n' \
+                  "${bens_db_password}" "${bens_db_password}" "${bens_db_password}" |
+                  sudo tee "${BENS_SECRETS_ENV}" >/dev/null
+                unset bens_db_password
+                sudo chmod 0600 "${BENS_SECRETS_ENV}"
+              fi
+              if [ "$(sudo grep -Ec '^(POSTGRES_PASSWORD|postgres_pass|BENS__DATABASE__CONNECT__URL)=.+$' "${BENS_SECRETS_ENV}")" -ne 3 ]; then
+                echo "Existing Testnet BENS database secrets are incomplete; refusing deployment" >&2
                 exit 1
               fi
 
@@ -893,9 +958,32 @@ jobs:
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-frontend-testnet.env" "${DEPLOY_PATH}/envs/common-frontend-testnet.env"
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-smart-contract-verifier.env" "${DEPLOY_PATH}/envs/common-smart-contract-verifier.env"
               sudo install -m 0644 "${SRC}/docker-compose/envs/common-visualizer.env" "${DEPLOY_PATH}/envs/common-visualizer.env"
+              sudo rm -rf "${DEPLOY_PATH}/bens"
+              sudo cp -a "${SRC}/docker-compose/bens" "${DEPLOY_PATH}/bens"
 
               cd "${DEPLOY_PATH}"
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose config -q
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                docker compose up -d bens-db bens-ipfs bens-graph-node
+              for attempt in $(seq 1 30); do
+                if sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                  docker compose exec -T backend curl -sS --max-time 5 \
+                  http://bens-graph-node:8020/ >/dev/null; then
+                  break
+                fi
+                if [ "${attempt}" -eq 30 ]; then
+                  echo "BENS Graph Node did not become ready" >&2
+                  sudo docker compose logs --tail=100 bens-db bens-ipfs bens-graph-node
+                  exit 1
+                fi
+                sleep 5
+              done
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                BENS_SUBGRAPH_VERSION="github-${DEPLOY_ID}" \
+                docker compose --profile bens-deploy run --rm bens-deployer
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                docker compose up -d bens
+
               STATELESS_SERVICES="backend frontend smart-contract-verifier visualizer sig-provider user-ops-indexer stats caddy"
               for service in ${STATELESS_SERVICES}; do
                 sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose pull "${service}"
@@ -939,6 +1027,22 @@ jobs:
                 exit 1
               fi
               grep -Fq "NEXT_PUBLIC_HAS_USER_OPS: \"true\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_API_HOST: \"https://test.doscan.io/name-service\"" <<<"${frontend_env}"
+              grep -Pq "NEXT_PUBLIC_NAME_SERVICE_PROTOCOLS: .*\\x27dos-names\\x27" <<<"${frontend_env}"
+
+              for attempt in $(seq 1 30); do
+                if sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                  docker compose exec -T backend curl -fsS http://bens:8050/health | \
+                  grep -q '"SERVING"'; then
+                  break
+                fi
+                if [ "${attempt}" -eq 30 ]; then
+                  echo "BENS did not become healthy" >&2
+                  sudo docker compose logs --tail=100 bens bens-graph-node
+                  exit 1
+                fi
+                sleep 5
+              done
 
               for attempt in $(seq 1 30); do
                 if curl -fsS \
@@ -991,6 +1095,8 @@ jobs:
               grep -Fq "NEXT_PUBLIC_METADATA_SERVICE_API_HOST: \"https://test.doscan.io/metadata-api\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_CONTRACT_INFO_API_HOST: \"https://test.doscan.io\"" <<<"${frontend_env}"
               grep -Fq "NEXT_PUBLIC_DEX_POOLS_ENABLED: \"true\"" <<<"${frontend_env}"
+              grep -Fq "NEXT_PUBLIC_NAME_SERVICE_API_HOST: \"https://test.doscan.io/name-service\"" <<<"${frontend_env}"
+              grep -Pq "NEXT_PUBLIC_NAME_SERVICE_PROTOCOLS: .*\\x27dos-names\\x27" <<<"${frontend_env}"
               verify_frontend_wallets
               if grep -F "NEXT_PUBLIC_NETWORK_EXPLORERS:" <<<"${frontend_env}" | grep -Fq "https://test.doscan.io/"; then
                 echo "Testnet must not link back to itself as an external explorer" >&2
@@ -998,6 +1104,11 @@ jobs:
               fi
               curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                 https://test.doscan.io/api/v1/chains/3939/pools >/dev/null
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                https://test.doscan.io/name-service/health | grep -q '"SERVING"'
+              curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+                "https://test.doscan.io/name-service/api/v1/protocols?chain_id=3939" | \
+                grep -q '"dos-names"'
               for metadata_url in \
                 "https://test.doscan.io/metadata-api/api/v1/metadata" \
                 "https://test.doscan.io/api/v1/metadata"; do

@@ -141,7 +141,17 @@ Browsers do not call the external service directly. Each environment exposes a s
 | Mainnet | `https://doscan.io/metadata-api` |
 | Testnet | `https://test.doscan.io/metadata-api` |
 
-BENS is not configured. There is no DOS or `.dos` BENS protocol for the deployed chain IDs, so name-service UI and backend integration remain disabled.
+### BENS and DOS Name Service
+
+Testnet enables the standard Blockscout BENS integration:
+
+```env
+MICROSERVICE_BENS_ENABLED=true
+MICROSERVICE_BENS_URL=http://bens:8050/
+MICROSERVICE_BENS_PROTOCOLS=dos-names
+```
+
+DOScan runs pinned official BENS, Graph Node, IPFS, and PostgreSQL images. The custom ENSv2 subgraph remains owned by DOS Names and is fetched from an immutable commit during deployment. Mainnet BENS remains disabled until Testnet acceptance is complete.
 
 ### NFT Media Handler
 
@@ -166,7 +176,7 @@ See [NFT Media Handler](NFT-MEDIA-HANDLER.md) for the processing model and valid
 - Sourcify is enabled as an external verification source.
 - Contract Info is proxied through the explorer origin for browser compatibility.
 - Interchain Indexer is deployed only on Mainnet.
-- Multichain Search, transaction interpretation providers, and BENS are not deployed.
+- Multichain Search and transaction interpretation providers are not deployed. BENS is deployed only on Testnet.
 
 ## Routing Rules
 
@@ -178,6 +188,7 @@ The environment origin Caddy uses ordered path routing:
 | Mainnet `/api/v1/interchain/*` and interchain status/stat paths | Interchain Indexer |
 | `/api/v1/chains/*` | Contract Info proxy |
 | Metadata API paths and `/metadata-api/*` | Metadata Service proxy |
+| Testnet `/name-service/*` | BENS API |
 | `/api/*`, `/socket/*`, `/auth/*`, `/metrics`, `/public-metrics` | Backend |
 | `/stats-api/*` | Stats |
 | `/visualize/*` | Visualizer |

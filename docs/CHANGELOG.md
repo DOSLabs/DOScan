@@ -17,6 +17,7 @@ All notable changes to DOScan (DOS Chain Block Explorer) are documented in this 
 ### Added
 
 - Enabled the Blockscout Metadata Service in the backend and exposed it through same-origin Caddy proxies on Mainnet and Testnet.
+- Enabled official BENS and Graph Node services on Testnet for the custom DOS Names ENSv2 subgraph and `.dos` protocol.
 - Enabled NFT Media Handler with GCS storage and separate `mainnet/nft-media` and `testnet/nft-media` prefixes.
 - Deployed Interchain Indexer v1.6.0 on Mainnet for DOS Chain and Avalanche C-Chain messages.
 - Documented the current GCP deployment, edge routing, service layout, data isolation, and CI/CD flow.
@@ -26,7 +27,7 @@ All notable changes to DOScan (DOS Chain Block Explorer) are documented in this 
 - Updated the production frontend to `2.10.0`.
 - Updated the backend baseline to Blockscout `11.2.4`; the current tree retains the behavior introduced by custom commit `86fd0dd5`.
 - Replaced stale Azure and local WSL2 architecture guidance with the active GCP topology.
-- Corrected feature status: the admin panel and BENS are disabled, while Metadata Service is enabled.
+- Corrected feature status: the admin panel remains disabled; BENS is enabled on Testnet and disabled on Mainnet, while Metadata Service is enabled.
 
 ### Fixed
 
@@ -157,7 +158,7 @@ USER_OPS_INDEXER__DATABASE__CONNECT__URL: postgresql://postgres:@host.docker.int
 - [ ] Enable user accounts only after a supported identity and email stack is selected.
 - [ ] Enable CSV export only after the export service and anti-abuse configuration are deployed.
 - [ ] Register DEX pools only after official or verified DOSwap Factory and Pair contracts with liquidity are available.
-- [ ] Enable BENS only after a DOS name-service protocol and adapter are available for the deployed chains.
+- [ ] Enable BENS on Mainnet only after the Testnet DOS Name Service rollout passes acceptance checks.
 
 ### Operations
 
