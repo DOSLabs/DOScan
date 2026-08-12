@@ -702,6 +702,7 @@ jobs:
           unset nft_media_json nft_media_access_key_id nft_media_secret_access_key
 
           tar -czf /tmp/doscan-testnet-config.tgz \
+            .github/scripts/retry-public-http.sh \
             .github/scripts/retry-testnet-rpc.sh \
             docker-compose/docker-compose-testnet.yml \
             docker-compose/Caddyfile-gcp-testnet \
@@ -1405,9 +1406,12 @@ jobs:
               }
               verify_nft_media_runtime
 
-              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://test.doscan.io/ >/dev/null
-              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://test.doscan.io/api/v2/stats >/dev/null
-              curl --fail --silent --show-error --retry 6 --retry-delay 5 https://test.doscan.io/public-metrics >/dev/null
+              /bin/sh "${SRC}/.github/scripts/retry-public-http.sh" \
+                https://test.doscan.io/ >/dev/null
+              /bin/sh "${SRC}/.github/scripts/retry-public-http.sh" \
+                https://test.doscan.io/api/v2/stats >/dev/null
+              /bin/sh "${SRC}/.github/scripts/retry-public-http.sh" \
+                https://test.doscan.io/public-metrics >/dev/null
               frontend_env="$(
                 curl --fail --silent --show-error --retry 6 --retry-delay 5 \
                   "https://test.doscan.io/assets/envs.js?deploy=${DEPLOY_ID}"
