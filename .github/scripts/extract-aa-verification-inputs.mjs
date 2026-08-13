@@ -19,6 +19,8 @@ const targets = [
     contractName: 'EntryPoint',
     sourcePath: 'contracts/core/EntryPoint.sol',
     standardInputFile: 'entry-point.standard-input.json',
+    licenseType: 'gnu_gpl_v3',
+    spdxLicense: 'GPL-3.0',
     constructorArgs: '',
   },
   {
@@ -27,6 +29,8 @@ const targets = [
     contractName: 'SimpleAccountFactory',
     sourcePath: 'contracts/accounts/SimpleAccountFactory.sol',
     standardInputFile: 'simple-account-factory.standard-input.json',
+    licenseType: 'mit',
+    spdxLicense: 'MIT',
     constructorArgs: FACTORY_CONSTRUCTOR_ARGS,
   },
 ];
@@ -60,8 +64,12 @@ function validateBuildInfo(buildInfo, target) {
   if (settings?.viaIR !== true) {
     fail(`${target.contractName} build must use viaIR`);
   }
-  if (typeof input?.sources?.[target.sourcePath]?.content !== 'string') {
+  const primarySource = input?.sources?.[target.sourcePath]?.content;
+  if (typeof primarySource !== 'string') {
     fail(`${target.contractName} standard input is missing ${target.sourcePath}`);
+  }
+  if (!primarySource.includes(`SPDX-License-Identifier: ${target.spdxLicense}`)) {
+    fail(`${target.contractName} source must declare SPDX license ${target.spdxLicense}`);
   }
   if (buildInfo.output?.contracts?.[target.sourcePath]?.[target.contractName] == null) {
     fail(`${target.contractName} is missing from compiler output`);

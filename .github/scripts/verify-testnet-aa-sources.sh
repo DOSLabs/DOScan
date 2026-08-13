@@ -50,6 +50,8 @@ if ! "${jq_bin}" -e '
     "contractName": "EntryPoint",
     "sourcePath": "contracts/core/EntryPoint.sol",
     "standardInputFile": "entry-point.standard-input.json",
+    "licenseType": "gnu_gpl_v3",
+    "spdxLicense": "GPL-3.0",
     "constructorArgs": ""
   } and
   .contracts[1] == {
@@ -58,6 +60,8 @@ if ! "${jq_bin}" -e '
     "contractName": "SimpleAccountFactory",
     "sourcePath": "contracts/accounts/SimpleAccountFactory.sol",
     "standardInputFile": "simple-account-factory.standard-input.json",
+    "licenseType": "mit",
+    "spdxLicense": "MIT",
     "constructorArgs": "0000000000000000000000004337084d9e255ff0702461cf8895ce9e3b5ff108"
   }
 ' "${manifest_path}" >/dev/null; then
@@ -81,7 +85,8 @@ get_contract_status() {
 classify_contract_status() {
   expected_name="$1"
   expected_source_path="$2"
-  expected_constructor_args="$3"
+  expected_license_type="$3"
+  expected_constructor_args="$4"
 
   if "${jq_bin}" -e '
     .is_verified == false or
@@ -103,6 +108,7 @@ classify_contract_status() {
   if "${jq_bin}" -e \
     --arg expected_name "${expected_name}" \
     --arg expected_source_path "${expected_source_path}" \
+    --arg expected_license_type "${expected_license_type}" \
     --arg expected_constructor_args "${expected_constructor_args}" '
       def normalize_hex: tostring | ascii_downcase | sub("^0x"; "");
       .is_verified == true and
@@ -115,6 +121,7 @@ classify_contract_status() {
       .optimization_runs == 1000000 and
       .evm_version == "cancun" and
       .file_path == $expected_source_path and
+      .license_type == $expected_license_type and
       .compiler_settings.viaIR == true and
       ((.constructor_args // "") | normalize_hex) == ($expected_constructor_args | normalize_hex)
     ' "${status_file}" >/dev/null; then
@@ -133,6 +140,7 @@ classify_contract_status() {
     optimization_runs,
     evm_version,
     file_path,
+    license_type,
     viaIR: .compiler_settings.viaIR,
     constructor_args
   }' "${status_file}" >&2 || true
@@ -143,8 +151,9 @@ submit_contract() {
   contract_address="$1"
   contract_name="$2"
   source_path="$3"
-  constructor_args="$4"
-  standard_input_path="$5"
+  license_type="$4"
+  constructor_args="$5"
+  standard_input_path="$6"
 
   : >"${submit_file}"
   if ! "${curl_bin}" \
@@ -161,7 +170,7 @@ submit_contract() {
     --form "contract_name=${source_path}:${contract_name}" \
     --form "autodetect_constructor_args=false" \
     --form "constructor_args=${constructor_args}" \
-    --form "license_type=mit" \
+    --form "license_type=${license_type}" \
     --form "files[0]=@${standard_input_path};type=application/json" \
     "${api_base_url}/api/v2/smart-contracts/${contract_address}/verification/via/standard-input"; then
     echo "Blockscout verification submission failed for ${contract_name}" >&2
@@ -180,8 +189,9 @@ verify_contract() {
   contract_address="$1"
   contract_name="$2"
   source_path="$3"
-  constructor_args="$4"
-  standard_input_path="$5"
+  license_type="$4"
+  constructor_args="$5"
+  standard_input_path="$6"
   submitted=0
   attempt=1
   deadline="$(( $(date +%s) + max_seconds ))"
@@ -189,7 +199,11 @@ verify_contract() {
   while [ "${attempt}" -le "${poll_attempts}" ]; do
     status_code=3
     if get_contract_status "${contract_address}"; then
-      if classify_contract_status "${contract_name}" "${source_path}" "${constructor_args}"; then
+      if classify_contract_status \
+        "${contract_name}" \
+        "${source_path}" \
+        "${license_type}" \
+        "${constructor_args}"; then
         echo "Blockscout exact source verification confirmed for ${contract_name}"
         return 0
       else
@@ -205,6 +219,7 @@ verify_contract() {
           "${contract_address}" \
           "${contract_name}" \
           "${source_path}" \
+          "${license_type}" \
           "${constructor_args}" \
           "${standard_input_path}"
         submitted=1
@@ -228,6 +243,7 @@ while [ "${contract_index}" -lt "${contract_count}" ]; do
   contract_address="$("${jq_bin}" -er ".contracts[${contract_index}].address" "${manifest_path}")"
   contract_name="$("${jq_bin}" -er ".contracts[${contract_index}].contractName" "${manifest_path}")"
   source_path="$("${jq_bin}" -er ".contracts[${contract_index}].sourcePath" "${manifest_path}")"
+  license_type="$("${jq_bin}" -er ".contracts[${contract_index}].licenseType" "${manifest_path}")"
   constructor_args="$("${jq_bin}" -er ".contracts[${contract_index}].constructorArgs" "${manifest_path}")"
   standard_input_file="$("${jq_bin}" -er ".contracts[${contract_index}].standardInputFile" "${manifest_path}")"
 
@@ -251,6 +267,7 @@ while [ "${contract_index}" -lt "${contract_count}" ]; do
     "${contract_address}" \
     "${contract_name}" \
     "${source_path}" \
+    "${license_type}" \
     "${constructor_args}" \
     "${standard_input_path}"
   contract_index="$((contract_index + 1))"

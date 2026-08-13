@@ -31,6 +31,8 @@ class ExtractAaVerificationInputsTests(unittest.TestCase):
         )
         self.assertEqual("EntryPoint", entry_point["contractName"])
         self.assertEqual("contracts/core/EntryPoint.sol", entry_point["sourcePath"])
+        self.assertEqual("gnu_gpl_v3", entry_point["licenseType"])
+        self.assertEqual("GPL-3.0", entry_point["spdxLicense"])
         self.assertEqual("", entry_point["constructorArgs"])
         self.assertEqual(
             "0xe908bff16d2a2ee257873708dbec8029ee9cd2cc",
@@ -40,6 +42,8 @@ class ExtractAaVerificationInputsTests(unittest.TestCase):
         self.assertEqual(
             "contracts/accounts/SimpleAccountFactory.sol", factory["sourcePath"]
         )
+        self.assertEqual("mit", factory["licenseType"])
+        self.assertEqual("MIT", factory["spdxLicense"])
         self.assertEqual(
             "0000000000000000000000004337084d9e255ff0702461cf8895ce9e3b5ff108",
             factory["constructorArgs"],
@@ -108,8 +112,12 @@ class ExtractAaVerificationInputsTests(unittest.TestCase):
             "input": {
                 "language": "Solidity",
                 "sources": {
-                    path: {"content": f"contract {Path(path).stem} {{}}"}
-                    for path in source_paths
+                    source_paths[0]: {
+                        "content": "// SPDX-License-Identifier: GPL-3.0\ncontract EntryPoint {}"
+                    },
+                    source_paths[1]: {
+                        "content": "// SPDX-License-Identifier: MIT\ncontract SimpleAccountFactory {}"
+                    },
                 },
                 "settings": {
                     "evmVersion": "cancun",

@@ -17,7 +17,7 @@ FACTORY_ARGS = (
 )
 
 
-def exact_contract(name, source_path, constructor_args=""):
+def exact_contract(name, source_path, license_type, constructor_args=""):
     return {
         "is_verified": True,
         "is_fully_verified": True,
@@ -29,15 +29,19 @@ def exact_contract(name, source_path, constructor_args=""):
         "optimization_runs": 1_000_000,
         "evm_version": "cancun",
         "file_path": source_path,
+        "license_type": license_type,
         "constructor_args": constructor_args,
         "compiler_settings": {"viaIR": True},
     }
 
 
-ENTRY_POINT_EXACT = exact_contract("EntryPoint", "contracts/core/EntryPoint.sol")
+ENTRY_POINT_EXACT = exact_contract(
+    "EntryPoint", "contracts/core/EntryPoint.sol", "gnu_gpl_v3"
+)
 FACTORY_EXACT = exact_contract(
     "SimpleAccountFactory",
     "contracts/accounts/SimpleAccountFactory.sol",
+    "mit",
     FACTORY_ARGS,
 )
 UNVERIFIED = {
@@ -82,6 +86,8 @@ class VerifyTestnetAaSourcesTests(unittest.TestCase):
         self.assertIn('name="autodetect_constructor_args"', post["body"])
         self.assertIn("false", post["body"])
         self.assertIn(FACTORY_ARGS, post["body"])
+        self.assertIn('name="license_type"', post["body"])
+        self.assertIn("\r\n\r\nmit\r\n", post["body"])
         self.assertIn('name="files[0]"', post["body"])
         self.assertGreaterEqual(state["gets"][FACTORY.lower()], 3)
 
@@ -102,6 +108,7 @@ class VerifyTestnetAaSourcesTests(unittest.TestCase):
             "name": {**ENTRY_POINT_EXACT, "name": "WrongEntryPoint"},
             "via_ir": {**ENTRY_POINT_EXACT, "compiler_settings": {"viaIR": False}},
             "twin": {**ENTRY_POINT_EXACT, "verified_twin_address_hash": FACTORY},
+            "license": {**ENTRY_POINT_EXACT, "license_type": "mit"},
         }
 
         for name, response in mutations.items():
@@ -307,6 +314,8 @@ class VerifyTestnetAaSourcesTests(unittest.TestCase):
                     "contractName": "EntryPoint",
                     "sourcePath": "contracts/core/EntryPoint.sol",
                     "standardInputFile": "entry-point.standard-input.json",
+                    "licenseType": "gnu_gpl_v3",
+                    "spdxLicense": "GPL-3.0",
                     "constructorArgs": "",
                 },
                 {
@@ -315,6 +324,8 @@ class VerifyTestnetAaSourcesTests(unittest.TestCase):
                     "contractName": "SimpleAccountFactory",
                     "sourcePath": "contracts/accounts/SimpleAccountFactory.sol",
                     "standardInputFile": "simple-account-factory.standard-input.json",
+                    "licenseType": "mit",
+                    "spdxLicense": "MIT",
                     "constructorArgs": FACTORY_ARGS,
                 },
             ],
