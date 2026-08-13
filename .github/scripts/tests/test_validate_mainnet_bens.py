@@ -185,6 +185,12 @@ class MainnetBensConfigurationTests(unittest.TestCase):
         self.assertIn(
             "3f2f5345261904463f5429c9031c3d2185c0f4fe", mainnet_job
         )
+        self.assertIn(
+            "8f7fd9946b9d351bb5be0428bf34c87bad7ed6c9", mainnet_job
+        )
+        self.assertIn(
+            "9deb9ed36a27261a8745db5b7cd7f4cdc3b1cd4e", mainnet_job
+        )
         self.assertIn('"https://main.doschain.com/"', mainnet_job)
         package_step = mainnet_job.split(
             "- name: Package deployment configuration", 1
@@ -196,6 +202,11 @@ class MainnetBensConfigurationTests(unittest.TestCase):
         preparer = AA_PREPARER.read_text(encoding="utf-8")
         self.assertIn("verify-mainnet-aa-bytecode.mjs", preparer)
         self.assertIn("yarn@1.22.22", preparer)
+        self.assertIn("./scripts/hh-wrapper compile", preparer)
+        self.assertIn('PATH="${aa_checkout}/node_modules/.bin:${PATH}"', preparer)
+        self.assertIn("81cd99ce3e69117d665d7601c330ea03b97acce0", preparer)
+        self.assertIn('line.startsWith(">>> ")', preparer)
+        self.assertIn("config core.autocrlf false", preparer)
         for compiler in ("solc-0.8.23", "solc-0.8.24", "solc-0.8.25", "solc-0.8.28"):
             self.assertIn(compiler, preparer)
         for output in (

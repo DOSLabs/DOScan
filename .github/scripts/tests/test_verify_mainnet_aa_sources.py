@@ -31,6 +31,7 @@ TARGETS = [
         "constructorArgs": "",
         "expectedCodeSha256": "4dcad467095cd9af58006b270475ac7591c6946bca08552f6789727097b51eae",
         "rpcChecks": [],
+        "verificationMatch": "full",
     },
     {
         "key": "kernel",
@@ -50,6 +51,7 @@ TARGETS = [
         "constructorArgs": "0000000000000000000000000000000071727de22e5e9d8baf0edac6f37da032",
         "expectedCodeSha256": "d13e7ff2bc90271659100c83f49ee6250555bbf26ed35c2315f243c6849a2127",
         "rpcChecks": [{"signature": "entrypoint()", "expectedAddress": "0x0000000071727De22E5E9d8BAf0edAc6f37da032"}],
+        "verificationMatch": "partial",
     },
     {
         "key": "kernel-factory",
@@ -69,6 +71,7 @@ TARGETS = [
         "constructorArgs": "000000000000000000000000d6cedde84be40893d153be9d467cd6ad37875b28",
         "expectedCodeSha256": "56443d7d18bfd62d5d69b04fc8207e439bf904166335dd7159e0eeef1cba2367",
         "rpcChecks": [{"signature": "implementation()", "expectedAddress": "0xd6CEDDe84be40893d153Be9d467CD6aD37875b28"}],
+        "verificationMatch": "partial",
     },
     {
         "key": "ecdsa-validator",
@@ -88,6 +91,7 @@ TARGETS = [
         "constructorArgs": "",
         "expectedCodeSha256": "be711f07f49e57bf56c512b6f32f7c77d9ec1881c4051ed33a45cfad8c7a8b8e",
         "rpcChecks": [],
+        "verificationMatch": "partial",
     },
     {
         "key": "factory-staker",
@@ -107,6 +111,7 @@ TARGETS = [
         "constructorArgs": "",
         "expectedCodeSha256": "f91091bf1260892a4d0b834494489fea55be2f2f968ad6b1abc1410531f2a2a1",
         "rpcChecks": [],
+        "verificationMatch": "partial",
     },
 ]
 
@@ -116,8 +121,8 @@ UNVERIFIED = {"creation_bytecode": "0x6000", "deployed_bytecode": "0x6001"}
 def exact_contract(target):
     return {
         "is_verified": True,
-        "is_fully_verified": True,
-        "is_partially_verified": False,
+        "is_fully_verified": target["verificationMatch"] == "full",
+        "is_partially_verified": target["verificationMatch"] == "partial",
         "verified_twin_address_hash": None,
         "name": target["contractName"],
         "compiler_version": target["compilerVersion"],
@@ -208,7 +213,7 @@ class VerifyMainnetAaSourcesTests(unittest.TestCase):
                 self.assertIn("metadata", result.stderr.lower())
                 self.assertEqual([], state["posts"])
 
-    def test_rejects_partial_or_twin_verification(self):
+    def test_rejects_unexpected_match_or_twin_verification(self):
         for mutation in [
             {"is_fully_verified": False, "is_partially_verified": True},
             {"verified_twin_address_hash": TARGETS[1]["address"]},

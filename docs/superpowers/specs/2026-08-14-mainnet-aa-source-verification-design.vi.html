@@ -115,7 +115,7 @@
       <h3>Trong phạm vi</h3>
       <ul>
         <li>Tự động verify đủ năm contract trên Mainnet 7979.</li>
-        <li>Kiểm tra full verification và exact metadata.</li>
+        <li>Kiểm tra đúng Blockscout match mode và exact metadata.</li>
         <li>Đối chiếu bytecode đã compile với code live.</li>
         <li>Browser UAT trên năm trang contract và <code>/ops</code>.</li>
       </ul>
@@ -155,9 +155,10 @@
     <tbody>
       <tr><td>EntryPoint v0.7</td><td><code>eth-infinitism/account-abstraction</code></td><td><code>v0.7.0</code></td><td><code>7af70c8993a6f42973f520ae0752386a5032abe7</code></td></tr>
       <tr><td>Kernel v3.3 stack</td><td><code>zerodevapp/kernel</code></td><td><code>v3.3</code></td><td><code>cd697c7e21715d015e0643af22310a99aa17433b</code></td></tr>
+      <tr><td>Source deploy legacy</td><td><code>zerodevapp/kernel</code></td><td>Commit deployment</td><td><code>8f7fd9946b9d351bb5be0428bf34c87bad7ed6c9</code></td></tr>
     </tbody>
   </table>
-  <p>Pin Kernel cung cấp source cho <code>Kernel</code>, <code>KernelFactory</code>, <code>ECDSAValidator</code> và <code>FactoryStaker</code>. Mỗi checkout phải resolve đúng full SHA, sai một ký tự là dừng.</p>
+  <p>Pin Kernel v3.3 cung cấp source cho <code>Kernel</code> và <code>KernelFactory</code>. <code>ECDSAValidator</code> cùng <code>FactoryStaker</code> dùng commit deployment cũ với Solady pin <code>9deb9ed36a27261a8745db5b7cd7f4cdc3b1cd4e</code>. Mỗi checkout phải resolve đúng full SHA, sai một ký tự là dừng.</p>
 
   <h2>4. Profile compile riêng cho từng contract</h2>
   <table>
@@ -176,7 +177,7 @@
   <h2>5. Luồng workflow</h2>
   <div class="flow">checkout source pin -> cài dependency khóa phiên bản -> compile 5 profile -> extract standard input -> đối chiếu bytecode -> package artifact -> GCP auth -> deploy Mainnet -> runtime gates -> DEPLOYMENT_STARTED=0 -> verify 5 source -> Browser UAT</div>
   <ol>
-    <li>Checkout đúng hai upstream commit và xác nhận full SHA.</li>
+    <li>Checkout đúng ba upstream commit và xác nhận full SHA.</li>
     <li>Cài dependency, compile, extract input và đối chiếu bytecode trước khi cấp GCP credential. Generator giữ canonical source-unit name, gồm prefix <code>dependencies/kernel-v3.3/</code> của KernelFactory.</li>
     <li>Package chỉ source input và metadata công khai cần cho verification.</li>
     <li>Chạy nguyên luồng deploy, backup, rollback và semantic gate Mainnet hiện có.</li>
@@ -192,9 +193,9 @@
     <li>Nếu chưa verified: POST standard input và constructor argument chính xác, sau đó poll.</li>
     <li>Nếu POST trả <code>Already verified</code>: GET lại và chỉ chấp nhận khi metadata exact.</li>
     <li>Nếu đã verified nhưng sai metadata: fail ngay, không tự sửa database.</li>
-    <li>Nếu partial verified, JSON lỗi, thiếu field, HTTP lỗi kéo dài hoặc hết deadline: fail-closed.</li>
+    <li>Nếu match mode khác profile, JSON lỗi, thiếu field, HTTP lỗi kéo dài hoặc hết deadline: fail-closed.</li>
   </ul>
-  <p>Metadata bắt buộc gồm full verification, contract name, source path, compiler, optimizer, số runs, EVM, license, constructor arguments và trạng thái không partial.</p>
+  <p>EntryPoint bắt buộc full match vì có IPFS metadata. Bốn contract Kernel chủ động bỏ CBOR metadata nên Blockscout báo partial match dù bytecode gate trước đó đã chứng minh compiler output khớp runtime. Cả năm vẫn phải khớp contract name, source path, compiler, optimizer, số runs, EVM, license và constructor arguments.</p>
 
   <h2>7. Rollback và bảo mật</h2>
   <ul>
@@ -211,14 +212,14 @@
   <table>
     <thead><tr><th>Case</th><th>Kết quả bắt buộc</th></tr></thead>
     <tbody>
-      <tr><td>Hai pin source và năm input</td><td class="good">Deterministic, đúng full SHA</td></tr>
+      <tr><td>Ba pin source và năm input</td><td class="good">Deterministic, đúng full SHA</td></tr>
       <tr><td>Bytecode đủ năm contract</td><td class="good">Khớp code Mainnet, Kernel xử lý immutable đúng</td></tr>
       <tr><td>Bytecode mismatch</td><td class="warn">Fail trước Google auth và mutation</td></tr>
       <tr><td>Năm contract đã exact</td><td class="good">Không POST</td></tr>
       <tr><td>Chưa verified</td><td class="good">POST một lần, poll đến exact</td></tr>
       <tr><td>Race Already verified</td><td class="good">GET lại, chỉ pass khi exact</td></tr>
       <tr><td>Sai compiler, optimizer, EVM, source, name, license hoặc constructor</td><td class="warn">Fail ngay</td></tr>
-      <tr><td>Partial verification</td><td class="warn">Fail</td></tr>
+      <tr><td>Match mode sai profile</td><td class="warn">Fail</td></tr>
       <tr><td>Nhiều contract pending</td><td class="warn">Dùng chung deadline 300 giây, không reset</td></tr>
       <tr><td>HTTP hoặc JSON lỗi</td><td class="warn">Retry bounded rồi fail hữu hạn</td></tr>
       <tr><td>Verification fail sau runtime success</td><td class="good">Không gọi runtime rollback</td></tr>
@@ -232,7 +233,7 @@
     <li>Reviewer độc lập không còn finding Critical, Important hoặc Minor.</li>
     <li>Agent merge PR sau approval và required CI xanh.</li>
     <li>Workflow Mainnet hoàn tất.</li>
-    <li>Năm trang contract public hiển thị full exact source, compiler và tên đúng.</li>
+    <li>Trang EntryPoint hiển thị full match; bốn trang Kernel hiển thị partial match do không có CBOR; cả năm có compiler và tên đúng.</li>
     <li><code>/ops</code> vẫn healthy và tiếp tục hiển thị operation EntryPoint v0.7 production.</li>
   </ul>
 </main>

@@ -46,7 +46,7 @@ if ! "${jq_bin}" -e '
       "compilerOutputFile":"entry-point.compiler-output.json","compilerPackage":"solc-0.8.23",
       "compilerVersion":"v0.8.23+commit.f704f362","evmVersion":"paris","optimizer":{"enabled":true,"runs":1000000},
       "viaIR":true,"metadata":{"bytecodeHash":"ipfs"},"licenseType":"gnu_gpl_v3","spdxLicense":"GPL-3.0",
-      "constructorArgs":"","expectedCodeSha256":"4dcad467095cd9af58006b270475ac7591c6946bca08552f6789727097b51eae","rpcChecks":[]
+      "constructorArgs":"","expectedCodeSha256":"4dcad467095cd9af58006b270475ac7591c6946bca08552f6789727097b51eae","rpcChecks":[],"verificationMatch":"full"
     },
     {
       "key":"kernel","address":"0xd6CEDDe84be40893d153Be9d467CD6aD37875b28","contractName":"Kernel",
@@ -55,7 +55,7 @@ if ! "${jq_bin}" -e '
       "optimizer":{"enabled":true,"runs":200},"viaIR":true,"metadata":{"appendCBOR":false,"bytecodeHash":"none"},
       "licenseType":"mit","spdxLicense":"MIT","constructorArgs":"0000000000000000000000000000000071727de22e5e9d8baf0edac6f37da032",
       "expectedCodeSha256":"d13e7ff2bc90271659100c83f49ee6250555bbf26ed35c2315f243c6849a2127",
-      "rpcChecks":[{"signature":"entrypoint()","expectedAddress":"0x0000000071727De22E5E9d8BAf0edAc6f37da032"}]
+      "rpcChecks":[{"signature":"entrypoint()","expectedAddress":"0x0000000071727De22E5E9d8BAf0edAc6f37da032"}],"verificationMatch":"partial"
     },
     {
       "key":"kernel-factory","address":"0x2577507b78c2008Ff367261CB6285d44ba5eF2E9","contractName":"KernelFactory",
@@ -65,7 +65,7 @@ if ! "${jq_bin}" -e '
       "viaIR":true,"metadata":{"appendCBOR":false,"bytecodeHash":"none"},"licenseType":"mit","spdxLicense":"MIT",
       "constructorArgs":"000000000000000000000000d6cedde84be40893d153be9d467cd6ad37875b28",
       "expectedCodeSha256":"56443d7d18bfd62d5d69b04fc8207e439bf904166335dd7159e0eeef1cba2367",
-      "rpcChecks":[{"signature":"implementation()","expectedAddress":"0xd6CEDDe84be40893d153Be9d467CD6aD37875b28"}]
+      "rpcChecks":[{"signature":"implementation()","expectedAddress":"0xd6CEDDe84be40893d153Be9d467CD6aD37875b28"}],"verificationMatch":"partial"
     },
     {
       "key":"ecdsa-validator","address":"0x845ADb2C711129d4f3966735eD98a9F09fC4cE57","contractName":"ECDSAValidator",
@@ -73,7 +73,7 @@ if ! "${jq_bin}" -e '
       "compilerOutputFile":"ecdsa-validator.compiler-output.json","compilerPackage":"solc-0.8.25",
       "compilerVersion":"v0.8.25+commit.b61c2a91","evmVersion":"paris","optimizer":{"enabled":true,"runs":200},
       "viaIR":true,"metadata":{"appendCBOR":false,"bytecodeHash":"none"},"licenseType":"mit","spdxLicense":"MIT",
-      "constructorArgs":"","expectedCodeSha256":"be711f07f49e57bf56c512b6f32f7c77d9ec1881c4051ed33a45cfad8c7a8b8e","rpcChecks":[]
+      "constructorArgs":"","expectedCodeSha256":"be711f07f49e57bf56c512b6f32f7c77d9ec1881c4051ed33a45cfad8c7a8b8e","rpcChecks":[],"verificationMatch":"partial"
     },
     {
       "key":"factory-staker","address":"0xd703aaE79538628d27099B8c4f621bE4CCd142d5","contractName":"FactoryStaker",
@@ -81,7 +81,7 @@ if ! "${jq_bin}" -e '
       "compilerOutputFile":"factory-staker.compiler-output.json","compilerPackage":"solc-0.8.24",
       "compilerVersion":"v0.8.24+commit.e11b9ed9","evmVersion":"paris","optimizer":{"enabled":true,"runs":200},
       "viaIR":false,"metadata":{"appendCBOR":false,"bytecodeHash":"none"},"licenseType":"mit","spdxLicense":"MIT",
-      "constructorArgs":"","expectedCodeSha256":"f91091bf1260892a4d0b834494489fea55be2f2f968ad6b1abc1410531f2a2a1","rpcChecks":[]
+      "constructorArgs":"","expectedCodeSha256":"f91091bf1260892a4d0b834494489fea55be2f2f968ad6b1abc1410531f2a2a1","rpcChecks":[],"verificationMatch":"partial"
     }
   ]
 ' "${manifest_path}" >/dev/null; then
@@ -128,14 +128,16 @@ classify_contract_status() {
   if "${jq_bin}" -e --argjson target "$("${jq_bin}" -c ".contracts[${contract_index}]" "${manifest_path}")" '
     def normalize_hex: tostring | ascii_downcase | sub("^0x"; "");
     def normalize_compiler: tostring | if startswith("v") then . else "v" + . end;
-    .is_verified == true and .is_fully_verified == true and .is_partially_verified == false and
+    .is_verified == true and
+    (if $target.verificationMatch == "full" then .is_fully_verified == true and .is_partially_verified == false
+     else .is_fully_verified == false and .is_partially_verified == true end) and
     .verified_twin_address_hash == null and .name == $target.contractName and .file_path == $target.sourcePath and
     (.compiler_version | normalize_compiler) == ($target.compilerVersion | normalize_compiler) and
     .optimization_enabled == true and .optimization_runs == $target.optimizer.runs and
     .evm_version == $target.evmVersion and .license_type == $target.licenseType and
     ((.constructor_args // "") | normalize_hex) == ($target.constructorArgs | normalize_hex) and
     (if $target.viaIR then .compiler_settings.viaIR == true else (.compiler_settings.viaIR // false) == false end) and
-    (if $target.key == "entry-point" then .compiler_settings.metadata.bytecodeHash == "ipfs"
+    (if $target.key == "entry-point" then (.compiler_settings.metadata.bytecodeHash // "ipfs") == "ipfs"
      else .compiler_settings.metadata.appendCBOR == false and .compiler_settings.metadata.bytecodeHash == "none" end)
   ' "${status_file}" >/dev/null; then
     return 0

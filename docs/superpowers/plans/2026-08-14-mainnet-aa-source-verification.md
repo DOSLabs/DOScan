@@ -4,7 +4,7 @@
 
 **Goal:** Reproducibly compile, bytecode-gate, verify, and publicly validate the five DOS ID Wallet Account Abstraction contracts on DOScan Mainnet.
 
-**Architecture:** GitHub Actions checks out two immutable official source commits and builds five contract-specific standard JSON inputs before obtaining GCP credentials. A local bytecode gate proves the generated compiler outputs correspond to the immutable Mainnet code, then a standalone remote verifier runs after `DEPLOYMENT_STARTED=0` and requires exact full Blockscout metadata under one global deadline. A separate Playwright spec validates all five public contract pages and `/ops` after deployment.
+**Architecture:** GitHub Actions checks out three immutable official source commits and builds five contract-specific standard JSON inputs before obtaining GCP credentials. A local bytecode gate proves the generated compiler outputs correspond to the immutable Mainnet code, then a standalone remote verifier runs after `DEPLOYMENT_STARTED=0` and requires the expected Blockscout match mode plus exact metadata under one global deadline. A separate Playwright spec validates all five public contract pages and `/ops` after deployment.
 
 **Tech Stack:** GitHub Actions YAML, Node.js ESM, npm lockfiles, Yarn 1, Hardhat build-info, Solidity standard JSON, Bash, Python `unittest`, Blockscout API v2, JSON-RPC, `curl`, `jq`, Playwright.
 
@@ -15,6 +15,7 @@
 - Verify exactly five Mainnet contracts and do not add `SimpleAccountFactory`.
 - Pin `eth-infinitism/account-abstraction` to `7af70c8993a6f42973f520ae0752386a5032abe7`.
 - Pin `zerodevapp/kernel` to `cd697c7e21715d015e0643af22310a99aa17433b` and its Solady submodule to `3f2f5345261904463f5429c9031c3d2185c0f4fe`.
+- Pin the ECDSAValidator and FactoryStaker deployment source to Kernel commit `8f7fd9946b9d351bb5be0428bf34c87bad7ed6c9` and its Solady submodule to `9deb9ed36a27261a8745db5b7cd7f4cdc3b1cd4e`.
 - Install dependencies, run upstream compile code, assemble inputs, compile standard JSON, and pass the bytecode gate before Google authentication.
 - Use one global 300-second source-verification deadline for all five contracts.
 - Start source verification only after runtime acceptance passes and `DEPLOYMENT_STARTED=0` is set.
@@ -57,7 +58,7 @@
 
 **Interfaces:**
 
-- Consumes: `node extract-mainnet-aa-verification-inputs.mjs <account-abstraction-checkout> <kernel-checkout> <output-directory>`.
+- Consumes: `node extract-mainnet-aa-verification-inputs.mjs <account-abstraction-checkout> <kernel-checkout> <ecdsa-kernel-checkout> <output-directory>`.
 - Produces: `manifest.json`, five `*.standard-input.json` files, and manifest fields used by Tasks 2 and 3.
 - Produces manifest version 2 with this per-contract shape:
 
@@ -100,7 +101,7 @@
   "private": true,
   "version": "1.0.0",
   "dependencies": {
-    "solc-0.8.23": "npm:solc@0.8.23",
+    "solc-0.8.23": "npm:solc@0.8.23-fixed",
     "solc-0.8.24": "npm:solc@0.8.24",
     "solc-0.8.25": "npm:solc@0.8.25",
     "solc-0.8.28": "npm:solc@0.8.28"
@@ -309,7 +310,7 @@ git commit -m "Gate Mainnet AA compiler bytecode"
 
 - Consumes: `/bin/sh verify-mainnet-aa-sources.sh <verification-artifact-directory>`.
 - Environment: `DOSCAN_MAINNET_AA_API_BASE_URL`, `DOSCAN_MAINNET_AA_API_HOST_HEADER`, `DOSCAN_MAINNET_AA_MAX_SECONDS`, `DOSCAN_MAINNET_AA_POLL_ATTEMPTS`, bounded curl settings, and test-only clock/curl overrides.
-- Produces exit 0 only after all five manifest entries report exact full metadata.
+- Produces exit 0 only after all five manifest entries report their expected Blockscout match mode and exact metadata.
 
 - [ ] **Step 1: Build a five-contract fake Blockscout server**
 
@@ -320,7 +321,7 @@ def test_five_exact_contracts_are_not_submitted(self): ...
 def test_submits_each_unverified_contract_with_its_own_profile(self): ...
 def test_already_verified_race_requires_exact_get(self): ...
 def test_rejects_wrong_metadata_for_each_profile_field(self): ...
-def test_rejects_partial_or_twin_verification(self): ...
+def test_rejects_unexpected_match_or_twin_verification(self): ...
 def test_one_global_deadline_covers_all_five_contracts(self): ...
 def test_rejects_noncanonical_manifest_before_http(self): ...
 def test_rejects_missing_or_renamed_standard_input(self): ...
@@ -348,8 +349,8 @@ The classifier must normalize the optional compiler `v` prefix and constructor `
 
 ```jq
 .is_verified == true and
-.is_fully_verified == true and
-.is_partially_verified == false and
+(if $target.verificationMatch == "full" then .is_fully_verified == true and .is_partially_verified == false
+ else .is_fully_verified == false and .is_partially_verified == true end) and
 .verified_twin_address_hash == null and
 .name == $expected_name and
 .file_path == $expected_source_path and
@@ -402,7 +403,7 @@ git commit -m "Verify Mainnet AA sources exactly"
 **Interfaces:**
 
 - Consumes Task 1's source generator and Task 2's bytecode verifier.
-- Consumes: `prepare-mainnet-aa-verification.sh <aa-repository> <aa-ref> <kernel-repository> <kernel-ref> <solady-ref> <output-directory> <rpc-url>`.
+- Consumes: `prepare-mainnet-aa-verification.sh <aa-repository> <aa-ref> <kernel-repository> <kernel-ref> <solady-ref> <ecdsa-kernel-ref> <ecdsa-solady-ref> <output-directory> <rpc-url>`.
 - Packages `${RUNNER_TEMP}/mainnet-aa-verification` as `mainnet-aa-verification` in `/tmp/doscan-config.tgz`.
 - Invokes Task 3's verifier through the local Caddy origin after `DEPLOYMENT_STARTED=0`.
 
@@ -448,7 +449,7 @@ Do not move these into global workflow env because Testnet uses a different Acco
 
 - [ ] **Step 4: Add the pre-auth preparation step**
 
-Implement `prepare-mainnet-aa-verification.sh` with `set -eu`, exactly seven required arguments, private `mktemp -d` checkouts, and an `EXIT HUP INT TERM` cleanup trap. Place `Prepare immutable Mainnet Account Abstraction verification inputs` after Caddy validation and before `Authenticate to Google Cloud`; the workflow step calls the script with the five pinned provenance variables, `${RUNNER_TEMP}/mainnet-aa-verification`, and `https://main.doschain.com/`.
+Implement `prepare-mainnet-aa-verification.sh` with `set -eu`, exactly nine required arguments, private `mktemp -d` checkouts, and an `EXIT HUP INT TERM` cleanup trap. Place `Prepare immutable Mainnet Account Abstraction verification inputs` after Caddy validation and before `Authenticate to Google Cloud`; the workflow step calls the script with the seven pinned provenance variables, `${RUNNER_TEMP}/mainnet-aa-verification`, and `https://main.doschain.com/`.
 
 The preparation script must:
 
@@ -564,9 +565,9 @@ const targets = [
 Include all five targets. For each target:
 
 1. Fetch `/api/v2/smart-contracts/${address}` and require HTTP 200.
-2. Require exact full verification, no partial verification, exact name, compiler normalization, source path, optimizer settings, EVM, license, and constructor arguments.
+2. Require the expected Blockscout match mode, exact name, compiler normalization, source path, optimizer settings, EVM, license, and constructor arguments. EntryPoint requires full match; the four no-CBOR Kernel contracts require partial match after the pre-auth bytecode gate proves exact runtime equality.
 3. Navigate to `/address/${address}?tab=contract`.
-4. Require the contract name and a visible exact/full verification signal.
+4. Require the contract name and the visible expected verification signal.
 5. Reject visible `Oops! Something went wrong` text.
 
 Retry only the initial landing readiness six times with 5-second delays. Skip only when both the exact title `Just a moment...` and URL token `__cf_chl_rt_tk=` are present.
@@ -683,4 +684,4 @@ Verify the merged `Deploy Config` Mainnet job completes. Record evidence that in
 
 - [ ] **Step 8: Run live Browser UAT after deployment**
 
-Using Browser, open each public contract page and `/ops`. Confirm the exact contract name, compiler, source path, full verification state, and expected v0.7 EntryPoint operation data. Treat CI Playwright and live Browser inspection as separate evidence.
+Using Browser, open each public contract page and `/ops`. Confirm the exact contract name, compiler, source path, expected full or partial match state, and expected v0.7 EntryPoint operation data. Treat CI Playwright and live Browser inspection as separate evidence.

@@ -80,6 +80,8 @@ jobs:
       KERNEL_SOURCE_REPOSITORY: https://github.com/zerodevapp/kernel.git
       KERNEL_SOURCE_REF: cd697c7e21715d015e0643af22310a99aa17433b
       KERNEL_SOLADY_REF: 3f2f5345261904463f5429c9031c3d2185c0f4fe
+      KERNEL_ECDSA_SOURCE_REF: 8f7fd9946b9d351bb5be0428bf34c87bad7ed6c9
+      KERNEL_ECDSA_SOLADY_REF: 9deb9ed36a27261a8745db5b7cd7f4cdc3b1cd4e
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -126,6 +128,8 @@ jobs:
             "${KERNEL_SOURCE_REPOSITORY}" \
             "${KERNEL_SOURCE_REF}" \
             "${KERNEL_SOLADY_REF}" \
+            "${KERNEL_ECDSA_SOURCE_REF}" \
+            "${KERNEL_ECDSA_SOLADY_REF}" \
             "${RUNNER_TEMP}/mainnet-aa-verification" \
             "https://main.doschain.com/"
 

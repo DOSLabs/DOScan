@@ -38,6 +38,7 @@ const targets = [
     constructorArgs: '',
     expectedCodeSha256: '4dcad467095cd9af58006b270475ac7591c6946bca08552f6789727097b51eae',
     rpcChecks: [],
+    verificationMatch: 'full',
     sourceFamily: 'account-abstraction',
   },
   {
@@ -59,6 +60,7 @@ const targets = [
     constructorArgs: '0000000000000000000000000000000071727de22e5e9d8baf0edac6f37da032',
     expectedCodeSha256: 'd13e7ff2bc90271659100c83f49ee6250555bbf26ed35c2315f243c6849a2127',
     rpcChecks: [{ signature: 'entrypoint()', expectedAddress: ENTRY_POINT_ADDRESS }],
+    verificationMatch: 'partial',
     sourceFamily: 'kernel',
     soladySourcePrefix: 'lib/solady/src',
   },
@@ -81,6 +83,7 @@ const targets = [
     constructorArgs: '000000000000000000000000d6cedde84be40893d153be9d467cd6ad37875b28',
     expectedCodeSha256: '56443d7d18bfd62d5d69b04fc8207e439bf904166335dd7159e0eeef1cba2367',
     rpcChecks: [{ signature: 'implementation()', expectedAddress: KERNEL_ADDRESS }],
+    verificationMatch: 'partial',
     sourceFamily: 'kernel',
     soladySourcePrefix: 'dependencies/solady-0.1.26/src',
   },
@@ -103,7 +106,8 @@ const targets = [
     constructorArgs: '',
     expectedCodeSha256: 'be711f07f49e57bf56c512b6f32f7c77d9ec1881c4051ed33a45cfad8c7a8b8e',
     rpcChecks: [],
-    sourceFamily: 'kernel',
+    verificationMatch: 'partial',
+    sourceFamily: 'kernel-ecdsa',
     soladySourcePrefix: 'lib/solady/src',
   },
   {
@@ -125,7 +129,8 @@ const targets = [
     constructorArgs: '',
     expectedCodeSha256: 'f91091bf1260892a4d0b834494489fea55be2f2f968ad6b1abc1410531f2a2a1',
     rpcChecks: [],
-    sourceFamily: 'kernel',
+    verificationMatch: 'partial',
+    sourceFamily: 'kernel-ecdsa',
     soladySourcePrefix: 'lib/solady/src',
   },
 ];
@@ -174,7 +179,7 @@ function validateEntryPointBuildInfo(buildInfo, target) {
   if (settings?.viaIR !== true) {
     fail(`${target.contractName} build must use viaIR`);
   }
-  if (settings?.metadata?.bytecodeHash !== 'ipfs') {
+  if ((settings?.metadata?.bytecodeHash ?? 'ipfs') !== 'ipfs') {
     fail(`${target.contractName} metadata bytecode hash must be ipfs`);
   }
   const primarySource = input?.sources?.[target.sourcePath]?.content;
@@ -219,6 +224,14 @@ function resolveImport({ importerUnit, importerDiskPath, importPath, kernelCheck
     return {
       sourceUnit: posix.join(target.soladySourcePrefix, suffix),
       diskPath: resolve(kernelCheckout, 'lib', 'solady', 'src', ...suffix.split('/')),
+    };
+  }
+
+  if (importPath.startsWith('ExcessivelySafeCall/')) {
+    const suffix = importPath.slice('ExcessivelySafeCall/'.length);
+    return {
+      sourceUnit: posix.join('lib/ExcessivelySafeCall/src', suffix),
+      diskPath: resolve(kernelCheckout, 'lib', 'ExcessivelySafeCall', 'src', ...suffix.split('/')),
     };
   }
 
@@ -282,9 +295,7 @@ async function entryPointInput(aaCheckout, target) {
     fail('EntryPoint debug artifact does not reference build-info');
   }
   const buildInfo = await readJson(resolve(dirname(debugPath), debugArtifact.buildInfo));
-  const input = validateEntryPointBuildInfo(buildInfo, target);
-  input.settings.outputSelection = canonicalOutputSelection();
-  return input;
+  return validateEntryPointBuildInfo(buildInfo, target);
 }
 
 async function kernelInput(kernelCheckout, target) {
@@ -299,7 +310,10 @@ async function kernelInput(kernelCheckout, target) {
     evmVersion: target.evmVersion,
     optimizer: target.optimizer,
     metadata: target.metadata,
-    remappings: [`solady/=${target.soladySourcePrefix}/`],
+    remappings: [
+      `solady/=${target.soladySourcePrefix}/`,
+      'ExcessivelySafeCall/=lib/ExcessivelySafeCall/src/',
+    ],
     outputSelection: canonicalOutputSelection(),
   };
   if (target.viaIR) {
@@ -314,22 +328,26 @@ function publicTarget(target) {
 }
 
 async function main() {
-  const [, , aaArgument, kernelArgument, outputArgument] = process.argv;
-  if (!aaArgument || !kernelArgument || !outputArgument) {
+  const [, , aaArgument, kernelArgument, ecdsaKernelArgument, outputArgument] = process.argv;
+  if (!aaArgument || !kernelArgument || !ecdsaKernelArgument || !outputArgument) {
     fail(
-      'usage: extract-mainnet-aa-verification-inputs.mjs <account-abstraction-checkout> <kernel-checkout> <output-directory>',
+      'usage: extract-mainnet-aa-verification-inputs.mjs <account-abstraction-checkout> <kernel-checkout> <ecdsa-kernel-checkout> <output-directory>',
     );
   }
 
   const aaCheckout = resolve(aaArgument);
   const kernelCheckout = resolve(kernelArgument);
+  const ecdsaKernelCheckout = resolve(ecdsaKernelArgument);
   const outputDirectory = resolve(outputArgument);
   await mkdir(outputDirectory, { recursive: true });
 
   for (const target of targets) {
     const input = target.sourceFamily === 'account-abstraction'
       ? await entryPointInput(aaCheckout, target)
-      : await kernelInput(kernelCheckout, target);
+      : await kernelInput(
+        target.sourceFamily === 'kernel-ecdsa' ? ecdsaKernelCheckout : kernelCheckout,
+        target,
+      );
     await writeFile(
       join(outputDirectory, target.standardInputFile),
       `${JSON.stringify(input, null, 2)}\n`,

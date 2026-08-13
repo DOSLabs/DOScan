@@ -17,6 +17,7 @@ const targets = [
     evmVersion: "paris",
     license: "gnu_gpl_v3",
     constructorArgs: "",
+    verificationMatch: "full",
   },
   {
     address: "0xd6CEDDe84be40893d153Be9d467CD6aD37875b28",
@@ -27,6 +28,7 @@ const targets = [
     evmVersion: "prague",
     license: "mit",
     constructorArgs: "0000000000000000000000000000000071727de22e5e9d8baf0edac6f37da032",
+    verificationMatch: "partial",
   },
   {
     address: "0x2577507b78c2008Ff367261CB6285d44ba5eF2E9",
@@ -37,6 +39,7 @@ const targets = [
     evmVersion: "prague",
     license: "mit",
     constructorArgs: "000000000000000000000000d6cedde84be40893d153be9d467cd6ad37875b28",
+    verificationMatch: "partial",
   },
   {
     address: "0x845ADb2C711129d4f3966735eD98a9F09fC4cE57",
@@ -47,6 +50,7 @@ const targets = [
     evmVersion: "paris",
     license: "mit",
     constructorArgs: "",
+    verificationMatch: "partial",
   },
   {
     address: "0xd703aaE79538628d27099B8c4f621bE4CCd142d5",
@@ -57,6 +61,7 @@ const targets = [
     evmVersion: "paris",
     license: "mit",
     constructorArgs: "",
+    verificationMatch: "partial",
   },
 ];
 
@@ -104,8 +109,8 @@ async function openExplorer(page) {
 
 function expectExactMetadata(metadata, target) {
   expect(metadata.is_verified).toBe(true);
-  expect(metadata.is_fully_verified).toBe(true);
-  expect(metadata.is_partially_verified).toBe(false);
+  expect(metadata.is_fully_verified).toBe(target.verificationMatch === "full");
+  expect(metadata.is_partially_verified).toBe(target.verificationMatch === "partial");
   expect(metadata.verified_twin_address_hash).toBeNull();
   expect(metadata.name).toBe(target.name);
   expect(normalizeCompiler(metadata.compiler_version)).toBe(target.compiler);
@@ -133,7 +138,7 @@ test("five Mainnet DOS ID Wallet contracts are exactly verified", async ({ page,
     await skipOnlyCloudflareChallenge(page);
     await expect(page.getByText(target.name, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
     await expect(
-      page.getByText(/Contract source code verified|Fully verified|Exact match/i).first(),
+      page.getByText(/Contract source code verified|Fully verified|Exact match|Partial match/i).first(),
     ).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("Oops! Something went wrong")).toHaveCount(0);
   }

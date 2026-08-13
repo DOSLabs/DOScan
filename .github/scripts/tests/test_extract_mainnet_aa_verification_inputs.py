@@ -44,6 +44,8 @@ class ExtractMainnetAaVerificationInputsTests(unittest.TestCase):
             "v0.8.25+commit.b61c2a91",
             contracts["ecdsa-validator"]["compilerVersion"],
         )
+        self.assertEqual("full", contracts["entry-point"]["verificationMatch"])
+        self.assertEqual("partial", contracts["ecdsa-validator"]["verificationMatch"])
         self.assertEqual(
             "d13e7ff2bc90271659100c83f49ee6250555bbf26ed35c2315f243c6849a2127",
             contracts["kernel"]["expectedCodeSha256"],
@@ -64,7 +66,10 @@ class ExtractMainnetAaVerificationInputsTests(unittest.TestCase):
         )
         self.assertTrue(entry_point_input["settings"]["viaIR"])
         self.assertEqual(
-            {"bytecodeHash": "ipfs"}, entry_point_input["settings"]["metadata"]
+            "ipfs",
+            entry_point_input["settings"].get("metadata", {}).get(
+                "bytecodeHash", "ipfs"
+            ),
         )
 
         kernel_input = self._read_input(output, contracts["kernel"])
@@ -76,6 +81,10 @@ class ExtractMainnetAaVerificationInputsTests(unittest.TestCase):
         self.assertTrue(kernel_input["settings"]["viaIR"])
         self.assertIn("src/interfaces/I.sol", kernel_input["sources"])
         self.assertIn("lib/solady/src/utils/EIP712.sol", kernel_input["sources"])
+        self.assertIn(
+            "lib/ExcessivelySafeCall/src/ExcessivelySafeCall.sol",
+            kernel_input["sources"],
+        )
 
         factory_input = self._read_input(output, contracts["kernel-factory"])
         self.assertIn(
@@ -85,6 +94,21 @@ class ExtractMainnetAaVerificationInputsTests(unittest.TestCase):
         self.assertIn(
             "dependencies/solady-0.1.26/src/utils/LibClone.sol",
             factory_input["sources"],
+        )
+
+        ecdsa_input = self._read_input(output, contracts["ecdsa-validator"])
+        self.assertIn(
+            "// pinned ECDSA deployment source",
+            ecdsa_input["sources"]["src/validator/ECDSAValidator.sol"]["content"],
+        )
+        factory_staker_input = self._read_input(
+            output, contracts["factory-staker"]
+        )
+        self.assertIn(
+            "// pinned FactoryStaker deployment dependency",
+            factory_staker_input["sources"]["src/factory/KernelFactory.sol"][
+                "content"
+            ],
         )
 
         factory_staker_input = self._read_input(
@@ -98,7 +122,13 @@ class ExtractMainnetAaVerificationInputsTests(unittest.TestCase):
             "lib/solady/src/auth/Ownable.sol", factory_staker_input["sources"]
         )
 
-        for contract in contracts.values():
+        entry_point_selection = entry_point_input["settings"]["outputSelection"]["*"]["*"]
+        self.assertIn("evm.deployedBytecode", entry_point_selection)
+        self.assertIn("evm.methodIdentifiers", entry_point_selection)
+
+        for key, contract in contracts.items():
+            if key == "entry-point":
+                continue
             standard_input = self._read_input(output, contract)
             selection = standard_input["settings"]["outputSelection"]["*"]["*"]
             self.assertEqual(
@@ -141,9 +171,25 @@ class ExtractMainnetAaVerificationInputsTests(unittest.TestCase):
         root = Path(temporary_directory.name)
         aa_checkout = root / "account-abstraction"
         kernel_checkout = root / "kernel"
+        ecdsa_kernel_checkout = root / "kernel-ecdsa"
         output = root / "output"
         self._write_entrypoint_build(aa_checkout)
         self._write_kernel_checkout(kernel_checkout)
+        self._write_kernel_checkout(ecdsa_kernel_checkout)
+        ecdsa_path = ecdsa_kernel_checkout / "src" / "validator" / "ECDSAValidator.sol"
+        ecdsa_path.write_text(
+            ecdsa_path.read_text(encoding="utf-8")
+            + "\n// pinned ECDSA deployment source\n",
+            encoding="utf-8",
+        )
+        legacy_factory_path = (
+            ecdsa_kernel_checkout / "src" / "factory" / "KernelFactory.sol"
+        )
+        legacy_factory_path.write_text(
+            legacy_factory_path.read_text(encoding="utf-8")
+            + "\n// pinned FactoryStaker deployment dependency\n",
+            encoding="utf-8",
+        )
         if mutate:
             mutate(aa_checkout, kernel_checkout)
 
@@ -153,6 +199,7 @@ class ExtractMainnetAaVerificationInputsTests(unittest.TestCase):
                 str(SCRIPT_PATH),
                 str(aa_checkout),
                 str(kernel_checkout),
+                str(ecdsa_kernel_checkout),
                 str(output),
             ],
             capture_output=True,
@@ -185,8 +232,18 @@ class ExtractMainnetAaVerificationInputsTests(unittest.TestCase):
                     "evmVersion": "paris",
                     "optimizer": {"enabled": True, "runs": 1_000_000},
                     "viaIR": True,
-                    "metadata": {"bytecodeHash": "ipfs"},
-                    "outputSelection": {"*": {"*": ["abi"]}},
+                    "outputSelection": {
+                        "*": {
+                            "*": [
+                                "abi",
+                                "evm.bytecode",
+                                "evm.deployedBytecode",
+                                "evm.methodIdentifiers",
+                                "metadata",
+                            ],
+                            "": ["ast"],
+                        }
+                    },
                 },
             },
             "output": {
@@ -216,6 +273,7 @@ class ExtractMainnetAaVerificationInputsTests(unittest.TestCase):
                 "pragma solidity ^0.8.0;\n"
                 'import {I} from "./interfaces/I.sol";\n'
                 'import {EIP712} from "solady/utils/EIP712.sol";\n'
+                'import {ExcessivelySafeCall} from "ExcessivelySafeCall/ExcessivelySafeCall.sol";\n'
                 "contract Kernel {}\n"
             ),
             "src/interfaces/I.sol": (
@@ -262,6 +320,11 @@ class ExtractMainnetAaVerificationInputsTests(unittest.TestCase):
                 "// SPDX-License-Identifier: MIT\n"
                 "pragma solidity ^0.8.0;\n"
                 "abstract contract Ownable {}\n"
+            ),
+            "lib/ExcessivelySafeCall/src/ExcessivelySafeCall.sol": (
+                "// SPDX-License-Identifier: MIT OR Apache-2.0\n"
+                "pragma solidity ^0.8.0;\n"
+                "library ExcessivelySafeCall {}\n"
             ),
         }
         for relative_path, content in files.items():

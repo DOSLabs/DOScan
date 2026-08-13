@@ -66,8 +66,9 @@ This is compact, but Mainnet deployment would depend on an external explorer's a
 | --- | --- | --- | --- |
 | EntryPoint v0.7 | `eth-infinitism/account-abstraction` | `v0.7.0` | `7af70c8993a6f42973f520ae0752386a5032abe7` |
 | Kernel v3.3 stack | `zerodevapp/kernel` | `v3.3` | `cd697c7e21715d015e0643af22310a99aa17433b` |
+| Legacy deployment source | `zerodevapp/kernel` | deployment commit | `8f7fd9946b9d351bb5be0428bf34c87bad7ed6c9` |
 
-The Kernel pin supplies `Kernel`, `KernelFactory`, `ECDSAValidator`, and `FactoryStaker`. Every checkout must resolve to the full expected SHA. Generated inputs are deployment artifacts only and must not contain credentials.
+The Kernel v3.3 pin supplies `Kernel` and `KernelFactory`. ECDSAValidator and FactoryStaker were deployed from the older pinned Kernel commit and its pinned Solady submodule `9deb9ed36a27261a8745db5b7cd7f4cdc3b1cd4e`. Every checkout must resolve to the full expected SHA. Generated inputs are deployment artifacts only and must not contain credentials.
 
 ## 5. Exact compilation profiles
 
@@ -120,9 +121,9 @@ For each contract:
 5. If POST reports `Already verified`, GET again and accept only exact metadata.
 6. If Blockscout reports a verified contract with wrong metadata, fail immediately.
 
-Required exact metadata includes full verification, contract name, source path, compiler, optimizer state and runs, EVM version, license, constructor arguments, and the absence of partial verification.
+Required exact metadata includes the expected Blockscout match mode, contract name, source path, compiler, optimizer state and runs, EVM version, license, and constructor arguments. EntryPoint requires a full match because it embeds IPFS metadata. The four Kernel contracts intentionally omit CBOR metadata, so Blockscout reports a partial match even after the earlier bytecode gate proves exact compiler/runtime equality.
 
-The script must use bounded connection and transfer timeouts. Invalid JSON, missing required fields, HTTP failures that outlive the shared deadline, partial verification, or contradictory metadata fail closed.
+The script must use bounded connection and transfer timeouts. Invalid JSON, missing required fields, HTTP failures that outlive the shared deadline, an unexpected match mode, or contradictory metadata fail closed.
 
 ## 8. Failure and rollback semantics
 
@@ -167,6 +168,6 @@ Existing Mainnet deployment, shell syntax, workflow validation, actionlint, Comp
 - An independent reviewer reports no Critical, Important, or Minor finding.
 - The PR is merged by the agent after approval and all required CI checks pass.
 - The Mainnet deployment workflow completes successfully.
-- DOScan Mainnet shows full exact source verification for all five contract pages.
+- DOScan Mainnet shows the expected full match for EntryPoint and partial match for the four no-CBOR Kernel contracts, with exact compiler metadata on all five pages.
 - Browser UAT confirms each contract page exposes the expected name, compiler, source, and verified state.
 - Browser UAT confirms `/ops` remains healthy and still reports the production EntryPoint v0.7 operations.
