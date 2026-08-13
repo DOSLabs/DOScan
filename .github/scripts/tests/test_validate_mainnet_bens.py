@@ -19,6 +19,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "deploy-config.yml"
 CONFIG_TEMPLATE = ROOT / "docker-compose" / "bens" / "config.mainnet.template.json"
 RENDERER = ROOT / "scripts" / "render-mainnet-bens.py"
 RUNTIME = ROOT / ".github" / "scripts" / "mainnet-bens-runtime.sh"
+AA_PREPARER = ROOT / ".github" / "scripts" / "prepare-mainnet-aa-verification.sh"
 MAINNET_RPC = (
     "http://host.docker.internal:9650/ext/bc/"
     "2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk/rpc"
@@ -151,6 +152,59 @@ class MainnetBensConfigurationTests(unittest.TestCase):
         self.assertIn("BENS_SUBGRAPH_VERSION", RUNTIME.read_text(encoding="utf-8"))
         self.assertIn("/name-service/api/v1/7979/domains/${SMOKE_NAME}", mainnet_job)
         self.assertIn("Verify Mainnet DOS Name UI with Playwright", mainnet_job)
+
+    def test_mainnet_aa_inputs_are_built_before_cloud_auth_and_verified_after_runtime(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        mainnet_job = workflow.split("  deploy-mainnet:", 1)[1].split(
+            "\n  deploy-testnet:", 1
+        )[0]
+        testnet_job = workflow.split("  deploy-testnet:", 1)[1].split(
+            "\n  deploy-beta:", 1
+        )[0]
+        prepare_index = mainnet_job.index(
+            "Prepare immutable Mainnet Account Abstraction verification inputs"
+        )
+        google_auth_index = mainnet_job.index("Authenticate to Google Cloud")
+        bytecode_gate_index = prepare_index
+        deployment_stopped_index = mainnet_job.rindex("DEPLOYMENT_STARTED=0")
+        source_verify_index = mainnet_job.rindex(
+            '/bin/sh "${SRC}/.github/scripts/verify-mainnet-aa-sources.sh"'
+        )
+
+        self.assertLess(prepare_index, google_auth_index)
+        self.assertLess(bytecode_gate_index, google_auth_index)
+        self.assertLess(deployment_stopped_index, source_verify_index)
+        self.assertNotIn("verify-mainnet-aa-sources.sh", testnet_job)
+        self.assertIn(
+            "7af70c8993a6f42973f520ae0752386a5032abe7", mainnet_job
+        )
+        self.assertIn(
+            "cd697c7e21715d015e0643af22310a99aa17433b", mainnet_job
+        )
+        self.assertIn(
+            "3f2f5345261904463f5429c9031c3d2185c0f4fe", mainnet_job
+        )
+        self.assertIn('"https://main.doschain.com/"', mainnet_job)
+        package_step = mainnet_job.split(
+            "- name: Package deployment configuration", 1
+        )[1].split("- name: Upload configuration", 1)[0]
+        self.assertIn("mainnet-aa-verification", package_step)
+        self.assertIn("verify-mainnet-aa-sources.sh", package_step)
+
+    def test_mainnet_aa_preparer_pins_sources_compilers_and_outputs(self):
+        preparer = AA_PREPARER.read_text(encoding="utf-8")
+        self.assertIn("verify-mainnet-aa-bytecode.mjs", preparer)
+        self.assertIn("yarn@1.22.22", preparer)
+        for compiler in ("solc-0.8.23", "solc-0.8.24", "solc-0.8.25", "solc-0.8.28"):
+            self.assertIn(compiler, preparer)
+        for output in (
+            "entry-point.compiler-output.json",
+            "kernel.compiler-output.json",
+            "kernel-factory.compiler-output.json",
+            "ecdsa-validator.compiler-output.json",
+            "factory-staker.compiler-output.json",
+        ):
+            self.assertIn(output, preparer)
 
     def test_existing_bens_service_check_consumes_the_complete_compose_output(self):
         runtime = RUNTIME.as_posix()

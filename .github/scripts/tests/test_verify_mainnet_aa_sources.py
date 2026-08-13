@@ -347,7 +347,7 @@ class VerifyMainnetAaSourcesTests(unittest.TestCase):
             manifest_mutate(manifest)
         if input_mode == "renamed":
             manifest["contracts"][0]["standardInputFile"] = "renamed.standard-input.json"
-        (directory / "verification-manifest.json").write_text(
+        (directory / "manifest.json").write_text(
             json.dumps(manifest), encoding="utf-8"
         )
         for index, target in enumerate(manifest["contracts"]):

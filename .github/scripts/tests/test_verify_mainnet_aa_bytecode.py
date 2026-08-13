@@ -98,7 +98,7 @@ class VerifyMainnetAaBytecodeTests(unittest.TestCase):
         }
         if output_mutator:
             output_mutator(output)
-        Path(directory, "verification-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        Path(directory, "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         Path(directory, target["compilerOutputFile"]).write_text(json.dumps(output), encoding="utf-8")
 
     def run_verifier(self, directory, rpc_url):

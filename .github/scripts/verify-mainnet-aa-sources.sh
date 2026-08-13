@@ -7,7 +7,7 @@ if [ -z "${verification_directory}" ]; then
   exit 2
 fi
 
-manifest_path="${verification_directory}/verification-manifest.json"
+manifest_path="${verification_directory}/manifest.json"
 api_base_url="${DOSCAN_MAINNET_AA_API_BASE_URL:-http://127.0.0.1:13080}"
 api_base_url="${api_base_url%/}"
 api_host_header="${DOSCAN_MAINNET_AA_API_HOST_HEADER:-doscan.io}"

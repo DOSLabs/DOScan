@@ -210,7 +210,7 @@ async function main() {
   if (!artifactDirectory || !rpcUrl) {
     fail('usage: verify-mainnet-aa-bytecode.mjs <verification-artifact-directory> <rpc-url>');
   }
-  const manifest = await readJson(join(artifactDirectory, 'verification-manifest.json'));
+  const manifest = await readJson(join(artifactDirectory, 'manifest.json'));
   if (manifest.version !== 2 || manifest.chainId !== 7979 || !Array.isArray(manifest.contracts) || manifest.contracts.length === 0) {
     fail('invalid Mainnet AA verification manifest');
   }
