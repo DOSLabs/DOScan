@@ -854,6 +854,7 @@ jobs:
               NFT_MEDIA_SECRETS="${SRC}/common-blockscout-nft-media.env"
               BENS_DB_VOLUME="doscan-testnet_bens_postgres_data"
               BENS_IPFS_VOLUME="doscan-testnet_bens_ipfs_data"
+              BLOCKSCOUT_DB="blockscout_jasj_20260809"
               BENS_PREDEPLOY_STOPPED=0
               DEPLOYMENT_STARTED=0
 
@@ -898,10 +899,10 @@ jobs:
                   echo "TESTNET ROLLBACK ABORTED; database writers could not be stopped" >&2
                   return 1
                 fi
-                sudo docker compose exec -T db dropdb --force -U postgres blockscout || restore_rc=1
-                sudo docker compose exec -T db createdb -U postgres blockscout || restore_rc=1
+                sudo docker compose exec -T db dropdb --force -U postgres "${BLOCKSCOUT_DB}" || restore_rc=1
+                sudo docker compose exec -T db createdb -U postgres "${BLOCKSCOUT_DB}" || restore_rc=1
                 sudo cat "${BACKUP}/blockscout.dump" |
-                  sudo docker compose exec -T db pg_restore -U postgres -d blockscout --no-owner --no-privileges ||
+                  sudo docker compose exec -T db pg_restore -U postgres -d "${BLOCKSCOUT_DB}" --no-owner --no-privileges ||
                   restore_rc=1
                 sudo docker compose exec -T db dropdb --force -U postgres stats || restore_rc=1
                 sudo docker compose exec -T db createdb -U postgres stats || restore_rc=1
@@ -1174,6 +1175,17 @@ jobs:
                 exit 1
               fi
 
+              blockscout_database_url="$(
+                sudo awk -F= \
+                  "\$1 == \"DATABASE_URL\" {sub(/^[^=]*=/, \"\"); print; exit}" \
+                  "${SECRETS_ENV}"
+              )"
+              blockscout_database_target="${blockscout_database_url%%\?*}"
+              if [ "${blockscout_database_target##*/}" != "${BLOCKSCOUT_DB}" ]; then
+                echo "Testnet DATABASE_URL must target ${BLOCKSCOUT_DB}; refusing deployment" >&2
+                exit 1
+              fi
+
               canonical_bens_key_count="$(
                 sudo grep -Ec '"'"'^DOSCAN_BENS_DB_PASSWORD='"'"' "${SECRETS_ENV}" || true
               )"
@@ -1289,7 +1301,7 @@ jobs:
                 sudo test -s "${BACKUP}/bens-ipfs.tgz"
                 sudo touch "${BACKUP}/bens-state-existed"
               fi
-              sudo docker compose exec -T db pg_dump -U postgres -Fc blockscout |
+              sudo docker compose exec -T db pg_dump -U postgres -Fc "${BLOCKSCOUT_DB}" |
                 sudo tee "${BACKUP}/blockscout.dump" >/dev/null
               sudo docker compose exec -T db pg_dump -U postgres -Fc stats |
                 sudo tee "${BACKUP}/stats.dump" >/dev/null
