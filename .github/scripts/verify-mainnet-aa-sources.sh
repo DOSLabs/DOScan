@@ -26,14 +26,16 @@ status_file="$(mktemp)"
 submit_file="$(mktemp)"
 trap 'rm -f "${status_file}" "${submit_file}"' EXIT HUP INT TERM
 
-case "${poll_attempts}:${poll_interval_seconds}:${max_seconds}" in
+case "${poll_attempts}:${poll_interval_seconds}:${max_seconds}:${connect_timeout_seconds}:${request_timeout_seconds}:${curl_retry_delay_seconds}:${curl_retry_max_seconds}" in
   *[!0-9:]* | :* | *: | *::* )
     echo "Mainnet Account Abstraction polling settings must be non-negative integers" >&2
     exit 2
     ;;
 esac
-if [ "${poll_attempts}" -lt 1 ] || [ "${max_seconds}" -lt 1 ]; then
-  echo "Mainnet Account Abstraction polling attempts and deadline must be positive" >&2
+if [ "${poll_attempts}" -lt 1 ] || [ "${max_seconds}" -lt 1 ] || \
+   [ "${connect_timeout_seconds}" -lt 1 ] || [ "${request_timeout_seconds}" -lt 1 ] || \
+   [ "${curl_retry_max_seconds}" -lt 1 ]; then
+  echo "Mainnet Account Abstraction attempts, deadline, and request timeouts must be positive" >&2
   exit 2
 fi
 
@@ -105,10 +107,34 @@ while [ "${contract_index}" -lt 5 ]; do
   contract_index="$((contract_index + 1))"
 done
 
+remaining_budget() {
+  deadline="$1"
+  now="$("${date_bin}" +%s)"
+  remaining="$((deadline - now))"
+  if [ "${remaining}" -lt 1 ]; then
+    return 1
+  fi
+  printf '%s\n' "${remaining}"
+}
+
+clamp_timeout() {
+  configured="$1"
+  remaining="$2"
+  if [ "${configured}" -lt "${remaining}" ]; then
+    printf '%s\n' "${configured}"
+  else
+    printf '%s\n' "${remaining}"
+  fi
+}
+
 get_contract_status() {
   contract_address="$1"
+  deadline="$2"
+  remaining="$(remaining_budget "${deadline}")" || return 1
+  bounded_connect_timeout="$(clamp_timeout "${connect_timeout_seconds}" "${remaining}")"
+  bounded_request_timeout="$(clamp_timeout "${request_timeout_seconds}" "${remaining}")"
   : >"${status_file}"
-  "${curl_bin}" --connect-timeout "${connect_timeout_seconds}" --max-time "${request_timeout_seconds}" \
+  "${curl_bin}" --connect-timeout "${bounded_connect_timeout}" --max-time "${bounded_request_timeout}" \
     --fail --silent --show-error --header "Host: ${api_host_header}" --header "Cache-Control: no-cache" \
     --output "${status_file}" "${api_base_url}/api/v2/smart-contracts/${contract_address}"
 }
@@ -149,6 +175,7 @@ classify_contract_status() {
 
 submit_contract() {
   contract_index="$1"
+  deadline="$2"
   contract_address="$("${jq_bin}" -er ".contracts[${contract_index}].address" "${manifest_path}")"
   contract_name="$("${jq_bin}" -er ".contracts[${contract_index}].contractName" "${manifest_path}")"
   source_path="$("${jq_bin}" -er ".contracts[${contract_index}].sourcePath" "${manifest_path}")"
@@ -156,9 +183,13 @@ submit_contract() {
   license_type="$("${jq_bin}" -er ".contracts[${contract_index}].licenseType" "${manifest_path}")"
   constructor_args="$("${jq_bin}" -er ".contracts[${contract_index}].constructorArgs" "${manifest_path}")"
   standard_input_file="$("${jq_bin}" -er ".contracts[${contract_index}].standardInputFile" "${manifest_path}")"
+  remaining="$(remaining_budget "${deadline}")" || return 1
+  bounded_connect_timeout="$(clamp_timeout "${connect_timeout_seconds}" "${remaining}")"
+  bounded_request_timeout="$(clamp_timeout "${request_timeout_seconds}" "${remaining}")"
+  bounded_retry_timeout="$(clamp_timeout "${curl_retry_max_seconds}" "${remaining}")"
   : >"${submit_file}"
-  if ! "${curl_bin}" --connect-timeout "${connect_timeout_seconds}" --max-time "${request_timeout_seconds}" \
-    --retry 2 --retry-all-errors --retry-delay "${curl_retry_delay_seconds}" --retry-max-time "${curl_retry_max_seconds}" \
+  if ! "${curl_bin}" --connect-timeout "${bounded_connect_timeout}" --max-time "${bounded_request_timeout}" \
+    --retry 2 --retry-all-errors --retry-delay "${curl_retry_delay_seconds}" --retry-max-time "${bounded_retry_timeout}" \
     --fail --silent --show-error --header "Host: ${api_host_header}" --output "${submit_file}" \
     --form "compiler_version=${compiler_version}" --form "contract_name=${source_path}:${contract_name}" \
     --form "autodetect_constructor_args=false" --form "constructor_args=${constructor_args}" \
@@ -189,7 +220,7 @@ verify_contract() {
       return 1
     fi
     status_code=3
-    if get_contract_status "${contract_address}"; then
+    if get_contract_status "${contract_address}" "${deadline}"; then
       if classify_contract_status "${contract_index}"; then
         echo "Blockscout exact Mainnet source verification confirmed for ${contract_name}"
         return 0
@@ -200,7 +231,7 @@ verify_contract() {
         return 1
       fi
       if [ "${status_code}" -eq 1 ] && [ "${submitted}" -eq 0 ]; then
-        submit_contract "${contract_index}"
+        submit_contract "${contract_index}" "${deadline}"
         submitted=1
       fi
     fi
@@ -209,7 +240,9 @@ verify_contract() {
       echo "Blockscout Mainnet source verification timed out for ${contract_name}" >&2
       return 1
     fi
-    sleep "${poll_interval_seconds}"
+    remaining="$((deadline - now))"
+    bounded_poll_interval="$(clamp_timeout "${poll_interval_seconds}" "${remaining}")"
+    sleep "${bounded_poll_interval}"
     attempt="$((attempt + 1))"
   done
 }

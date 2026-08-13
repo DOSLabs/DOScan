@@ -664,6 +664,8 @@ trap 'rm -rf "${output}"' EXIT
   https://github.com/zerodevapp/kernel.git \
   cd697c7e21715d015e0643af22310a99aa17433b \
   3f2f5345261904463f5429c9031c3d2185c0f4fe \
+  8f7fd9946b9d351bb5be0428bf34c87bad7ed6c9 \
+  9deb9ed36a27261a8745db5b7cd7f4cdc3b1cd4e \
   "${output}" \
   https://main.doschain.com/
 ```

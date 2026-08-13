@@ -134,11 +134,16 @@ test("five Mainnet DOS ID Wallet contracts are exactly verified", async ({ page,
 
     const contractUrl = new URL(`/address/${target.address}?tab=contract`, baseUrl);
     const response = await page.goto(contractUrl.toString(), { waitUntil: "domcontentloaded" });
-    expect(response?.ok()).toBe(true);
     await skipOnlyCloudflareChallenge(page);
+    expect(response?.ok()).toBe(true);
     await expect(page.getByText(target.name, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(target.compiler, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(target.sourcePath, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+    const verificationText = target.verificationMatch === "full"
+      ? /Contract source code verified \(exact match\)|Fully verified|Exact match/i
+      : /Contract source code verified \(partial match\)|Partial match/i;
     await expect(
-      page.getByText(/Contract source code verified|Fully verified|Exact match|Partial match/i).first(),
+      page.getByText(verificationText).first(),
     ).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("Oops! Something went wrong")).toHaveCount(0);
   }
@@ -154,24 +159,32 @@ test("Mainnet operations page exposes EntryPoint v0.7 activity", async ({ page, 
   const payload = await apiResponse.json();
   expect(Array.isArray(payload.items)).toBe(true);
   expect(payload.items.length).toBeGreaterThan(0);
-  expect(
-    payload.items.some(
-      (item) =>
-        (
-          item.entry_point?.hash ||
-          item.entry_point_address ||
-          item.entry_point ||
-          ""
-        ).toLowerCase() === entryPointAddress.toLowerCase(),
-    ),
-  ).toBe(true);
+  const operation = payload.items.find(
+    (item) =>
+      (
+        item.entry_point?.hash ||
+        item.entry_point_address ||
+        item.entry_point ||
+        ""
+      ).toLowerCase() === entryPointAddress.toLowerCase(),
+  );
+  expect(operation?.hash).toMatch(/^0x[0-9a-f]{64}$/i);
 
   const opsUrl = new URL("/ops", baseUrl);
   const response = await page.goto(opsUrl.toString(), { waitUntil: "domcontentloaded" });
-  expect(response?.ok()).toBe(true);
   await skipOnlyCloudflareChallenge(page);
-  await expect(page.locator('tbody tr:visible, [role="row"]:visible').nth(1)).toBeVisible({ timeout: 30_000 });
-  const shortEntryPoint = `${entryPointAddress.slice(0, 8)}...${entryPointAddress.slice(-4)}`;
-  await expect(page.getByText(new RegExp(`${entryPointAddress}|${shortEntryPoint}`, "i")).first()).toBeVisible({ timeout: 30_000 });
+  expect(response?.ok()).toBe(true);
+  const operationLink = page.locator(`a[href="/op/${operation.hash}"]:visible`).first();
+  await expect(operationLink).toBeVisible({ timeout: 30_000 });
+  const detailResponse = await page.goto(
+    new URL(`/op/${operation.hash}`, baseUrl).toString(),
+    { waitUntil: "domcontentloaded" },
+  );
+  await skipOnlyCloudflareChallenge(page);
+  expect(detailResponse?.ok()).toBe(true);
+  await expect(page.getByText("Entry point", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.locator(`a[href="/address/${entryPointAddress}"]:visible`).first(),
+  ).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Oops! Something went wrong")).toHaveCount(0);
 });

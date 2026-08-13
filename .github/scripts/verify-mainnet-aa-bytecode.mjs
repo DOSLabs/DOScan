@@ -6,13 +6,28 @@ import http from 'node:http';
 import https from 'node:https';
 import { join } from 'node:path';
 
-const RPC_ATTEMPTS = 3;
-const CONNECT_TIMEOUT_MS = 10_000;
-const REQUEST_TIMEOUT_MS = 20_000;
-
 function fail(message) {
   throw new Error(message);
 }
+
+function positiveIntegerEnvironment(name, fallback) {
+  const raw = process.env[name];
+  if (raw == null) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    fail(`${name} must be a positive integer`);
+  }
+  return parsed;
+}
+
+const RPC_ATTEMPTS = 3;
+const CONNECT_TIMEOUT_MS = 10_000;
+const REQUEST_TIMEOUT_MS = positiveIntegerEnvironment(
+  'DOSCAN_MAINNET_AA_RPC_REQUEST_TIMEOUT_MS',
+  20_000,
+);
 
 async function readJson(path) {
   return JSON.parse(await readFile(path, 'utf8'));
@@ -77,6 +92,12 @@ function rpcRequest(rpcUrl, payload) {
   const transport = url.protocol === 'https:' ? https : http;
   const body = JSON.stringify(payload);
   return new Promise((resolve, reject) => {
+    let connectTimer;
+    let absoluteTimer;
+    const clearTimers = () => {
+      clearTimeout(connectTimer);
+      clearTimeout(absoluteTimer);
+    };
     const request = transport.request(
       url,
       {
@@ -90,6 +111,7 @@ function rpcRequest(rpcUrl, payload) {
         const chunks = [];
         response.on('data', (chunk) => chunks.push(chunk));
         response.on('end', () => {
+          clearTimers();
           const responseBody = Buffer.concat(chunks).toString('utf8');
           if (response.statusCode < 200 || response.statusCode >= 300) {
             reject(new Error(`RPC HTTP ${response.statusCode}: ${responseBody}`));
@@ -101,9 +123,17 @@ function rpcRequest(rpcUrl, payload) {
             reject(new Error(`RPC returned invalid JSON: ${error.message}`));
           }
         });
+        response.on('error', (error) => {
+          clearTimers();
+          reject(error);
+        });
       },
     );
-    const connectTimer = setTimeout(() => request.destroy(new Error('RPC connect timeout')), CONNECT_TIMEOUT_MS);
+    connectTimer = setTimeout(() => request.destroy(new Error('RPC connect timeout')), CONNECT_TIMEOUT_MS);
+    absoluteTimer = setTimeout(
+      () => request.destroy(new Error('RPC absolute request timeout')),
+      REQUEST_TIMEOUT_MS,
+    );
     request.on('socket', (socket) => {
       const connected = () => clearTimeout(connectTimer);
       if (socket.connecting) {
@@ -114,7 +144,7 @@ function rpcRequest(rpcUrl, payload) {
     });
     request.setTimeout(REQUEST_TIMEOUT_MS, () => request.destroy(new Error('RPC request timeout')));
     request.on('error', (error) => {
-      clearTimeout(connectTimer);
+      clearTimers();
       reject(error);
     });
     request.end(body);

@@ -277,6 +277,23 @@ class MainnetBensConfigurationTests(unittest.TestCase):
         self.assertIn("/ops", ui_test)
         self.assertIn("response?.ok()", ui_test)
         self.assertIn(":visible", ui_test)
+        self.assertIn('target.verificationMatch === "full"', ui_test)
+        self.assertIn("Contract source code verified \\(exact match\\)", ui_test)
+        self.assertIn("Contract source code verified \\(partial match\\)", ui_test)
+        self.assertIn("page.getByText(target.compiler", ui_test)
+        self.assertIn("page.getByText(target.sourcePath", ui_test)
+        self.assertIn("const operation = payload.items.find", ui_test)
+        self.assertIn('a[href="/op/${operation.hash}"]:visible', ui_test)
+        self.assertIn('page.getByText("Entry point", { exact: true })', ui_test)
+        self.assertIn('a[href="/address/${entryPointAddress}"]:visible', ui_test)
+        navigation_blocks = re.findall(
+            r"const (?:detailResponse|response) = await page\.goto\([\s\S]+?;\s*"
+            r"await skipOnlyCloudflareChallenge\(page\);\s*"
+            r"expect\((?:detailResponse|response)\?\.ok\(\)\)\.toBe\(true\);",
+            ui_test,
+            re.DOTALL,
+        )
+        self.assertEqual(3, len(navigation_blocks))
         self.assertRegex(
             ui_test,
             re.compile(

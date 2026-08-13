@@ -183,6 +183,9 @@ class VerifyMainnetAaSourcesTests(unittest.TestCase):
             (2, "evm_version", "paris"),
             (3, "license_type", "gnu_gpl_v3"),
             (4, "file_path", "MetaFactory.sol"),
+            (0, "name", "WrongEntryPoint"),
+            (1, "optimization_enabled", False),
+            (2, "constructor_args", "00"),
         ]
         for index, field, value in mutations:
             with self.subTest(index=index, field=field):
@@ -214,14 +217,15 @@ class VerifyMainnetAaSourcesTests(unittest.TestCase):
                 self.assertEqual([], state["posts"])
 
     def test_rejects_unexpected_match_or_twin_verification(self):
-        for mutation in [
-            {"is_fully_verified": False, "is_partially_verified": True},
-            {"verified_twin_address_hash": TARGETS[1]["address"]},
+        for index, mutation in [
+            (0, {"is_fully_verified": False, "is_partially_verified": True}),
+            (1, {"is_fully_verified": True, "is_partially_verified": False}),
+            (0, {"verified_twin_address_hash": TARGETS[1]["address"]}),
         ]:
             responses = self.exact_responses()
-            response = exact_contract(TARGETS[0])
+            response = exact_contract(TARGETS[index])
             response.update(mutation)
-            responses[TARGETS[0]["address"].lower()] = [response]
+            responses[TARGETS[index]["address"].lower()] = [response]
             result, _ = self.run_verifier(responses)
             self.assertNotEqual(0, result.returncode)
 
@@ -235,6 +239,35 @@ class VerifyMainnetAaSourcesTests(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("timed out", result.stderr.lower())
         self.assertEqual(0, state["gets"][TARGETS[1]["address"].lower()])
+
+    def test_global_deadline_clamps_each_curl_request_budget(self):
+        responses = self.exact_responses()
+        responses[TARGETS[0]["address"].lower()] = [UNVERIFIED]
+        result, state = self.run_verifier(
+            responses,
+            attempts=1,
+            max_seconds=5,
+            clock_values=[100, 101, 103, 104, 105],
+            record_curl_args=True,
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(2, len(state["curl_args"]))
+        self.assertIn("--connect-timeout 2 --max-time 2", state["curl_args"][0])
+        self.assertIn("--connect-timeout 1 --max-time 1", state["curl_args"][1])
+        self.assertIn("--retry-max-time 1", state["curl_args"][1])
+
+    def test_rejects_malformed_or_http_failure_with_bounded_attempts(self):
+        first_address = TARGETS[0]["address"].lower()
+        for response in [
+            (200, "not-json"),
+            (503, {"message": "temporarily unavailable"}),
+        ]:
+            with self.subTest(response=response):
+                responses = self.exact_responses()
+                responses[first_address] = [response]
+                result, state = self.run_verifier(responses, attempts=2)
+                self.assertNotEqual(0, result.returncode)
+                self.assertLessEqual(state["gets"][first_address], 2)
 
     def test_rejects_noncanonical_manifest_before_http(self):
         mutations = [
@@ -264,6 +297,7 @@ class VerifyMainnetAaSourcesTests(unittest.TestCase):
         input_mode=None,
         clock_values=None,
         max_seconds=30,
+        record_curl_args=False,
     ):
         class Handler(http.server.BaseHTTPRequestHandler):
             state = {"gets": {address: 0 for address in responses}, "posts": []}
@@ -285,7 +319,11 @@ class VerifyMainnetAaSourcesTests(unittest.TestCase):
                 self.send_json(status, response)
 
             def send_json(self, status, body):
-                payload = json.dumps(body).encode()
+                payload = (
+                    body.encode()
+                    if isinstance(body, str)
+                    else json.dumps(body).encode()
+                )
                 self.send_response(status)
                 self.send_header("content-type", "application/json")
                 self.send_header("content-length", str(len(payload)))
@@ -332,6 +370,19 @@ class VerifyMainnetAaSourcesTests(unittest.TestCase):
                     overrides["DOSCAN_MAINNET_AA_DATE_BIN"] = self.wsl_path(clock) if os.name == "nt" else clock.as_posix()
                     overrides["DOSCAN_FAKE_DATE_COUNTER"] = self.wsl_path(counter) if os.name == "nt" else counter.as_posix()
                     overrides["DOSCAN_FAKE_DATE_VALUES"] = ",".join(map(str, clock_values))
+                curl_args = artifact_directory / "curl-args.log"
+                if record_curl_args:
+                    curl_wrapper = artifact_directory / "fake-curl.sh"
+                    curl_wrapper.write_text(
+                        "#!/bin/sh\n"
+                        'printf "%s\\n" "$*" >> "${DOSCAN_FAKE_CURL_ARGS}"\n'
+                        'exec curl "$@"\n',
+                        encoding="utf-8",
+                        newline="\n",
+                    )
+                    curl_wrapper.chmod(0o755)
+                    overrides["DOSCAN_MAINNET_AA_CURL_BIN"] = self.wsl_path(curl_wrapper) if os.name == "nt" else curl_wrapper.as_posix()
+                    overrides["DOSCAN_FAKE_CURL_ARGS"] = self.wsl_path(curl_args) if os.name == "nt" else curl_args.as_posix()
                 environment = os.environ.copy()
                 environment.update(overrides)
                 if os.name == "nt":
@@ -339,6 +390,7 @@ class VerifyMainnetAaSourcesTests(unittest.TestCase):
                 else:
                     command = ["/bin/sh", SCRIPT_PATH.as_posix(), artifact_directory.as_posix()]
                 result = subprocess.run(command, capture_output=True, text=True, env=environment, timeout=20, check=False)
+                Handler.state["curl_args"] = curl_args.read_text(encoding="utf-8").splitlines() if curl_args.exists() else []
                 return result, Handler.state
         finally:
             server.shutdown()

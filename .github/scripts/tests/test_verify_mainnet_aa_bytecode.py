@@ -1,8 +1,10 @@
 import hashlib
 import json
+import os
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,10 +23,11 @@ def code_hash(code):
 
 
 class RpcServer:
-    def __init__(self, code=LIVE_CODE, getter=EXPECTED_GETTER, failures=0):
+    def __init__(self, code=LIVE_CODE, getter=EXPECTED_GETTER, failures=0, trickle_delay=None):
         self.code = code
         self.getter = getter
         self.failures = failures
+        self.trickle_delay = trickle_delay
         self.requests = []
         owner = self
 
@@ -49,7 +52,16 @@ class RpcServer:
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
-                self.wfile.write(body)
+                if owner.trickle_delay is None:
+                    self.wfile.write(body)
+                else:
+                    try:
+                        for byte in body:
+                            self.wfile.write(bytes([byte]))
+                            self.wfile.flush()
+                            time.sleep(owner.trickle_delay)
+                    except OSError:
+                        return
 
             def log_message(self, _format, *_args):
                 return
@@ -101,13 +113,16 @@ class VerifyMainnetAaBytecodeTests(unittest.TestCase):
         Path(directory, "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         Path(directory, target["compilerOutputFile"]).write_text(json.dumps(output), encoding="utf-8")
 
-    def run_verifier(self, directory, rpc_url):
+    def run_verifier(self, directory, rpc_url, extra_env=None):
+        environment = os.environ.copy()
+        environment.update(extra_env or {})
         return subprocess.run(
             ["node", str(SCRIPT), str(directory), rpc_url],
             capture_output=True,
             text=True,
             timeout=15,
             check=False,
+            env=environment,
         )
 
     def test_accepts_exact_code_and_immutable_getters(self):
@@ -156,6 +171,29 @@ class VerifyMainnetAaBytecodeTests(unittest.TestCase):
             self.assertNotEqual(0, result.returncode)
             self.assertIn("unresolved", result.stderr.lower())
 
+    def test_rejects_malformed_overlapping_or_out_of_bounds_immutable_ranges(self):
+        mutations = [
+            lambda deployed: deployed.update({"immutableReferences": []}),
+            lambda deployed: deployed.update(
+                {"immutableReferences": {"1": [{"start": 1, "length": 2}], "2": [{"start": 2, "length": 1}]}}
+            ),
+            lambda deployed: deployed.update(
+                {"immutableReferences": {"1": [{"start": 6, "length": 1}]}}
+            ),
+        ]
+        for mutate_deployed in mutations:
+            with self.subTest(mutate_deployed=mutate_deployed), tempfile.TemporaryDirectory() as directory:
+                def mutate(output):
+                    mutate_deployed(
+                        output["contracts"]["src/Kernel.sol"]["Kernel"]["evm"]["deployedBytecode"]
+                    )
+
+                self.write_artifacts(directory, output_mutator=mutate)
+                with RpcServer() as rpc_url:
+                    result = self.run_verifier(directory, rpc_url)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("immutable", result.stderr.lower())
+
     def test_rejects_compiler_error_or_missing_contract(self):
         mutations = [
             lambda output: output["errors"].append({"severity": "error", "formattedMessage": "compile failed"}),
@@ -182,6 +220,21 @@ class VerifyMainnetAaBytecodeTests(unittest.TestCase):
                 result = self.run_verifier(directory, rpc_url)
             self.assertNotEqual(0, result.returncode)
             self.assertEqual(3, len(server.requests))
+
+    def test_rpc_request_has_an_absolute_wall_clock_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.write_artifacts(directory)
+            started = time.monotonic()
+            with RpcServer(trickle_delay=0.03) as rpc_url:
+                result = self.run_verifier(
+                    directory,
+                    rpc_url,
+                    {"DOSCAN_MAINNET_AA_RPC_REQUEST_TIMEOUT_MS": "100"},
+                )
+            elapsed = time.monotonic() - started
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("timeout", result.stderr.lower())
+            self.assertLess(elapsed, 2)
 
 
 if __name__ == "__main__":

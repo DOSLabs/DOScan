@@ -165,6 +165,64 @@ class ExtractMainnetAaVerificationInputsTests(unittest.TestCase):
         self.assertIn("optimizer", result.stderr.lower())
         self.assertFalse((output / "manifest.json").exists())
 
+    def test_rejects_noncanonical_entrypoint_provenance_fields(self):
+        mutations = [
+            (
+                "compiler",
+                lambda build: build.update(
+                    {"solcLongVersion": "0.8.22+commit.4fc1097e"}
+                ),
+            ),
+            (
+                "evm version",
+                lambda build: build["input"]["settings"].update(
+                    {"evmVersion": "shanghai"}
+                ),
+            ),
+            (
+                "spdx",
+                lambda build: build["input"]["sources"][
+                    "contracts/core/EntryPoint.sol"
+                ].update(
+                    {"content": "// SPDX-License-Identifier: MIT\ncontract EntryPoint {}"}
+                ),
+            ),
+            (
+                "missing",
+                lambda build: build["input"]["sources"][
+                    "contracts/core/EntryPoint.sol"
+                ].update(
+                    {"content": "// SPDX-License-Identifier: GPL-3.0\ncontract WrongEntryPoint {}"}
+                ),
+            ),
+        ]
+        for expected_error, mutate_build in mutations:
+            with self.subTest(expected_error=expected_error):
+                def mutate(aa_checkout, _kernel_checkout):
+                    build_path = aa_checkout / "artifacts" / "build-info" / "build.json"
+                    build = json.loads(build_path.read_text(encoding="utf-8"))
+                    mutate_build(build)
+                    build_path.write_text(json.dumps(build), encoding="utf-8")
+
+                result, output = self._run_extractor(mutate)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(expected_error, result.stderr.lower())
+                self.assertFalse((output / "manifest.json").exists())
+
+    def test_rejects_import_outside_pinned_source_root(self):
+        def mutate(_aa_checkout, kernel_checkout):
+            kernel = kernel_checkout / "src" / "Kernel.sol"
+            kernel.write_text(
+                kernel.read_text(encoding="utf-8")
+                + '\nimport "../../../outside.sol";\n',
+                encoding="utf-8",
+            )
+
+        result, output = self._run_extractor(mutate)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("escapes source-unit root", result.stderr)
+        self.assertFalse((output / "manifest.json").exists())
+
     def _run_extractor(self, mutate=None):
         temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(temporary_directory.cleanup)
