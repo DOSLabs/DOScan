@@ -168,10 +168,8 @@ submit_contract() {
     return 1
   fi
 
-  if ! "${jq_bin}" -e '
-    .message == "Smart-contract verification started" or
-    .message == "Already verified"
-  ' "${submit_file}" >/dev/null; then
+  if ! "${jq_bin}" -e '.message == "Smart-contract verification started"' \
+    "${submit_file}" >/dev/null; then
     echo "Blockscout verification submission returned an unexpected response for ${contract_name}" >&2
     cat "${submit_file}" >&2
     return 1

@@ -158,6 +158,16 @@ class VerifyTestnetAaSourcesTests(unittest.TestCase):
         self.assertIn("submission failed", result.stderr.lower())
         self.assertEqual(3, len(state["posts"]))
 
+    def test_does_not_accept_already_verified_submission_without_exact_metadata(self):
+        result, state = self._run_verifier(
+            {ENTRY_POINT.lower(): [UNVERIFIED], FACTORY.lower(): [FACTORY_EXACT]},
+            post_response=(200, {"message": "Already verified"}),
+        )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("unexpected response", result.stderr.lower())
+        self.assertEqual(1, len(state["posts"]))
+
     def test_rejects_noncanonical_manifest_before_http(self):
         def mutate(manifest):
             manifest["contracts"][0]["address"] = FACTORY
