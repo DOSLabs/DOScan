@@ -37,6 +37,10 @@ class ExtractMainnetAaVerificationInputsTests(unittest.TestCase):
             "FactoryStaker", contracts["factory-staker"]["contractName"]
         )
         self.assertEqual(
+            "0000000000000000000000009775137314fe595c943712b0b336327dfa80ae8a",
+            contracts["factory-staker"]["constructorArgs"],
+        )
+        self.assertEqual(
             "v0.8.23+commit.f704f362",
             contracts["entry-point"]["compilerVersion"],
         )

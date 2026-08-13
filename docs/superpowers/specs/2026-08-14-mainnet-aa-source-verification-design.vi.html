@@ -172,6 +172,7 @@
     </tbody>
   </table>
   <p>EntryPoint dùng license <code>gnu_gpl_v3</code>. Bốn contract Kernel dùng <code>mit</code>. Compiler được normalize về dạng <code>vX.Y.Z+commit...</code> trước khi so metadata.</p>
+  <p><code>FactoryStaker</code> được deploy với constructor owner <code>0x9775137314fE595c943712B0b336327dfa80aE8A</code>. Verifier và Browser UAT phải so đúng ABI-encoded constructor argument này.</p>
   <div class="callout"><strong>Kernel cần xử lý riêng:</strong> bytecode có immutable gắn với EntryPoint và deployment theo chain. Gate phải compile cho DOS Chain 7979 với constructor argument chính xác, rồi so deployed bytecode bằng immutable-reference ranges. Không được lấy raw bytecode Ethereum làm chuẩn cho Kernel.</div>
 
   <h2>5. Luồng workflow</h2>

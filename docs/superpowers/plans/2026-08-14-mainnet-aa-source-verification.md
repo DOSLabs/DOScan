@@ -91,7 +91,7 @@
 | `kernel` | `0xd6CEDDe84be40893d153Be9d467CD6aD37875b28` | `Kernel` | `src/Kernel.sol` | `v0.8.28+commit.7893614a` | `prague` | 200 | true | `appendCBOR=false`, `bytecodeHash=none` | EntryPoint address |
 | `kernel-factory` | `0x2577507b78c2008Ff367261CB6285d44ba5eF2E9` | `KernelFactory` | `dependencies/kernel-v3.3/src/factory/KernelFactory.sol` | `v0.8.28+commit.7893614a` | `prague` | 200 | true | `appendCBOR=false`, `bytecodeHash=none` | Kernel address |
 | `ecdsa-validator` | `0x845ADb2C711129d4f3966735eD98a9F09fC4cE57` | `ECDSAValidator` | `src/validator/ECDSAValidator.sol` | `v0.8.25+commit.b61c2a91` | `paris` | 200 | true | `appendCBOR=false`, `bytecodeHash=none` | empty |
-| `factory-staker` | `0xd703aaE79538628d27099B8c4f621bE4CCd142d5` | `FactoryStaker` | `src/factory/FactoryStaker.sol` | `v0.8.24+commit.e11b9ed9` | `paris` | 200 | omitted | `appendCBOR=false`, `bytecodeHash=none` | empty |
+| `factory-staker` | `0xd703aaE79538628d27099B8c4f621bE4CCd142d5` | `FactoryStaker` | `src/factory/FactoryStaker.sol` | `v0.8.24+commit.e11b9ed9` | `paris` | 200 | omitted | `appendCBOR=false`, `bytecodeHash=none` | owner `0x9775137314fE595c943712B0b336327dfa80aE8A` |
 
 - [ ] **Step 1: Write the compiler toolchain package manifest**
 

@@ -126,7 +126,7 @@ const targets = [
     metadata: { appendCBOR: false, bytecodeHash: 'none' },
     licenseType: 'mit',
     spdxLicense: 'MIT',
-    constructorArgs: '',
+    constructorArgs: '0000000000000000000000009775137314fe595c943712b0b336327dfa80ae8a',
     expectedCodeSha256: 'f91091bf1260892a4d0b834494489fea55be2f2f968ad6b1abc1410531f2a2a1',
     rpcChecks: [],
     verificationMatch: 'partial',

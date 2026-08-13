@@ -83,7 +83,7 @@ if ! "${jq_bin}" -e '
       "compilerOutputFile":"factory-staker.compiler-output.json","compilerPackage":"solc-0.8.24",
       "compilerVersion":"v0.8.24+commit.e11b9ed9","evmVersion":"paris","optimizer":{"enabled":true,"runs":200},
       "viaIR":false,"metadata":{"appendCBOR":false,"bytecodeHash":"none"},"licenseType":"mit","spdxLicense":"MIT",
-      "constructorArgs":"","expectedCodeSha256":"f91091bf1260892a4d0b834494489fea55be2f2f968ad6b1abc1410531f2a2a1","rpcChecks":[],"verificationMatch":"partial"
+      "constructorArgs":"0000000000000000000000009775137314fe595c943712b0b336327dfa80ae8a","expectedCodeSha256":"f91091bf1260892a4d0b834494489fea55be2f2f968ad6b1abc1410531f2a2a1","rpcChecks":[],"verificationMatch":"partial"
     }
   ]
 ' "${manifest_path}" >/dev/null; then
