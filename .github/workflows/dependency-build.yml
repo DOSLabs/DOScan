@@ -29,8 +29,10 @@ on:
       - "scripts/render-testnet-bens.py"
       - "scripts/render-mainnet-bens.py"
       - "scripts/validate-testnet-bens.py"
+      - ".github/scripts/extract-aa-verification-inputs.mjs"
       - ".github/scripts/mainnet-bens-runtime.sh"
       - ".github/scripts/mainnet-bens-ui.spec.mjs"
+      - ".github/scripts/verify-testnet-aa-sources.sh"
       - ".github/workflows/deploy-config.yml"
       - ".github/workflows/dependency-build.yml"
       - ".github/workflows/publish-regular-docker-image-on-demand.yml"
@@ -52,6 +54,8 @@ env:
   MIX_ENV: prod
   DOS_NAMES_REPOSITORY: https://github.com/DOS/DOS-Names-Contracts.git
   DOS_NAMES_SUBGRAPH_REF: 6224395661280a739c20ebd8a420913a0dd7fd6e
+  AA_SOURCE_REPOSITORY: https://github.com/eth-infinitism/account-abstraction.git
+  AA_SOURCE_REF: 4cbc06072cdc19fd60f285c5997f4f7f57a588de
 
 jobs:
   workflow-scripts:
@@ -69,6 +73,26 @@ jobs:
 
       - name: Validate Mainnet BENS configuration
         run: python -m unittest discover -s .github/scripts/tests -p 'test_validate_mainnet_bens.py' -v
+
+      - name: Verify immutable Account Abstraction verification inputs
+        run: |
+          set -euo pipefail
+          checkout="${RUNNER_TEMP}/account-abstraction"
+          output="${RUNNER_TEMP}/account-abstraction-verification"
+          git init -q "${checkout}"
+          git -C "${checkout}" remote add origin "${AA_SOURCE_REPOSITORY}"
+          git -C "${checkout}" fetch --depth=1 origin "${AA_SOURCE_REF}"
+          git -C "${checkout}" checkout --detach -q FETCH_HEAD
+          [ "$(git -C "${checkout}" rev-parse HEAD)" = "${AA_SOURCE_REF}" ]
+          npm install --global yarn@1.22.22
+          yarn --cwd "${checkout}" install --frozen-lockfile --non-interactive
+          yarn --cwd "${checkout}" compile
+          node .github/scripts/extract-aa-verification-inputs.mjs \
+            "${checkout}" \
+            "${output}"
+          test -s "${output}/manifest.json"
+          test -s "${output}/entry-point.standard-input.json"
+          test -s "${output}/simple-account-factory.standard-input.json"
 
       - name: Verify immutable DOS Names runtime artifact
         run: |
