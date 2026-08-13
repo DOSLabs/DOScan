@@ -60,7 +60,7 @@ const targets = [
     optimizerRuns: 200,
     evmVersion: "paris",
     license: "mit",
-    constructorArgs: "",
+    constructorArgs: "0000000000000000000000009775137314fe595c943712b0b336327dfa80ae8a",
     verificationMatch: "partial",
   },
 ];

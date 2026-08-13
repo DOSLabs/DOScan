@@ -80,7 +80,7 @@ Each contract has its own canonical compilation profile. The implementation must
 | Kernel | `src/Kernel.sol` | `v0.8.28+commit.7893614a` | enabled, 200 runs | `prague` | `true` | no CBOR, no bytecode hash | `mit` | EntryPoint v0.7 address |
 | KernelFactory | `dependencies/kernel-v3.3/src/factory/KernelFactory.sol` | `v0.8.28+commit.7893614a` | enabled, 200 runs | `prague` | `true` | no CBOR, no bytecode hash | `mit` | Kernel implementation address |
 | ECDSAValidator | `src/validator/ECDSAValidator.sol` | `v0.8.25+commit.b61c2a91` | enabled, 200 runs | `paris` | `true` | no CBOR, no bytecode hash | `mit` | none |
-| FactoryStaker | `src/factory/FactoryStaker.sol` | `v0.8.24+commit.e11b9ed9` | enabled, 200 runs | `paris` | omitted, equivalent to `false` | no CBOR, no bytecode hash | `mit` | none |
+| FactoryStaker | `src/factory/FactoryStaker.sol` | `v0.8.24+commit.e11b9ed9` | enabled, 200 runs | `paris` | omitted, equivalent to `false` | no CBOR, no bytecode hash | `mit` | owner `0x9775137314fE595c943712B0b336327dfa80aE8A` |
 
 Compiler versions are normalized to a canonical `vX.Y.Z+commit...` form when comparing Blockscout metadata.
 
