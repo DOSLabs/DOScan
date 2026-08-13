@@ -161,13 +161,13 @@
 
   <h2>4. Profile compile riêng cho từng contract</h2>
   <table>
-    <thead><tr><th>Contract</th><th>Source</th><th>Compiler</th><th>Optimizer</th><th>EVM</th><th>viaIR</th></tr></thead>
+    <thead><tr><th>Contract</th><th>Source</th><th>Compiler</th><th>Optimizer</th><th>EVM</th><th>viaIR</th><th>Metadata</th></tr></thead>
     <tbody>
-      <tr><td>EntryPoint</td><td><code>contracts/core/EntryPoint.sol</code></td><td><code>v0.8.23+commit.f704f362</code></td><td>1.000.000 runs</td><td><code>paris</code></td><td><code>true</code></td></tr>
-      <tr><td>Kernel</td><td><code>src/Kernel.sol</code></td><td><code>v0.8.28+commit.7893614a</code></td><td>200 runs</td><td><code>prague</code></td><td><code>true</code></td></tr>
-      <tr><td>KernelFactory</td><td><code>dependencies/kernel-v3.3/src/factory/KernelFactory.sol</code></td><td><code>v0.8.28+commit.7893614a</code></td><td>200 runs</td><td><code>prague</code></td><td><code>true</code></td></tr>
-      <tr><td>ECDSAValidator</td><td><code>src/validator/ECDSAValidator.sol</code></td><td><code>v0.8.25+commit.b61c2a91</code></td><td>200 runs</td><td><code>paris</code></td><td><code>true</code></td></tr>
-      <tr><td>FactoryStaker</td><td><code>src/factory/FactoryStaker.sol</code></td><td><code>v0.8.24+commit.e11b9ed9</code></td><td>200 runs</td><td><code>paris</code></td><td><code>false</code></td></tr>
+      <tr><td>EntryPoint</td><td><code>contracts/core/EntryPoint.sol</code></td><td><code>v0.8.23+commit.f704f362</code></td><td>1.000.000 runs</td><td><code>paris</code></td><td><code>true</code></td><td>IPFS bytecode hash</td></tr>
+      <tr><td>Kernel</td><td><code>src/Kernel.sol</code></td><td><code>v0.8.28+commit.7893614a</code></td><td>200 runs</td><td><code>prague</code></td><td><code>true</code></td><td>Không CBOR, không bytecode hash</td></tr>
+      <tr><td>KernelFactory</td><td><code>dependencies/kernel-v3.3/src/factory/KernelFactory.sol</code></td><td><code>v0.8.28+commit.7893614a</code></td><td>200 runs</td><td><code>prague</code></td><td><code>true</code></td><td>Không CBOR, không bytecode hash</td></tr>
+      <tr><td>ECDSAValidator</td><td><code>src/validator/ECDSAValidator.sol</code></td><td><code>v0.8.25+commit.b61c2a91</code></td><td>200 runs</td><td><code>paris</code></td><td><code>true</code></td><td>Không CBOR, không bytecode hash</td></tr>
+      <tr><td>FactoryStaker</td><td><code>src/factory/FactoryStaker.sol</code></td><td><code>v0.8.24+commit.e11b9ed9</code></td><td>200 runs</td><td><code>paris</code></td><td>Bỏ field, tương đương <code>false</code></td><td>Không CBOR, không bytecode hash</td></tr>
     </tbody>
   </table>
   <p>EntryPoint dùng license <code>gnu_gpl_v3</code>. Bốn contract Kernel dùng <code>mit</code>. Compiler được normalize về dạng <code>vX.Y.Z+commit...</code> trước khi so metadata.</p>

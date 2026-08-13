@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-14
 
-**Status:** Approved design, pending written-spec review
+**Status:** Approved
 
 **Repository:** DOScan
 
@@ -73,13 +73,13 @@ The Kernel pin supplies `Kernel`, `KernelFactory`, `ECDSAValidator`, and `Factor
 
 Each contract has its own canonical compilation profile. The implementation must not apply one repository-wide compiler configuration to all Kernel contracts.
 
-| Contract | Source path | Compiler | Optimizer | EVM | IR | License | Constructor data |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| EntryPoint | `contracts/core/EntryPoint.sol` | `v0.8.23+commit.f704f362` | enabled, 1,000,000 runs | `paris` | `true` | `gnu_gpl_v3` | none |
-| Kernel | `src/Kernel.sol` | `v0.8.28+commit.7893614a` | enabled, 200 runs | `prague` | `true` | `mit` | EntryPoint v0.7 address |
-| KernelFactory | `dependencies/kernel-v3.3/src/factory/KernelFactory.sol` | `v0.8.28+commit.7893614a` | enabled, 200 runs | `prague` | `true` | `mit` | Kernel implementation address |
-| ECDSAValidator | `src/validator/ECDSAValidator.sol` | `v0.8.25+commit.b61c2a91` | enabled, 200 runs | `paris` | `true` | `mit` | none |
-| FactoryStaker | `src/factory/FactoryStaker.sol` | `v0.8.24+commit.e11b9ed9` | enabled, 200 runs | `paris` | `false` | `mit` | none |
+| Contract | Source path | Compiler | Optimizer | EVM | IR | Metadata | License | Constructor data |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| EntryPoint | `contracts/core/EntryPoint.sol` | `v0.8.23+commit.f704f362` | enabled, 1,000,000 runs | `paris` | `true` | IPFS bytecode hash | `gnu_gpl_v3` | none |
+| Kernel | `src/Kernel.sol` | `v0.8.28+commit.7893614a` | enabled, 200 runs | `prague` | `true` | no CBOR, no bytecode hash | `mit` | EntryPoint v0.7 address |
+| KernelFactory | `dependencies/kernel-v3.3/src/factory/KernelFactory.sol` | `v0.8.28+commit.7893614a` | enabled, 200 runs | `prague` | `true` | no CBOR, no bytecode hash | `mit` | Kernel implementation address |
+| ECDSAValidator | `src/validator/ECDSAValidator.sol` | `v0.8.25+commit.b61c2a91` | enabled, 200 runs | `paris` | `true` | no CBOR, no bytecode hash | `mit` | none |
+| FactoryStaker | `src/factory/FactoryStaker.sol` | `v0.8.24+commit.e11b9ed9` | enabled, 200 runs | `paris` | omitted, equivalent to `false` | no CBOR, no bytecode hash | `mit` | none |
 
 Compiler versions are normalized to a canonical `vX.Y.Z+commit...` form when comparing Blockscout metadata.
 
