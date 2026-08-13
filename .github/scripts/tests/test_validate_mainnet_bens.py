@@ -20,6 +20,7 @@ CONFIG_TEMPLATE = ROOT / "docker-compose" / "bens" / "config.mainnet.template.js
 RENDERER = ROOT / "scripts" / "render-mainnet-bens.py"
 RUNTIME = ROOT / ".github" / "scripts" / "mainnet-bens-runtime.sh"
 AA_PREPARER = ROOT / ".github" / "scripts" / "prepare-mainnet-aa-verification.sh"
+AA_UI_SPEC = ROOT / ".github" / "scripts" / "mainnet-aa-source-ui.spec.mjs"
 MAINNET_RPC = (
     "http://host.docker.internal:9650/ext/bc/"
     "2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk/rpc"
@@ -235,6 +236,36 @@ class MainnetBensConfigurationTests(unittest.TestCase):
         self.assertIn("response?.ok()", ui_test)
         self.assertIn("page.setViewportSize", ui_test)
         self.assertIn('.locator("a:visible")', ui_test)
+        self.assertRegex(
+            ui_test,
+            re.compile(
+                r'if \(\s*title === "Just a moment\.\.\."\s*&&\s*'
+                r'page\.url\(\)\.includes\("__cf_chl_rt_tk="\)\s*\)\s*'
+                r'\{\s*test\.skip\(',
+                re.DOTALL,
+            ),
+        )
+
+    def test_mainnet_playwright_checks_five_aa_sources_and_ops(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        mainnet_job = workflow.split("  deploy-mainnet:", 1)[1].split(
+            "\n  deploy-testnet:", 1
+        )[0]
+        ui_test = AA_UI_SPEC.read_text(encoding="utf-8")
+
+        self.assertIn("mainnet-aa-source-ui.spec.mjs", mainnet_job)
+        self.assertIn("npx playwright test", mainnet_job)
+        for address in (
+            "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+            "0xd6CEDDe84be40893d153Be9d467CD6aD37875b28",
+            "0x2577507b78c2008Ff367261CB6285d44ba5eF2E9",
+            "0x845ADb2C711129d4f3966735eD98a9F09fC4cE57",
+            "0xd703aaE79538628d27099B8c4f621bE4CCd142d5",
+        ):
+            self.assertIn(address, ui_test)
+        self.assertIn("/ops", ui_test)
+        self.assertIn("response?.ok()", ui_test)
+        self.assertIn(":visible", ui_test)
         self.assertRegex(
             ui_test,
             re.compile(

@@ -30,6 +30,7 @@ on:
       - ".github/scripts/mainnet-aa-solc/**"
       - ".github/scripts/mainnet-bens-runtime.sh"
       - ".github/scripts/mainnet-bens-ui.spec.mjs"
+      - ".github/scripts/mainnet-aa-source-ui.spec.mjs"
       - ".github/scripts/prepare-mainnet-aa-verification.sh"
       - ".github/scripts/verify-mainnet-aa-bytecode.mjs"
       - ".github/scripts/verify-mainnet-aa-sources.sh"
@@ -740,11 +741,15 @@ jobs:
           playwright_dir="$(mktemp -d "${RUNNER_TEMP}/doscan-mainnet-playwright.XXXXXX")"
           trap 'rm -rf "${playwright_dir}"' EXIT
           cp .github/scripts/mainnet-bens-ui.spec.mjs "${playwright_dir}/"
+          cp .github/scripts/mainnet-aa-source-ui.spec.mjs "${playwright_dir}/"
           cd "${playwright_dir}"
           npm init --yes >/dev/null
           npm install --no-save --package-lock=false @playwright/test@1.55.0 >/dev/null
           npx playwright install --with-deps chromium >/dev/null
-          npx playwright test mainnet-bens-ui.spec.mjs --reporter=line
+          npx playwright test \
+            mainnet-bens-ui.spec.mjs \
+            mainnet-aa-source-ui.spec.mjs \
+            --reporter=line
 
   deploy-testnet:
     if: >
