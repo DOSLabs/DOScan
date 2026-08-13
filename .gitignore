@@ -21,6 +21,7 @@ npm-debug.log
 
 # Static artifacts
 /apps/**/node_modules
+/.github/scripts/mainnet-aa-solc/node_modules
 
 # Since we are building assets from assets/,
 # we ignore priv/static. You may want to comment
