@@ -13,6 +13,7 @@ api_base_url="${api_base_url%/}"
 api_host_header="${DOSCAN_AA_API_HOST_HEADER:-test.doscan.io}"
 curl_bin="${DOSCAN_AA_CURL_BIN:-curl}"
 jq_bin="${DOSCAN_AA_JQ_BIN:-jq}"
+date_bin="${DOSCAN_AA_DATE_BIN:-date}"
 poll_attempts="${DOSCAN_AA_POLL_ATTEMPTS:-60}"
 poll_interval_seconds="${DOSCAN_AA_POLL_INTERVAL_SECONDS:-5}"
 max_seconds="${DOSCAN_AA_MAX_SECONDS:-300}"
@@ -177,12 +178,26 @@ submit_contract() {
     return 1
   fi
 
-  if ! "${jq_bin}" -e '.message == "Smart-contract verification started"' \
+  if "${jq_bin}" -e '.message == "Smart-contract verification started"' \
     "${submit_file}" >/dev/null; then
+    return 0
+  fi
+
+  if "${jq_bin}" -e '.message == "Already verified"' \
+    "${submit_file}" >/dev/null; then
+    echo "Blockscout reported an existing verification for ${contract_name}; confirming exact metadata"
+    return 0
+  fi
+
+  if ! "${jq_bin}" -e '.message | type == "string"' "${submit_file}" >/dev/null; then
     echo "Blockscout verification submission returned an unexpected response for ${contract_name}" >&2
     cat "${submit_file}" >&2
     return 1
   fi
+
+  echo "Blockscout verification submission returned an unexpected response for ${contract_name}" >&2
+  cat "${submit_file}" >&2
+  return 1
 }
 
 verify_contract() {
@@ -192,11 +207,17 @@ verify_contract() {
   license_type="$4"
   constructor_args="$5"
   standard_input_path="$6"
+  deadline="$7"
   submitted=0
   attempt=1
-  deadline="$(( $(date +%s) + max_seconds ))"
 
   while [ "${attempt}" -le "${poll_attempts}" ]; do
+    now="$("${date_bin}" +%s)"
+    if [ "${now}" -ge "${deadline}" ]; then
+      echo "Blockscout source verification timed out for ${contract_name}" >&2
+      return 1
+    fi
+
     status_code=3
     if get_contract_status "${contract_address}"; then
       if classify_contract_status \
@@ -226,7 +247,7 @@ verify_contract() {
       fi
     fi
 
-    now="$(date +%s)"
+    now="$("${date_bin}" +%s)"
     if [ "${attempt}" -ge "${poll_attempts}" ] || [ "${now}" -ge "${deadline}" ]; then
       echo "Blockscout source verification timed out for ${contract_name}" >&2
       return 1
@@ -238,6 +259,7 @@ verify_contract() {
 }
 
 contract_count="$("${jq_bin}" -r '.contracts | length' "${manifest_path}")"
+verification_deadline="$(( $("${date_bin}" +%s) + max_seconds ))"
 contract_index=0
 while [ "${contract_index}" -lt "${contract_count}" ]; do
   contract_address="$("${jq_bin}" -er ".contracts[${contract_index}].address" "${manifest_path}")"
@@ -269,6 +291,7 @@ while [ "${contract_index}" -lt "${contract_count}" ]; do
     "${source_path}" \
     "${license_type}" \
     "${constructor_args}" \
-    "${standard_input_path}"
+    "${standard_input_path}" \
+    "${verification_deadline}"
   contract_index="$((contract_index + 1))"
 done

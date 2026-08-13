@@ -20,7 +20,7 @@
 **Steps:**
 
 1. Write failing tests with synthetic Hardhat artifact and build-info fixtures.
-2. Require exact source paths and contract names for EntryPoint and SimpleAccountFactory.
+2. Require exact source paths, contract names, and SPDX licenses for EntryPoint and SimpleAccountFactory.
 3. Require Solidity `0.8.28`, Cancun, optimizer enabled with 1,000,000 runs, and `viaIR=true`.
 4. Require each compiler output to contain the named contract.
 5. Write one standard input JSON per contract plus a manifest containing addresses, expected metadata, and the factory constructor arguments.
@@ -39,8 +39,8 @@
 2. Cover already exact contracts and assert no verification POST occurs.
 3. Cover submit and delayed success, including transient GET failures.
 4. Cover partial verification, wrong compiler, EVM, optimizer, source path, name, and constructor arguments.
-5. Cover malformed JSON, missing required fields, rejected POST, and bounded timeout.
-6. Implement `curl` timeouts, retry interval overrides for tests, and exact `jq` predicates.
+5. Cover malformed JSON, missing required fields, rejected POST, a valid `Already verified` race, and bounded timeout.
+6. Implement `curl` timeouts, one global polling deadline, retry interval overrides for tests, and exact `jq` predicates including license.
 7. Submit multipart standard input through the standard Blockscout API v2 route.
 8. Run the focused test and confirm it passes.
 
@@ -55,7 +55,7 @@
 
 1. Add failing workflow regression assertions for the exact upstream repository, commit, compiler artifact preparation, archive entries, remote invocation, and ordering after `DEPLOYMENT_STARTED=0`.
 2. Add pinned job environment constants for the upstream repository and peeled v0.8.0 commit.
-3. Fetch the commit into `${RUNNER_TEMP}`, verify exact HEAD, run `yarn install --frozen-lockfile`, and compile.
+3. Before GCP authentication, fetch the commit into `${RUNNER_TEMP}`, verify exact HEAD, run `yarn install --frozen-lockfile`, and compile.
 4. Call the extractor to produce immutable verification artifacts.
 5. Include the extractor output and verifier script in the Testnet archive.
 6. Run the verifier through local Caddy only after setting `DEPLOYMENT_STARTED=0`.

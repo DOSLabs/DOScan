@@ -146,8 +146,8 @@
       <tr><td>EVM</td><td><code>cancun</code></td></tr>
       <tr><td>Optimizer</td><td>Bật, <code>1,000,000</code> runs</td></tr>
       <tr><td>IR pipeline</td><td><code>viaIR=true</code></td></tr>
-      <tr><td>EntryPoint</td><td><code>0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108</code>, source <code>contracts/core/EntryPoint.sol</code></td></tr>
-      <tr><td>Factory</td><td><code>0xe908bff16d2a2ee257873708dbec8029ee9cd2cc</code>, source <code>contracts/accounts/SimpleAccountFactory.sol</code></td></tr>
+      <tr><td>EntryPoint</td><td><code>0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108</code>, source <code>contracts/core/EntryPoint.sol</code>, SPDX <code>GPL-3.0</code>, Blockscout license <code>gnu_gpl_v3</code></td></tr>
+      <tr><td>Factory</td><td><code>0xe908bff16d2a2ee257873708dbec8029ee9cd2cc</code>, source <code>contracts/accounts/SimpleAccountFactory.sol</code>, SPDX <code>MIT</code>, Blockscout license <code>mit</code></td></tr>
       <tr><td>Factory constructor</td><td>EntryPoint v0.8 được ABI-encode thành một địa chỉ 32 byte</td></tr>
     </tbody>
   </table>
@@ -156,6 +156,7 @@
   <div class="flow">fetch exact commit -> install pinned toolchain -> compile -> extract standard input -> package immutable artifacts -> deploy stack -> verify through local Caddy -> poll exact metadata -> finish</div>
   <ol>
     <li>GitHub Actions tải đúng upstream commit và từ chối nếu Git không resolve về SHA đã pin.</li>
+    <li>Toàn bộ bước cài dependency và compile upstream chạy trước khi workflow cấp GCP credential.</li>
     <li>Workflow cài Yarn v1 đã pin, compile bằng Hardhat và lấy standard input trực tiếp từ <code>build-info</code>.</li>
     <li>Chỉ hai standard input cần thiết cùng script verify được đưa vào archive deployment Testnet.</li>
     <li>Remote deployment hoàn tất toàn bộ runtime health gate hiện có trước khi chạy source verification.</li>
@@ -173,6 +174,7 @@
     <li>Compiler khớp <code>v0.8.28+commit.7893614a</code>.</li>
     <li>EVM version là <code>cancun</code>.</li>
     <li>Optimizer bật với đúng <code>1,000,000</code> runs.</li>
+    <li>License khớp chính xác: EntryPoint là <code>gnu_gpl_v3</code>, Factory là <code>mit</code>.</li>
     <li>Factory có constructor arguments trỏ đúng EntryPoint v0.8.</li>
     <li>API trả JSON hợp lệ, không có trạng thái lỗi hoặc metadata mâu thuẫn.</li>
   </ul>
@@ -185,7 +187,7 @@
     <li>Các lỗi kết nối tạm thời và trạng thái pending được retry. Metadata sai sau khi verified bị từ chối ngay.</li>
     <li>Source verification chạy sau khi workflow đặt <code>DEPLOYMENT_STARTED=0</code>.</li>
     <li>Nếu verification fail, workflow vẫn trả trạng thái fail nhưng không kích hoạt destructive database restore.</li>
-    <li>Rerun là idempotent: contract đã exact được bỏ qua, contract chưa exact được submit hoặc poll lại.</li>
+    <li>Rerun là idempotent: contract đã exact được bỏ qua, contract chưa exact được submit hoặc poll lại. Response <code>Already verified</code> chỉ được chấp nhận sau khi GET xác nhận exact metadata.</li>
   </ul>
 
   <h2>6. Chiến lược test</h2>
@@ -195,6 +197,8 @@
       <tr><td>Cả hai contract đã exact</td><td class="good">Không POST, kết thúc thành công</td></tr>
       <tr><td>Chưa verified, submit rồi hoàn tất</td><td class="good">POST đúng payload, poll đến exact</td></tr>
       <tr><td>Blockscout xử lý chậm</td><td class="good">Retry bounded và thành công trong deadline</td></tr>
+      <tr><td>Hai contract cùng pending</td><td class="warn">Dùng chung một deadline tổng, không reset 5 phút cho contract thứ hai</td></tr>
+      <tr><td>Race trả về Already verified</td><td class="good">GET lại và chỉ thành công khi metadata exact</td></tr>
       <tr><td>Sai compiler, optimizer, EVM, path hoặc constructor</td><td class="warn">Fail ngay, không chấp nhận metadata sai</td></tr>
       <tr><td>Partial verification</td><td class="warn">Fail</td></tr>
       <tr><td>JSON lỗi hoặc response thiếu field</td><td class="warn">Fail</td></tr>

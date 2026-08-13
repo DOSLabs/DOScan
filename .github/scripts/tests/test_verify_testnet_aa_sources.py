@@ -165,15 +165,45 @@ class VerifyTestnetAaSourcesTests(unittest.TestCase):
         self.assertIn("submission failed", result.stderr.lower())
         self.assertEqual(3, len(state["posts"]))
 
-    def test_does_not_accept_already_verified_submission_without_exact_metadata(self):
+    def test_already_verified_submission_still_requires_exact_metadata(self):
         result, state = self._run_verifier(
             {ENTRY_POINT.lower(): [UNVERIFIED], FACTORY.lower(): [FACTORY_EXACT]},
             post_response=(200, {"message": "Already verified"}),
+            attempts=2,
         )
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("unexpected response", result.stderr.lower())
+        self.assertIn("timed out", result.stderr.lower())
         self.assertEqual(1, len(state["posts"]))
+
+    def test_already_verified_race_is_accepted_only_after_exact_get(self):
+        result, state = self._run_verifier(
+            {
+                ENTRY_POINT.lower(): [UNVERIFIED, ENTRY_POINT_EXACT],
+                FACTORY.lower(): [FACTORY_EXACT],
+            },
+            post_response=(200, {"message": "Already verified"}),
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(1, len(state["posts"]))
+        self.assertEqual(2, state["gets"][ENTRY_POINT.lower()])
+
+    def test_one_global_deadline_covers_both_contracts(self):
+        result, state = self._run_verifier(
+            {
+                ENTRY_POINT.lower(): [UNVERIFIED, ENTRY_POINT_EXACT],
+                FACTORY.lower(): [UNVERIFIED],
+            },
+            clock_values=[100, 101, 102, 103, 105],
+            max_seconds=5,
+        )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("timed out", result.stderr.lower())
+        self.assertEqual(1, len(state["posts"]))
+        self.assertEqual(2, state["gets"][ENTRY_POINT.lower()])
+        self.assertEqual(0, state["gets"][FACTORY.lower()])
 
     def test_rejects_noncanonical_manifest_before_http(self):
         def mutate(manifest):
@@ -190,7 +220,13 @@ class VerifyTestnetAaSourcesTests(unittest.TestCase):
         self.assertEqual([], state["posts"])
 
     def _run_verifier(
-        self, responses, attempts=5, post_response=None, manifest_mutate=None
+        self,
+        responses,
+        attempts=5,
+        post_response=None,
+        manifest_mutate=None,
+        clock_values=None,
+        max_seconds=30,
     ):
         class ResponseHandler(http.server.BaseHTTPRequestHandler):
             state = {
@@ -248,10 +284,46 @@ class VerifyTestnetAaSourcesTests(unittest.TestCase):
                     "DOSCAN_AA_API_HOST_HEADER": "test.doscan.io",
                     "DOSCAN_AA_POLL_ATTEMPTS": str(attempts),
                     "DOSCAN_AA_POLL_INTERVAL_SECONDS": "0",
-                    "DOSCAN_AA_MAX_SECONDS": "30",
+                    "DOSCAN_AA_MAX_SECONDS": str(max_seconds),
                     "DOSCAN_AA_CURL_RETRY_DELAY_SECONDS": "0",
                     "DOSCAN_AA_CURL_RETRY_MAX_SECONDS": "3",
                 }
+                if clock_values is not None:
+                    clock_path = verification_directory / "fake-date.sh"
+                    counter_path = verification_directory / "fake-date-counter"
+                    clock_path.write_text(
+                        "#!/bin/sh\n"
+                        'index="$(cat "${DOSCAN_FAKE_DATE_COUNTER}" 2>/dev/null || printf 0)"\n'
+                        "position=0\n"
+                        "value=\n"
+                        "old_ifs=${IFS}\n"
+                        "IFS=,\n"
+                        "set -- ${DOSCAN_FAKE_DATE_VALUES}\n"
+                        "IFS=${old_ifs}\n"
+                        'for candidate in "$@"; do\n'
+                        '  value="${candidate}"\n'
+                        '  if [ "${position}" -eq "${index}" ]; then\n'
+                        "    break\n"
+                        "  fi\n"
+                        "  position=$((position + 1))\n"
+                        "done\n"
+                        'printf "%s" "$((index + 1))" > "${DOSCAN_FAKE_DATE_COUNTER}"\n'
+                        'printf "%s\\n" "${value}"\n',
+                        encoding="utf-8",
+                        newline="\n",
+                    )
+                    clock_path.chmod(0o755)
+                    if os.name == "nt":
+                        overrides["DOSCAN_AA_DATE_BIN"] = self._wsl_path(clock_path)
+                        overrides["DOSCAN_FAKE_DATE_COUNTER"] = self._wsl_path(
+                            counter_path
+                        )
+                    else:
+                        overrides["DOSCAN_AA_DATE_BIN"] = clock_path.as_posix()
+                        overrides["DOSCAN_FAKE_DATE_COUNTER"] = counter_path.as_posix()
+                    overrides["DOSCAN_FAKE_DATE_VALUES"] = ",".join(
+                        str(value) for value in clock_values
+                    )
                 environment.update(overrides)
                 if os.name == "nt":
                     script_path = self._wsl_path(SCRIPT_PATH)

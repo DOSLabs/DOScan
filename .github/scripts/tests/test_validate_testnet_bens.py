@@ -426,6 +426,20 @@ class ValidateTestnetBensTests(unittest.TestCase):
             'sudo chmod 0644 "${DEPLOY_PATH}/bens/config.json"', install_block
         )
 
+    def test_account_abstraction_inputs_are_prepared_before_gcp_authentication(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        testnet_job = workflow.split("  deploy-testnet:", 1)[1].split(
+            "  deploy-beta:", 1
+        )[0]
+
+        prepare_index = testnet_job.index(
+            "- name: Prepare immutable Account Abstraction verification inputs"
+        )
+        auth_index = testnet_job.index("- name: Authenticate to Google Cloud")
+        self.assertLess(prepare_index, auth_index)
+
     def test_caddy_validation_retries_the_pinned_image_pull(self):
         workflow = (
             ROOT / ".github" / "workflows" / "deploy-config.yml"
