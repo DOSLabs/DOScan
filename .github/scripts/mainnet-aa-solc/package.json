@@ -1,0 +1,11 @@
+{
+  "name": "doscan-mainnet-aa-solc",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "solc-0.8.23": "npm:solc@0.8.23-fixed",
+    "solc-0.8.24": "npm:solc@0.8.24",
+    "solc-0.8.25": "npm:solc@0.8.25",
+    "solc-0.8.28": "npm:solc@0.8.28"
+  }
+}

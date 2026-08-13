@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Thiết kế verify source Account Abstraction trên DOScan Mainnet</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1113;
+      --panel: #171a1f;
+      --panel-2: #1d2127;
+      --text: #eef0f3;
+      --muted: #a8b0bb;
+      --line: #303640;
+      --red: #ff2e29;
+      --green: #43d17c;
+      --amber: #ffb74a;
+      --blue: #63a9ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.65 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    main { max-width: 1120px; margin: 0 auto; padding: 44px 28px 80px; }
+    h1, h2, h3 { line-height: 1.25; margin-top: 0; }
+    h1 { max-width: 920px; font-size: clamp(30px, 5vw, 50px); }
+    h2 { margin-top: 42px; padding-bottom: 10px; border-bottom: 1px solid var(--line); font-size: 26px; }
+    h3 { margin-bottom: 8px; font-size: 18px; }
+    p { margin: 8px 0 16px; }
+    ul, ol { padding-left: 24px; }
+    li { margin: 7px 0; }
+    code {
+      padding: 2px 6px;
+      border: 1px solid #2a3038;
+      border-radius: 6px;
+      background: #0a0c0f;
+      color: #ffd0ce;
+      overflow-wrap: anywhere;
+    }
+    .hero {
+      padding: 30px;
+      border: 1px solid #3b292b;
+      border-radius: 18px;
+      background:
+        radial-gradient(circle at 100% 0, rgba(255,46,41,.18), transparent 34%),
+        linear-gradient(145deg, #191c21, #111317);
+    }
+    .eyebrow { color: var(--red); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .lead { max-width: 900px; color: #d3d8df; font-size: 19px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 22px; }
+    .card, .metric { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+    .metric strong { display: block; color: white; font-size: 25px; }
+    .metric span, .muted { color: var(--muted); }
+    .verdict, .callout { margin-top: 18px; padding: 17px 19px; border-radius: 9px; }
+    .verdict { border-left: 4px solid var(--green); background: rgba(67,209,124,.08); }
+    .callout { border: 1px solid rgba(255,183,74,.35); background: rgba(255,183,74,.08); }
+    .flow {
+      margin: 18px 0;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #0a0c0f;
+      color: #d9e7f8;
+      text-align: center;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+    table { width: 100%; margin-top: 14px; border-collapse: collapse; }
+    th, td { padding: 13px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: var(--panel-2); color: white; }
+    .good { color: var(--green); font-weight: 800; }
+    .warn { color: var(--amber); font-weight: 800; }
+    .address { font-size: 12px; }
+    @media (max-width: 760px) {
+      main { padding: 24px 16px 60px; }
+      .grid { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <div class="eyebrow">DOScan Mainnet</div>
+    <h1>Verify source cho toàn bộ DOS ID Wallet Account Abstraction</h1>
+    <p class="lead">Workflow Mainnet sẽ tái tạo standard input từ source chính thức đã pin, đối chiếu bytecode trên DOS Chain 7979, rồi verify chính xác năm contract production qua API chuẩn của Blockscout mà không sửa lõi Blockscout.</p>
+    <div class="grid">
+      <div class="metric"><strong>5 contract</strong><span>EntryPoint, Kernel, Factory, Validator và MetaFactory</span></div>
+      <div class="metric"><strong>2 source pin</strong><span>account-abstraction v0.7.0 và Kernel v3.3</span></div>
+      <div class="metric"><strong>5 phút tổng</strong><span>một deadline chung cho toàn bộ gate</span></div>
+    </div>
+    <div class="verdict"><strong>Quyết định đã chốt:</strong> tái tạo input từ upstream chính thức đã pin. Lỗi source verification làm workflow fail nhưng không rollback runtime Mainnet đang healthy.</div>
+  </section>
+
+  <h2>1. Phạm vi chính xác</h2>
+  <table>
+    <thead><tr><th>Vai trò</th><th>Địa chỉ</th><th>Tên contract khi verify</th></tr></thead>
+    <tbody>
+      <tr><td>EntryPoint v0.7</td><td><code class="address">0x0000000071727De22E5E9d8BAf0edAc6f37da032</code></td><td><code>EntryPoint</code></td></tr>
+      <tr><td>Kernel v3.3 implementation</td><td><code class="address">0xd6CEDDe84be40893d153Be9d467CD6aD37875b28</code></td><td><code>Kernel</code></td></tr>
+      <tr><td>KernelFactory v3.3</td><td><code class="address">0x2577507b78c2008Ff367261CB6285d44ba5eF2E9</code></td><td><code>KernelFactory</code></td></tr>
+      <tr><td>ECDSA validator</td><td><code class="address">0x845ADb2C711129d4f3966735eD98a9F09fC4cE57</code></td><td><code>ECDSAValidator</code></td></tr>
+      <tr><td>MetaFactory</td><td><code class="address">0xd703aaE79538628d27099B8c4f621bE4CCd142d5</code></td><td><code>FactoryStaker</code></td></tr>
+    </tbody>
+  </table>
+  <div class="callout"><strong>Lưu ý:</strong> wallet gọi địa chỉ cuối là MetaFactory, nhưng tên Solidity thật là <code>FactoryStaker</code>. Metadata DOScan phải dùng tên Solidity.</div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Trong phạm vi</h3>
+      <ul>
+        <li>Tự động verify đủ năm contract trên Mainnet 7979.</li>
+        <li>Kiểm tra đúng Blockscout match mode và exact metadata.</li>
+        <li>Đối chiếu bytecode đã compile với code live.</li>
+        <li>Browser UAT trên năm trang contract và <code>/ops</code>.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Ngoài phạm vi</h3>
+      <ul>
+        <li>Không deploy lại hoặc nâng cấp contract.</li>
+        <li>Không verify <code>SimpleAccountFactory</code>.</li>
+        <li>Không chuyển sang EntryPoint v0.8.</li>
+        <li>Không sửa lõi Blockscout.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Ranh giới repo</h3>
+      <ul>
+        <li>Chỉ sửa DOScan.</li>
+        <li>DOS-Chain và DOS-Me chỉ dùng làm nguồn tham chiếu read-only.</li>
+        <li>Không ghi key, token hoặc credential vào artifact.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>2. Ba hướng đã cân nhắc</h2>
+  <table>
+    <thead><tr><th>Hướng</th><th>Đánh giá</th><th>Kết luận</th></tr></thead>
+    <tbody>
+      <tr><td>Tái tạo từ upstream đã pin</td><td>Provenance rõ, reproducible, không phụ thuộc explorer ngoài lúc deploy.</td><td class="good">Chọn</td></tr>
+      <tr><td>Commit sẵn standard input vào DOScan</td><td>CI đơn giản hơn nhưng duplicate source artifact và dễ drift.</td><td>Không chọn</td></tr>
+      <tr><td>Tải input từ Ethereum Blockscout lúc deploy</td><td>Ít code nhưng biến deploy Mainnet thành phụ thuộc vào dịch vụ ngoài.</td><td>Không chọn</td></tr>
+    </tbody>
+  </table>
+
+  <h2>3. Source pin bất biến</h2>
+  <table>
+    <thead><tr><th>Nhóm</th><th>Repo chính thức</th><th>Tag</th><th>Commit đã pin</th></tr></thead>
+    <tbody>
+      <tr><td>EntryPoint v0.7</td><td><code>eth-infinitism/account-abstraction</code></td><td><code>v0.7.0</code></td><td><code>7af70c8993a6f42973f520ae0752386a5032abe7</code></td></tr>
+      <tr><td>Kernel v3.3 stack</td><td><code>zerodevapp/kernel</code></td><td><code>v3.3</code></td><td><code>cd697c7e21715d015e0643af22310a99aa17433b</code></td></tr>
+      <tr><td>Source deploy legacy</td><td><code>zerodevapp/kernel</code></td><td>Commit deployment</td><td><code>8f7fd9946b9d351bb5be0428bf34c87bad7ed6c9</code></td></tr>
+    </tbody>
+  </table>
+  <p>Pin Kernel v3.3 cung cấp source cho <code>Kernel</code> và <code>KernelFactory</code>. <code>ECDSAValidator</code> cùng <code>FactoryStaker</code> dùng commit deployment cũ với Solady pin <code>9deb9ed36a27261a8745db5b7cd7f4cdc3b1cd4e</code>. Mỗi checkout phải resolve đúng full SHA, sai một ký tự là dừng.</p>
+
+  <h2>4. Profile compile riêng cho từng contract</h2>
+  <table>
+    <thead><tr><th>Contract</th><th>Source</th><th>Compiler</th><th>Optimizer</th><th>EVM</th><th>viaIR</th><th>Metadata</th></tr></thead>
+    <tbody>
+      <tr><td>EntryPoint</td><td><code>contracts/core/EntryPoint.sol</code></td><td><code>v0.8.23+commit.f704f362</code></td><td>1.000.000 runs</td><td><code>paris</code></td><td><code>true</code></td><td>IPFS bytecode hash</td></tr>
+      <tr><td>Kernel</td><td><code>src/Kernel.sol</code></td><td><code>v0.8.28+commit.7893614a</code></td><td>200 runs</td><td><code>prague</code></td><td><code>true</code></td><td>Không CBOR, không bytecode hash</td></tr>
+      <tr><td>KernelFactory</td><td><code>dependencies/kernel-v3.3/src/factory/KernelFactory.sol</code></td><td><code>v0.8.28+commit.7893614a</code></td><td>200 runs</td><td><code>prague</code></td><td><code>true</code></td><td>Không CBOR, không bytecode hash</td></tr>
+      <tr><td>ECDSAValidator</td><td><code>src/validator/ECDSAValidator.sol</code></td><td><code>v0.8.25+commit.b61c2a91</code></td><td>200 runs</td><td><code>paris</code></td><td><code>true</code></td><td>Không CBOR, không bytecode hash</td></tr>
+      <tr><td>FactoryStaker</td><td><code>src/factory/FactoryStaker.sol</code></td><td><code>v0.8.24+commit.e11b9ed9</code></td><td>200 runs</td><td><code>paris</code></td><td>Bỏ field, tương đương <code>false</code></td><td>Không CBOR, không bytecode hash</td></tr>
+    </tbody>
+  </table>
+  <p>EntryPoint dùng license <code>gnu_gpl_v3</code>. Bốn contract Kernel dùng <code>mit</code>. Compiler được normalize về dạng <code>vX.Y.Z+commit...</code> trước khi so metadata.</p>
+  <div class="callout"><strong>Kernel cần xử lý riêng:</strong> bytecode có immutable gắn với EntryPoint và deployment theo chain. Gate phải compile cho DOS Chain 7979 với constructor argument chính xác, rồi so deployed bytecode bằng immutable-reference ranges. Không được lấy raw bytecode Ethereum làm chuẩn cho Kernel.</div>
+
+  <h2>5. Luồng workflow</h2>
+  <div class="flow">checkout source pin -> cài dependency khóa phiên bản -> compile 5 profile -> extract standard input -> đối chiếu bytecode -> package artifact -> GCP auth -> deploy Mainnet -> runtime gates -> DEPLOYMENT_STARTED=0 -> verify 5 source -> Browser UAT</div>
+  <ol>
+    <li>Checkout đúng ba upstream commit và xác nhận full SHA.</li>
+    <li>Cài dependency, compile, extract input và đối chiếu bytecode trước khi cấp GCP credential. Generator giữ canonical source-unit name, gồm prefix <code>dependencies/kernel-v3.3/</code> của KernelFactory.</li>
+    <li>Package chỉ source input và metadata công khai cần cho verification.</li>
+    <li>Chạy nguyên luồng deploy, backup, rollback và semantic gate Mainnet hiện có.</li>
+    <li>Sau khi runtime thành công, workflow đặt <code>DEPLOYMENT_STARTED=0</code>.</li>
+    <li>Script gọi Blockscout API nội bộ để tránh CDN cache, submit contract chưa verified và poll.</li>
+    <li>Một deadline chung 300 giây áp dụng cho cả năm contract.</li>
+    <li>Sau CI thành công, Browser UAT kiểm tra public DOScan.</li>
+  </ol>
+
+  <h2>6. State machine verification</h2>
+  <ul>
+    <li>Nếu metadata đã exact: bỏ qua POST.</li>
+    <li>Nếu chưa verified: POST standard input và constructor argument chính xác, sau đó poll.</li>
+    <li>Nếu POST trả <code>Already verified</code>: GET lại và chỉ chấp nhận khi metadata exact.</li>
+    <li>Nếu đã verified nhưng sai metadata: fail ngay, không tự sửa database.</li>
+    <li>Nếu match mode khác profile, JSON lỗi, thiếu field, HTTP lỗi kéo dài hoặc hết deadline: fail-closed.</li>
+  </ul>
+  <p>EntryPoint bắt buộc full match vì có IPFS metadata. Bốn contract Kernel chủ động bỏ CBOR metadata nên Blockscout báo partial match dù bytecode gate trước đó đã chứng minh compiler output khớp runtime. Cả năm vẫn phải khớp contract name, source path, compiler, optimizer, số runs, EVM, license và constructor arguments.</p>
+
+  <h2>7. Rollback và bảo mật</h2>
+  <ul>
+    <li>Lỗi source, compile hoặc bytecode xảy ra trước Google auth và trước mutation production.</li>
+    <li>Source verification chỉ chạy sau runtime success và <code>DEPLOYMENT_STARTED=0</code>.</li>
+    <li>Verification fail làm workflow đỏ nhưng không restore database, IPFS hoặc container đang healthy.</li>
+    <li>Không có direct database write để ép metadata thành verified.</li>
+    <li>Artifact tạm được xóa ở cả nhánh success và failure.</li>
+    <li>Không archive hoặc log private key, wallet secret, paymaster credential, API token hay GCP credential.</li>
+    <li>Mọi request và poll đều có wall-clock bound hữu hạn.</li>
+  </ul>
+
+  <h2>8. Test bắt buộc</h2>
+  <table>
+    <thead><tr><th>Case</th><th>Kết quả bắt buộc</th></tr></thead>
+    <tbody>
+      <tr><td>Ba pin source và năm input</td><td class="good">Deterministic, đúng full SHA</td></tr>
+      <tr><td>Bytecode đủ năm contract</td><td class="good">Khớp code Mainnet, Kernel xử lý immutable đúng</td></tr>
+      <tr><td>Bytecode mismatch</td><td class="warn">Fail trước Google auth và mutation</td></tr>
+      <tr><td>Năm contract đã exact</td><td class="good">Không POST</td></tr>
+      <tr><td>Chưa verified</td><td class="good">POST một lần, poll đến exact</td></tr>
+      <tr><td>Race Already verified</td><td class="good">GET lại, chỉ pass khi exact</td></tr>
+      <tr><td>Sai compiler, optimizer, EVM, source, name, license hoặc constructor</td><td class="warn">Fail ngay</td></tr>
+      <tr><td>Match mode sai profile</td><td class="warn">Fail</td></tr>
+      <tr><td>Nhiều contract pending</td><td class="warn">Dùng chung deadline 300 giây, không reset</td></tr>
+      <tr><td>HTTP hoặc JSON lỗi</td><td class="warn">Retry bounded rồi fail hữu hạn</td></tr>
+      <tr><td>Verification fail sau runtime success</td><td class="good">Không gọi runtime rollback</td></tr>
+    </tbody>
+  </table>
+
+  <h2>9. Tiêu chí hoàn tất</h2>
+  <ul>
+    <li>Regression mới fail trên base và pass sau implementation.</li>
+    <li>Toàn bộ validator Mainnet, actionlint, shell syntax, Compose render và CI hiện có vẫn pass.</li>
+    <li>Reviewer độc lập không còn finding Critical, Important hoặc Minor.</li>
+    <li>Agent merge PR sau approval và required CI xanh.</li>
+    <li>Workflow Mainnet hoàn tất.</li>
+    <li>Trang EntryPoint hiển thị full match; bốn trang Kernel hiển thị partial match do không có CBOR; cả năm có compiler và tên đúng.</li>
+    <li><code>/ops</code> vẫn healthy và tiếp tục hiển thị operation EntryPoint v0.7 production.</li>
+  </ul>
+</main>
+</body>
+</html>

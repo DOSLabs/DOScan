@@ -26,8 +26,14 @@ on:
       - "scripts/render-mainnet-bens.py"
       - "scripts/validate-testnet-bens.py"
       - ".github/scripts/extract-aa-verification-inputs.mjs"
+      - ".github/scripts/extract-mainnet-aa-verification-inputs.mjs"
+      - ".github/scripts/mainnet-aa-solc/**"
       - ".github/scripts/mainnet-bens-runtime.sh"
       - ".github/scripts/mainnet-bens-ui.spec.mjs"
+      - ".github/scripts/mainnet-aa-source-ui.spec.mjs"
+      - ".github/scripts/prepare-mainnet-aa-verification.sh"
+      - ".github/scripts/verify-mainnet-aa-bytecode.mjs"
+      - ".github/scripts/verify-mainnet-aa-sources.sh"
       - ".github/scripts/verify-testnet-aa-sources.sh"
       - ".github/workflows/deploy-config.yml"
   workflow_dispatch:
@@ -68,6 +74,14 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.environment == 'mainnet'))
     runs-on: ubuntu-latest
     environment: mainnet
+    env:
+      AA_V07_SOURCE_REPOSITORY: https://github.com/eth-infinitism/account-abstraction.git
+      AA_V07_SOURCE_REF: 7af70c8993a6f42973f520ae0752386a5032abe7
+      KERNEL_SOURCE_REPOSITORY: https://github.com/zerodevapp/kernel.git
+      KERNEL_SOURCE_REF: cd697c7e21715d015e0643af22310a99aa17433b
+      KERNEL_SOLADY_REF: 3f2f5345261904463f5429c9031c3d2185c0f4fe
+      KERNEL_ECDSA_SOURCE_REF: 8f7fd9946b9d351bb5be0428bf34c87bad7ed6c9
+      KERNEL_ECDSA_SOLADY_REF: 9deb9ed36a27261a8745db5b7cd7f4cdc3b1cd4e
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -104,6 +118,20 @@ jobs:
             -v "${PWD}/docker-compose/Caddyfile-gcp-mainnet:/etc/caddy/Caddyfile:ro" \
             "${CADDY_IMAGE}" \
             caddy validate --config /etc/caddy/Caddyfile
+
+      - name: Prepare immutable Mainnet Account Abstraction verification inputs
+        run: |
+          set -euo pipefail
+          /bin/sh .github/scripts/prepare-mainnet-aa-verification.sh \
+            "${AA_V07_SOURCE_REPOSITORY}" \
+            "${AA_V07_SOURCE_REF}" \
+            "${KERNEL_SOURCE_REPOSITORY}" \
+            "${KERNEL_SOURCE_REF}" \
+            "${KERNEL_SOLADY_REF}" \
+            "${KERNEL_ECDSA_SOURCE_REF}" \
+            "${KERNEL_ECDSA_SOLADY_REF}" \
+            "${RUNNER_TEMP}/mainnet-aa-verification" \
+            "https://main.doschain.com/"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -166,6 +194,7 @@ jobs:
 
           tar -czf /tmp/doscan-config.tgz \
             .github/scripts/mainnet-bens-runtime.sh \
+            .github/scripts/verify-mainnet-aa-sources.sh \
             docker-compose/docker-compose-mainnet.yml \
             docker-compose/Caddyfile-gcp-mainnet \
             docker-compose/bens \
@@ -180,6 +209,7 @@ jobs:
             docker-compose/envs/common-frontend-scan.env \
             docker-compose/envs/common-smart-contract-verifier.env \
             docker-compose/envs/common-visualizer.env \
+            -C "${RUNNER_TEMP}" mainnet-aa-verification \
             -C /tmp common-blockscout-nft-media.env
           rm -f /tmp/common-blockscout-nft-media.env
 
@@ -671,6 +701,8 @@ jobs:
                 <<<"${search_result}" >/dev/null
 
               DEPLOYMENT_STARTED=0
+              /bin/sh "${SRC}/.github/scripts/verify-mainnet-aa-sources.sh" \
+                "${SRC}/mainnet-aa-verification"
               for metadata_url in \
                 "https://doscan.io/metadata-api/api/v1/metadata" \
                 "https://doscan.io/api/v1/metadata"; do
@@ -713,11 +745,15 @@ jobs:
           playwright_dir="$(mktemp -d "${RUNNER_TEMP}/doscan-mainnet-playwright.XXXXXX")"
           trap 'rm -rf "${playwright_dir}"' EXIT
           cp .github/scripts/mainnet-bens-ui.spec.mjs "${playwright_dir}/"
+          cp .github/scripts/mainnet-aa-source-ui.spec.mjs "${playwright_dir}/"
           cd "${playwright_dir}"
           npm init --yes >/dev/null
           npm install --no-save --package-lock=false @playwright/test@1.55.0 >/dev/null
           npx playwright install --with-deps chromium >/dev/null
-          npx playwright test mainnet-bens-ui.spec.mjs --reporter=line
+          npx playwright test \
+            mainnet-bens-ui.spec.mjs \
+            mainnet-aa-source-ui.spec.mjs \
+            --reporter=line
 
   deploy-testnet:
     if: >

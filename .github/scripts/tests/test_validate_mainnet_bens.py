@@ -19,6 +19,8 @@ WORKFLOW = ROOT / ".github" / "workflows" / "deploy-config.yml"
 CONFIG_TEMPLATE = ROOT / "docker-compose" / "bens" / "config.mainnet.template.json"
 RENDERER = ROOT / "scripts" / "render-mainnet-bens.py"
 RUNTIME = ROOT / ".github" / "scripts" / "mainnet-bens-runtime.sh"
+AA_PREPARER = ROOT / ".github" / "scripts" / "prepare-mainnet-aa-verification.sh"
+AA_UI_SPEC = ROOT / ".github" / "scripts" / "mainnet-aa-source-ui.spec.mjs"
 MAINNET_RPC = (
     "http://host.docker.internal:9650/ext/bc/"
     "2ewKoUrSjnviEgGmeTiELHBmNjxVTVczBPowST471rYUZvA9bk/rpc"
@@ -152,6 +154,70 @@ class MainnetBensConfigurationTests(unittest.TestCase):
         self.assertIn("/name-service/api/v1/7979/domains/${SMOKE_NAME}", mainnet_job)
         self.assertIn("Verify Mainnet DOS Name UI with Playwright", mainnet_job)
 
+    def test_mainnet_aa_inputs_are_built_before_cloud_auth_and_verified_after_runtime(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        mainnet_job = workflow.split("  deploy-mainnet:", 1)[1].split(
+            "\n  deploy-testnet:", 1
+        )[0]
+        testnet_job = workflow.split("  deploy-testnet:", 1)[1].split(
+            "\n  deploy-beta:", 1
+        )[0]
+        prepare_index = mainnet_job.index(
+            "Prepare immutable Mainnet Account Abstraction verification inputs"
+        )
+        google_auth_index = mainnet_job.index("Authenticate to Google Cloud")
+        bytecode_gate_index = prepare_index
+        deployment_stopped_index = mainnet_job.rindex("DEPLOYMENT_STARTED=0")
+        source_verify_index = mainnet_job.rindex(
+            '/bin/sh "${SRC}/.github/scripts/verify-mainnet-aa-sources.sh"'
+        )
+
+        self.assertLess(prepare_index, google_auth_index)
+        self.assertLess(bytecode_gate_index, google_auth_index)
+        self.assertLess(deployment_stopped_index, source_verify_index)
+        self.assertNotIn("verify-mainnet-aa-sources.sh", testnet_job)
+        self.assertIn(
+            "7af70c8993a6f42973f520ae0752386a5032abe7", mainnet_job
+        )
+        self.assertIn(
+            "cd697c7e21715d015e0643af22310a99aa17433b", mainnet_job
+        )
+        self.assertIn(
+            "3f2f5345261904463f5429c9031c3d2185c0f4fe", mainnet_job
+        )
+        self.assertIn(
+            "8f7fd9946b9d351bb5be0428bf34c87bad7ed6c9", mainnet_job
+        )
+        self.assertIn(
+            "9deb9ed36a27261a8745db5b7cd7f4cdc3b1cd4e", mainnet_job
+        )
+        self.assertIn('"https://main.doschain.com/"', mainnet_job)
+        package_step = mainnet_job.split(
+            "- name: Package deployment configuration", 1
+        )[1].split("- name: Upload configuration", 1)[0]
+        self.assertIn("mainnet-aa-verification", package_step)
+        self.assertIn("verify-mainnet-aa-sources.sh", package_step)
+
+    def test_mainnet_aa_preparer_pins_sources_compilers_and_outputs(self):
+        preparer = AA_PREPARER.read_text(encoding="utf-8")
+        self.assertIn("verify-mainnet-aa-bytecode.mjs", preparer)
+        self.assertIn("yarn@1.22.22", preparer)
+        self.assertIn("./scripts/hh-wrapper compile", preparer)
+        self.assertIn('PATH="${aa_checkout}/node_modules/.bin:${PATH}"', preparer)
+        self.assertIn("81cd99ce3e69117d665d7601c330ea03b97acce0", preparer)
+        self.assertIn('line.startsWith(">>> ")', preparer)
+        self.assertIn("config core.autocrlf false", preparer)
+        for compiler in ("solc-0.8.23", "solc-0.8.24", "solc-0.8.25", "solc-0.8.28"):
+            self.assertIn(compiler, preparer)
+        for output in (
+            "entry-point.compiler-output.json",
+            "kernel.compiler-output.json",
+            "kernel-factory.compiler-output.json",
+            "ecdsa-validator.compiler-output.json",
+            "factory-staker.compiler-output.json",
+        ):
+            self.assertIn(output, preparer)
+
     def test_existing_bens_service_check_consumes_the_complete_compose_output(self):
         runtime = RUNTIME.as_posix()
         result = run_bash(
@@ -181,6 +247,53 @@ class MainnetBensConfigurationTests(unittest.TestCase):
         self.assertIn("response?.ok()", ui_test)
         self.assertIn("page.setViewportSize", ui_test)
         self.assertIn('.locator("a:visible")', ui_test)
+        self.assertRegex(
+            ui_test,
+            re.compile(
+                r'if \(\s*title === "Just a moment\.\.\."\s*&&\s*'
+                r'page\.url\(\)\.includes\("__cf_chl_rt_tk="\)\s*\)\s*'
+                r'\{\s*test\.skip\(',
+                re.DOTALL,
+            ),
+        )
+
+    def test_mainnet_playwright_checks_five_aa_sources_and_ops(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        mainnet_job = workflow.split("  deploy-mainnet:", 1)[1].split(
+            "\n  deploy-testnet:", 1
+        )[0]
+        ui_test = AA_UI_SPEC.read_text(encoding="utf-8")
+
+        self.assertIn("mainnet-aa-source-ui.spec.mjs", mainnet_job)
+        self.assertIn("npx playwright test", mainnet_job)
+        for address in (
+            "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+            "0xd6CEDDe84be40893d153Be9d467CD6aD37875b28",
+            "0x2577507b78c2008Ff367261CB6285d44ba5eF2E9",
+            "0x845ADb2C711129d4f3966735eD98a9F09fC4cE57",
+            "0xd703aaE79538628d27099B8c4f621bE4CCd142d5",
+        ):
+            self.assertIn(address, ui_test)
+        self.assertIn("/ops", ui_test)
+        self.assertIn("response?.ok()", ui_test)
+        self.assertIn(":visible", ui_test)
+        self.assertIn('target.verificationMatch === "full"', ui_test)
+        self.assertIn("Contract source code verified \\(exact match\\)", ui_test)
+        self.assertIn("Contract source code verified \\(partial match\\)", ui_test)
+        self.assertIn("page.getByText(target.compiler", ui_test)
+        self.assertIn("page.getByText(target.sourcePath", ui_test)
+        self.assertIn("const operation = payload.items.find", ui_test)
+        self.assertIn('a[href="/op/${operation.hash}"]:visible', ui_test)
+        self.assertIn('page.getByText("Entry point", { exact: true })', ui_test)
+        self.assertIn('a[href="/address/${entryPointAddress}"]:visible', ui_test)
+        navigation_blocks = re.findall(
+            r"const (?:detailResponse|response) = await page\.goto\([\s\S]+?;\s*"
+            r"await skipOnlyCloudflareChallenge\(page\);\s*"
+            r"expect\((?:detailResponse|response)\?\.ok\(\)\)\.toBe\(true\);",
+            ui_test,
+            re.DOTALL,
+        )
+        self.assertEqual(3, len(navigation_blocks))
         self.assertRegex(
             ui_test,
             re.compile(
