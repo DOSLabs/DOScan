@@ -123,6 +123,37 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertEqual(2, caddy.count(canonical_blockchain))
         self.assertEqual(2, caddy.count('X-DOS-RPC-Origin "dos-testnet-r0-JASJZyVT"'))
 
+    def test_account_abstraction_uses_the_canonical_blockscout_database(self):
+        canonical_database = "blockscout_jasj_20260809"
+        compose = (
+            ROOT / "docker-compose" / "docker-compose-testnet.yml"
+        ).read_text(encoding="utf-8")
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        user_ops = compose.split("  user-ops-indexer:", 1)[1].split(
+            "\n  stats:", 1
+        )[0]
+        stats = compose.split("  stats:", 1)[1].split("\n  caddy:", 1)[0]
+        testnet_deploy = workflow.split(
+            "      - name: Apply testnet configuration and verify services", 1
+        )[1].split("      - name: Verify Testnet DOS Name UI with Playwright", 1)[0]
+
+        self.assertIn(
+            f"postgresql://postgres:@db:5432/{canonical_database}", user_ops
+        )
+        self.assertIn(
+            f"postgresql://postgres:@db:5432/{canonical_database}", stats
+        )
+        self.assertIn(f'BLOCKSCOUT_DB="{canonical_database}"', testnet_deploy)
+        self.assertIn(
+            'pg_dump -U postgres -Fc "${BLOCKSCOUT_DB}"', testnet_deploy
+        )
+        self.assertIn(
+            'pg_restore -U postgres -d "${BLOCKSCOUT_DB}"', testnet_deploy
+        )
+        self.assertNotIn("pg_dump -U postgres -Fc blockscout", testnet_deploy)
+
     def test_deployer_invokes_graph_cli_without_executable_shims(self):
         compose = (
             ROOT / "docker-compose" / "docker-compose-testnet.yml"

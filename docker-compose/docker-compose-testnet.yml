@@ -230,7 +230,7 @@ services:
       USER_OPS_INDEXER__INDEXER__PAST_DB_LOGS_INDEXER__ENABLED: "true"
       USER_OPS_INDEXER__INDEXER__PAST_DB_LOGS_INDEXER__START_BLOCK: "0"
       USER_OPS_INDEXER__INDEXER__PAST_DB_LOGS_INDEXER__END_BLOCK: "0"
-      USER_OPS_INDEXER__DATABASE__CONNECT__URL: postgresql://postgres:@db:5432/blockscout
+      USER_OPS_INDEXER__DATABASE__CONNECT__URL: postgresql://postgres:@db:5432/blockscout_jasj_20260809
       USER_OPS_INDEXER__DATABASE__CREATE_DATABASE: "false"
       USER_OPS_INDEXER__DATABASE__RUN_MIGRATIONS: "true"
       USER_OPS_INDEXER__SERVER__HTTP__ADDR: "0.0.0.0:8050"
@@ -245,7 +245,7 @@ services:
         condition: service_healthy
     environment:
       STATS__DB_URL: postgresql://postgres:@db:5432/stats
-      STATS__BLOCKSCOUT_DB_URL: postgresql://postgres:@db:5432/blockscout
+      STATS__BLOCKSCOUT_DB_URL: postgresql://postgres:@db:5432/blockscout_jasj_20260809
       STATS__CREATE_DATABASE: "true"
       STATS__RUN_MIGRATIONS: "true"
       STATS__SERVER__HTTP__ADDR: 0.0.0.0:8050

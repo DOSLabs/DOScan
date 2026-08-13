@@ -25,6 +25,7 @@ CANONICAL_TESTNET_INTERNAL_RPC = (
     "http://10.148.0.7:9650/ext/bc/"
     f"{CANONICAL_TESTNET_BLOCKCHAIN}/rpc"
 )
+CANONICAL_BLOCKSCOUT_DB = "blockscout_jasj_20260809"
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -89,6 +90,24 @@ def validate() -> list[str]:
         errors.append("Caddy must identify both canonical Testnet RPC routes")
     if f"ethereum: dos-testnet:{CANONICAL_TESTNET_INTERNAL_RPC}" not in compose:
         errors.append("Graph Node must bootstrap from the canonical internal Testnet RPC")
+
+    canonical_database_url = (
+        f"postgresql://postgres:@db:5432/{CANONICAL_BLOCKSCOUT_DB}"
+    )
+    user_ops = compose.split("  user-ops-indexer:", 1)[-1].split(
+        "\n  stats:", 1
+    )[0]
+    stats = compose.split("  stats:", 1)[-1].split("\n  caddy:", 1)[0]
+    if canonical_database_url not in user_ops:
+        errors.append("User Ops Indexer must share the canonical Blockscout database")
+    if canonical_database_url not in stats:
+        errors.append("Stats must read the canonical Blockscout database")
+    if f'BLOCKSCOUT_DB="{CANONICAL_BLOCKSCOUT_DB}"' not in workflow:
+        errors.append("Testnet deployment must identify the canonical Blockscout database")
+    if 'pg_dump -U postgres -Fc "${BLOCKSCOUT_DB}"' not in workflow:
+        errors.append("Testnet backup must dump the canonical Blockscout database")
+    if 'pg_restore -U postgres -d "${BLOCKSCOUT_DB}"' not in workflow:
+        errors.append("Testnet rollback must restore the canonical Blockscout database")
 
     for service in ("bens-db:", "bens-ipfs:", "bens-graph-node:", "bens:"):
         if service not in compose:
