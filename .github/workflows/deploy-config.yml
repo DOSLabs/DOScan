@@ -25,8 +25,10 @@ on:
       - "scripts/render-testnet-bens.py"
       - "scripts/render-mainnet-bens.py"
       - "scripts/validate-testnet-bens.py"
+      - ".github/scripts/extract-aa-verification-inputs.mjs"
       - ".github/scripts/mainnet-bens-runtime.sh"
       - ".github/scripts/mainnet-bens-ui.spec.mjs"
+      - ".github/scripts/verify-testnet-aa-sources.sh"
       - ".github/workflows/deploy-config.yml"
   workflow_dispatch:
     inputs:
@@ -725,6 +727,9 @@ jobs:
       )
     runs-on: ubuntu-latest
     environment: testnet
+    env:
+      AA_SOURCE_REPOSITORY: https://github.com/eth-infinitism/account-abstraction.git
+      AA_SOURCE_REF: 4cbc06072cdc19fd60f285c5997f4f7f57a588de
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -741,6 +746,27 @@ jobs:
             -v "${PWD}/docker-compose/Caddyfile-gcp-testnet:/etc/caddy/Caddyfile:ro" \
             caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9 \
             caddy validate --config /etc/caddy/Caddyfile
+
+      - name: Prepare immutable Account Abstraction verification inputs
+        run: |
+          set -euo pipefail
+          checkout="${RUNNER_TEMP}/account-abstraction"
+          output="${RUNNER_TEMP}/account-abstraction-verification"
+          rm -rf "${checkout}" "${output}"
+          git init -q "${checkout}"
+          git -C "${checkout}" remote add origin "${AA_SOURCE_REPOSITORY}"
+          git -C "${checkout}" fetch --depth=1 origin "${AA_SOURCE_REF}"
+          git -C "${checkout}" checkout --detach -q FETCH_HEAD
+          [ "$(git -C "${checkout}" rev-parse HEAD)" = "${AA_SOURCE_REF}" ]
+          npm install --global yarn@1.22.22
+          yarn --cwd "${checkout}" install --frozen-lockfile --non-interactive
+          yarn --cwd "${checkout}" compile
+          node .github/scripts/extract-aa-verification-inputs.mjs \
+            "${checkout}" \
+            "${output}"
+          test -s "${output}/manifest.json"
+          test -s "${output}/entry-point.standard-input.json"
+          test -s "${output}/simple-account-factory.standard-input.json"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -804,6 +830,7 @@ jobs:
           tar -czf /tmp/doscan-testnet-config.tgz \
             .github/scripts/retry-public-http.sh \
             .github/scripts/retry-testnet-rpc.sh \
+            .github/scripts/verify-testnet-aa-sources.sh \
             docker-compose/docker-compose-testnet.yml \
             docker-compose/Caddyfile-gcp-testnet \
             docker-compose/bens \
@@ -813,7 +840,8 @@ jobs:
             docker-compose/envs/common-frontend-testnet.env \
             docker-compose/envs/common-smart-contract-verifier.env \
             docker-compose/envs/common-visualizer.env \
-            -C /tmp common-blockscout-nft-media.env
+            -C /tmp common-blockscout-nft-media.env \
+            -C "${RUNNER_TEMP}" account-abstraction-verification
           rm -f /tmp/common-blockscout-nft-media.env
 
       - name: Upload testnet configuration through IAP
@@ -1498,6 +1526,8 @@ jobs:
 
               # External GCS, Cloudflare, RPC, or metadata failures must not trigger a destructive database restore.
               DEPLOYMENT_STARTED=0
+              /bin/sh "${SRC}/.github/scripts/verify-testnet-aa-sources.sh" \
+                "${SRC}/account-abstraction-verification"
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
                 docker compose exec -T backend curl -fsS \
                 "https://metadata.services.blockscout.com/api/v1/metadata?chain_id=3939&addresses=0x0000000000000000000000000000000000000000&tags_limit=1" >/dev/null

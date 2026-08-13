@@ -154,6 +154,85 @@ class ValidateTestnetBensTests(unittest.TestCase):
         )
         self.assertNotIn("pg_dump -U postgres -Fc blockscout", testnet_deploy)
 
+    def test_deployment_builds_and_verifies_immutable_account_abstraction_sources(
+        self,
+    ):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        testnet_job = workflow.split("  deploy-testnet:", 1)[1].split(
+            "\n  deploy-beta:", 1
+        )[0]
+
+        self.assertIn(
+            "AA_SOURCE_REPOSITORY: https://github.com/eth-infinitism/account-abstraction.git",
+            testnet_job,
+        )
+        self.assertIn(
+            "AA_SOURCE_REF: 4cbc06072cdc19fd60f285c5997f4f7f57a588de",
+            testnet_job,
+        )
+        self.assertIn(
+            "- name: Prepare immutable Account Abstraction verification inputs",
+            testnet_job,
+        )
+        self.assertIn(
+            'git -C "${checkout}" fetch --depth=1 origin "${AA_SOURCE_REF}"',
+            testnet_job,
+        )
+        self.assertIn(
+            '[ "$(git -C "${checkout}" rev-parse HEAD)" = "${AA_SOURCE_REF}" ]',
+            testnet_job,
+        )
+        self.assertIn("npm install --global yarn@1.22.22", testnet_job)
+        self.assertIn(
+            'yarn --cwd "${checkout}" install --frozen-lockfile --non-interactive',
+            testnet_job,
+        )
+        self.assertIn('yarn --cwd "${checkout}" compile', testnet_job)
+        self.assertIn("extract-aa-verification-inputs.mjs", testnet_job)
+        self.assertIn("account-abstraction-verification", testnet_job)
+        self.assertIn(".github/scripts/verify-testnet-aa-sources.sh", testnet_job)
+        mainnet_job = workflow.split("  deploy-mainnet:", 1)[1].split(
+            "\n  deploy-testnet:", 1
+        )[0]
+        self.assertNotIn("verify-testnet-aa-sources.sh", mainnet_job)
+
+        apply_step = testnet_job.split(
+            "      - name: Apply testnet configuration and verify services", 1
+        )[1].split("      - name: Verify Testnet DOS Name UI with Playwright", 1)[0]
+        verifier_marker = (
+            '/bin/sh "${SRC}/.github/scripts/verify-testnet-aa-sources.sh"'
+        )
+        verifier_index = apply_step.index(verifier_marker)
+        self.assertIn(
+            '"${SRC}/account-abstraction-verification"',
+            apply_step[verifier_index:],
+        )
+        rollback_disabled_index = apply_step.rfind(
+            "DEPLOYMENT_STARTED=0", 0, verifier_index
+        )
+        self.assertGreater(rollback_disabled_index, -1)
+        self.assertLess(rollback_disabled_index, verifier_index)
+
+        dependency_workflow = (
+            ROOT / ".github" / "workflows" / "dependency-build.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "AA_SOURCE_REPOSITORY: https://github.com/eth-infinitism/account-abstraction.git",
+            dependency_workflow,
+        )
+        self.assertIn(
+            "AA_SOURCE_REF: 4cbc06072cdc19fd60f285c5997f4f7f57a588de",
+            dependency_workflow,
+        )
+        self.assertIn(
+            "- name: Verify immutable Account Abstraction verification inputs",
+            dependency_workflow,
+        )
+        self.assertIn("extract-aa-verification-inputs.mjs", dependency_workflow)
+        self.assertIn("verify-testnet-aa-sources.sh", dependency_workflow)
+
     def test_deployer_invokes_graph_cli_without_executable_shims(self):
         compose = (
             ROOT / "docker-compose" / "docker-compose-testnet.yml"
@@ -346,6 +425,20 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn(
             'sudo chmod 0644 "${DEPLOY_PATH}/bens/config.json"', install_block
         )
+
+    def test_account_abstraction_inputs_are_prepared_before_gcp_authentication(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        testnet_job = workflow.split("  deploy-testnet:", 1)[1].split(
+            "  deploy-beta:", 1
+        )[0]
+
+        prepare_index = testnet_job.index(
+            "- name: Prepare immutable Account Abstraction verification inputs"
+        )
+        auth_index = testnet_job.index("- name: Authenticate to Google Cloud")
+        self.assertLess(prepare_index, auth_index)
 
     def test_caddy_validation_retries_the_pinned_image_pull(self):
         workflow = (
