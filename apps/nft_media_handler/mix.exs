@@ -32,7 +32,7 @@ defmodule NFTMediaHandler.MixProject do
       {:image, "~> 0.54"},
       {:httpoison, "~> 2.0"},
       {:evision, "~> 0.2"},
-      {:xav, "~> 0.11.0"},
+      {:xav, "~> 0.12.0"},
       {:mime, "~> 2.0"},
       {:utils, in_umbrella: true}
     ]
