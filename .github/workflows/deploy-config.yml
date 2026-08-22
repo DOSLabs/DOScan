@@ -951,6 +951,9 @@ jobs:
       - name: Upload testnet configuration through IAP
         run: |
           set -euo pipefail
+          cloudsdk_python="$(gcloud info --format='value(basic.python_location)')"
+          "${cloudsdk_python}" -m pip install numpy
+          export CLOUDSDK_PYTHON_SITEPACKAGES=1
           uploaded=0
           for attempt in 1 2 3; do
             if timeout --signal=KILL 90s gcloud compute scp \
