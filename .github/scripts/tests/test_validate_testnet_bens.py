@@ -15,6 +15,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_PATH = ROOT / "scripts" / "validate-testnet-bens.py"
 RPC_RETRY_SCRIPT = ROOT / ".github" / "scripts" / "retry-testnet-rpc.sh"
+TESTNET_PACKAGE_VERIFIER = ROOT / ".github" / "scripts" / "verify-testnet-package.sh"
+DOCKER_REMOVE_RETRY_SCRIPT = (
+    ROOT / ".github" / "scripts" / "remove-docker-containers-with-retry.sh"
+)
 SUBGRAPH_DEPLOY_SCRIPT = ROOT / "docker-compose" / "bens" / "deploy-subgraph.sh"
 
 
@@ -609,6 +613,112 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertEqual('{"result":"0x1234"}', result.stdout)
         self.assertEqual(0, failure_result.returncode, failure_result.stderr)
         self.assertEqual("3", failure_result.stdout)
+
+    def test_testnet_package_verifier_requires_rendered_bens_config(self):
+        bash = "bash"
+        if os.name == "nt":
+            bash = r"C:\\Program Files\\Git\\bin\\bash.exe"
+
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            package_root = directory_path / "package"
+            bens_dir = package_root / "docker-compose" / "bens"
+            bens_dir.mkdir(parents=True)
+            archive_path = directory_path / "testnet-config.tgz"
+            archive_argument = archive_path.as_posix()
+            if os.name == "nt":
+                archive_argument = f"/{archive_path.drive[0].lower()}{archive_argument[2:]}"
+
+            subprocess.run(
+                [
+                    "tar",
+                    "-czf",
+                    str(archive_path),
+                    "-C",
+                    str(package_root),
+                    "docker-compose",
+                ],
+                check=True,
+            )
+            missing_config = subprocess.run(
+                [bash, TESTNET_PACKAGE_VERIFIER.as_posix(), archive_argument],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            (bens_dir / "config.json").write_text("{}\n", encoding="utf-8")
+            subprocess.run(
+                [
+                    "tar",
+                    "-czf",
+                    str(archive_path),
+                    "-C",
+                    str(package_root),
+                    "docker-compose",
+                ],
+                check=True,
+            )
+            rendered_config = subprocess.run(
+                [bash, TESTNET_PACKAGE_VERIFIER.as_posix(), archive_argument],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertNotEqual(0, missing_config.returncode)
+        self.assertEqual(0, rendered_config.returncode, rendered_config.stderr)
+
+    def test_docker_remove_retry_recovers_from_a_removal_race(self):
+        bash = "bash"
+        if os.name == "nt":
+            bash = r"C:\\Program Files\\Git\\bin\\bash.exe"
+
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            docker_path = directory_path / "docker"
+            state_path = directory_path / "container-state"
+            calls_path = directory_path / "remove-calls"
+            state_path.write_text("present\n", encoding="utf-8")
+            docker_path.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'state="${FAKE_DOCKER_STATE:?}"\n'
+                'calls="${FAKE_DOCKER_CALLS:?}"\n'
+                'case "${1}" in\n'
+                "  inspect) test -f \"${state}\" ;;\n"
+                "  rm)\n"
+                "    printf 'remove\\n' >> \"${calls}\"\n"
+                "    if [ ! -f \"${calls}.raced\" ]; then\n"
+                "      touch \"${calls}.raced\"\n"
+                "      exit 1\n"
+                "    fi\n"
+                "    rm -f \"${state}\"\n"
+                "    ;;\n"
+                '  *) echo "unexpected docker command: ${1}" >&2; exit 64 ;;\n'
+                "esac\n",
+                encoding="utf-8",
+            )
+            docker_path.chmod(0o755)
+            environment = os.environ | {
+                "PATH": f"{directory_path}{os.pathsep}{os.environ['PATH']}",
+                "FAKE_DOCKER_STATE": str(state_path),
+                "FAKE_DOCKER_CALLS": str(calls_path),
+                "DOCKER_REMOVE_RETRY_DELAY_SECONDS": "0",
+            }
+            result = subprocess.run(
+                [bash, DOCKER_REMOVE_RETRY_SCRIPT.as_posix(), "container-id"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment,
+            )
+            remove_calls = (
+                calls_path.read_text().splitlines() if calls_path.exists() else []
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["remove", "remove"], remove_calls)
 
     def test_deployment_fetches_an_immutable_dos_names_revision(self):
         workflow = (
