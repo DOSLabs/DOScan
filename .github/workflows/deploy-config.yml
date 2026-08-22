@@ -953,7 +953,7 @@ jobs:
           set -euo pipefail
           uploaded=0
           for attempt in 1 2 3; do
-            if timeout --kill-after=10s 90s gcloud compute scp \
+            if timeout --signal=KILL 90s gcloud compute scp \
               --project="${GCP_PROJECT_ID}" \
               --zone="${GCP_TESTNET_ZONE}" \
               --tunnel-through-iap \
