@@ -116,11 +116,20 @@ jobs:
               esac
             done <<< "${changed_files}"
 
-            workflow_diff="$(git diff --unified=0 "${diff_base}" "${GITHUB_SHA}" -- .github/workflows/deploy-config.yml)"
-            if grep -Eq '^[+-]  DOS_NAMES_MAINNET_SUBGRAPH_REF:' <<< "${workflow_diff}"; then
+            previous_workflow="$(git show "${diff_base}:.github/workflows/deploy-config.yml" 2>/dev/null || true)"
+            current_workflow="$(cat .github/workflows/deploy-config.yml)"
+            previous_mainnet_ref="$(sed -n -E 's/^  DOS_NAMES_MAINNET_SUBGRAPH_REF: ([0-9a-f]{40})$/\1/p' <<< "${previous_workflow}")"
+            previous_testnet_ref="$(sed -n -E 's/^  DOS_NAMES_TESTNET_SUBGRAPH_REF: ([0-9a-f]{40})$/\1/p' <<< "${previous_workflow}")"
+            previous_generic_ref="$(sed -n -E 's/^  DOS_NAMES_SUBGRAPH_REF: ([0-9a-f]{40})$/\1/p' <<< "${previous_workflow}")"
+            previous_mainnet_ref="${previous_mainnet_ref:-${previous_generic_ref}}"
+            previous_testnet_ref="${previous_testnet_ref:-${previous_generic_ref}}"
+            current_mainnet_ref="$(sed -n -E 's/^  DOS_NAMES_MAINNET_SUBGRAPH_REF: ([0-9a-f]{40})$/\1/p' <<< "${current_workflow}")"
+            current_testnet_ref="$(sed -n -E 's/^  DOS_NAMES_TESTNET_SUBGRAPH_REF: ([0-9a-f]{40})$/\1/p' <<< "${current_workflow}")"
+
+            if [ "${previous_mainnet_ref}" != "${current_mainnet_ref}" ]; then
               mainnet=true
             fi
-            if grep -Eq '^[+-]  DOS_NAMES_TESTNET_SUBGRAPH_REF:' <<< "${workflow_diff}"; then
+            if [ "${previous_testnet_ref}" != "${current_testnet_ref}" ]; then
               testnet=true
             fi
           fi
