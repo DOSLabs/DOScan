@@ -28,6 +28,7 @@ RETIRED_TESTNET_BLOCKCHAIN = "2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ
 CANONICAL_TESTNET_BENS_RPC = "https://test.doschain.com/"
 CANONICAL_BLOCKSCOUT_DB = "blockscout_jasj_20260809"
 CANONICAL_TESTNET_RPC_UPSTREAM = "10.148.0.9:9650"
+CANONICAL_TESTNET_RPC_PATH = "ext/bc/JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9"
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -98,6 +99,15 @@ def validate() -> list[str]:
         errors.append("Caddy must route both Testnet RPC paths to the live r1 node")
     if "reverse_proxy 10.148.0.7:9650" in caddy:
         errors.append("Caddy must not route Testnet RPC through the unavailable r0 node")
+    canonical_http_rpc = f"http://{CANONICAL_TESTNET_RPC_UPSTREAM}/{CANONICAL_TESTNET_RPC_PATH}/rpc"
+    canonical_ws_rpc = f"ws://{CANONICAL_TESTNET_RPC_UPSTREAM}/{CANONICAL_TESTNET_RPC_PATH}/ws"
+    for key, expected in (
+        ("ETHEREUM_JSONRPC_HTTP_URL", canonical_http_rpc),
+        ("ETHEREUM_JSONRPC_TRACE_URL", canonical_http_rpc),
+        ("ETHEREUM_JSONRPC_WS_URL", canonical_ws_rpc),
+    ):
+        if backend_env.get(key) != expected:
+            errors.append(f"{key} must use the live Testnet r1 RPC")
     if f"ethereum: dos-testnet:{CANONICAL_TESTNET_BENS_RPC}" not in compose:
         errors.append("Graph Node must bootstrap from the canonical public Testnet RPC")
 
@@ -112,6 +122,8 @@ def validate() -> list[str]:
         errors.append("User Ops Indexer must share the canonical Blockscout database")
     if canonical_database_url not in stats:
         errors.append("Stats must read the canonical Blockscout database")
+    if f"USER_OPS_INDEXER__INDEXER__RPC_URL: {canonical_http_rpc}" not in user_ops:
+        errors.append("User Ops Indexer must use the live Testnet r1 RPC")
     if f'BLOCKSCOUT_DB="{CANONICAL_BLOCKSCOUT_DB}"' not in workflow:
         errors.append("Testnet deployment must identify the canonical Blockscout database")
     if 'pg_dump -U postgres -Fc "${BLOCKSCOUT_DB}"' not in workflow:

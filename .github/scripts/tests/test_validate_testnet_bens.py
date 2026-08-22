@@ -98,14 +98,17 @@ class ValidateTestnetBensTests(unittest.TestCase):
         testnet_deploy = workflow.split(
             "      - name: Apply testnet configuration and verify services", 1
         )[1].split("      - name: Verify Testnet DOS Name UI with Playwright", 1)[0]
-        final_rpc_gate = testnet_deploy.split('rpc_response="$(\n', 1)[1].split(
-            "sudo docker compose ps", 1
-        )[0]
-        self.assertIn('testnet_rpc_request "${rpc_body}" 1', final_rpc_gate)
-        self.assertIn('local_rpc_response="$(\n', final_rpc_gate)
-        self.assertIn("http://127.0.0.1:8545/", final_rpc_gate)
-        self.assertIn("X-DOS-RPC-Origin: dos-testnet-r1-", final_rpc_gate)
-        self.assertNotIn("archive-dos-testnet-r0", final_rpc_gate)
+        pre_rollback_gate, post_rollback_gate = testnet_deploy.rsplit(
+            "DEPLOYMENT_STARTED=0", 1
+        )
+        self.assertIn('local_rpc_response="$(\n', pre_rollback_gate)
+        self.assertIn("http://127.0.0.1:8545/", pre_rollback_gate)
+        self.assertIn("X-DOS-RPC-Origin: dos-testnet-r1-", pre_rollback_gate)
+        self.assertIn('const socket = new WebSocket(target);', pre_rollback_gate)
+        self.assertIn('"ws://caddy:8545/ws"', pre_rollback_gate)
+        self.assertIn('testnet_rpc_request "${rpc_body}" 1', post_rollback_gate)
+        self.assertNotIn("X-DOS-RPC-Origin:", post_rollback_gate)
+        self.assertNotIn("archive-dos-testnet-r0", post_rollback_gate)
 
     def test_all_testnet_runtime_rpc_targets_use_the_canonical_blockchain(self):
         canonical_blockchain = (
@@ -141,6 +144,26 @@ class ValidateTestnetBensTests(unittest.TestCase):
             2,
             caddy.count('X-DOS-RPC-Origin "dos-testnet-r1-JASJZyVT"'),
         )
+
+    def test_all_testnet_runtime_rpc_consumers_use_the_live_r1_node(self):
+        rpc_path = "ext/bc/JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9"
+        r1_http_url = f"http://10.148.0.9:9650/{rpc_path}/rpc"
+        r1_ws_url = f"ws://10.148.0.9:9650/{rpc_path}/ws"
+        backend_env = (
+            ROOT / "docker-compose" / "envs" / "common-blockscout-testnet.env"
+        ).read_text(encoding="utf-8")
+        compose = (
+            ROOT / "docker-compose" / "docker-compose-testnet.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(f"ETHEREUM_JSONRPC_HTTP_URL={r1_http_url}", backend_env)
+        self.assertIn(f"ETHEREUM_JSONRPC_TRACE_URL={r1_http_url}", backend_env)
+        self.assertIn(f"ETHEREUM_JSONRPC_WS_URL={r1_ws_url}", backend_env)
+        self.assertIn(
+            f"USER_OPS_INDEXER__INDEXER__RPC_URL: {r1_http_url}", compose
+        )
+        self.assertNotIn("10.148.0.7:9650", backend_env)
+        self.assertNotIn("10.148.0.7:9650", compose)
 
     def test_account_abstraction_uses_the_canonical_blockscout_database(self):
         canonical_database = "blockscout_jasj_20260809"
