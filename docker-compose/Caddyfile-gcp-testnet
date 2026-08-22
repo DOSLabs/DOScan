@@ -93,9 +93,9 @@
 
 	@archive_websocket path /ws
 	handle @archive_websocket {
-		header X-DOS-RPC-Origin "dos-testnet-r0-JASJZyVT"
+		header X-DOS-RPC-Origin "dos-testnet-r1-JASJZyVT"
 		rewrite * /ext/bc/JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9/ws
-		reverse_proxy 10.148.0.7:9650 {
+		reverse_proxy 10.148.0.9:9650 {
 			header_down -Access-Control-Allow-Origin
 			header_down -Access-Control-Allow-Methods
 			header_down -Access-Control-Allow-Headers
@@ -108,9 +108,9 @@
 		not path /ws
 	}
 	handle @archive_rpc {
-		header X-DOS-RPC-Origin "dos-testnet-r0-JASJZyVT"
+		header X-DOS-RPC-Origin "dos-testnet-r1-JASJZyVT"
 		rewrite * /ext/bc/JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9/rpc
-		reverse_proxy 10.148.0.7:9650 {
+		reverse_proxy 10.148.0.9:9650 {
 			header_down -Access-Control-Allow-Origin
 			header_down -Access-Control-Allow-Methods
 			header_down -Access-Control-Allow-Headers
