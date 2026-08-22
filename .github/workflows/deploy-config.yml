@@ -70,8 +70,29 @@ jobs:
   deploy-mainnet:
     if: >
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && inputs.environment == 'mainnet'))
+      ((github.event_name == 'workflow_dispatch' && inputs.environment == 'mainnet') ||
+      (github.event_name == 'push' &&
+      (contains(github.event.commits.*.modified, 'docker-compose/docker-compose-mainnet.yml') ||
+      contains(github.event.commits.*.modified, 'docker-compose/Caddyfile-gcp-mainnet') ||
+      contains(github.event.commits.*.modified, 'docker-compose/Caddyfile-gcp-edge') ||
+      contains(github.event.commits.*.modified, 'docker-compose/bens/config.mainnet.template.json') ||
+      contains(github.event.commits.*.modified, 'docker-compose/bens/deploy-subgraph.sh') ||
+      contains(github.event.commits.*.modified, 'docker-compose/configs/interchain-indexer-chains.json') ||
+      contains(github.event.commits.*.modified, 'docker-compose/configs/interchain-indexer-bridges.json') ||
+      contains(github.event.commits.*.modified, 'docker-compose/envs/common-blockscout.env') ||
+      contains(github.event.commits.*.modified, 'docker-compose/envs/common-blockscout-mainnet.env') ||
+      contains(github.event.commits.*.modified, 'docker-compose/envs/common-frontend.env') ||
+      contains(github.event.commits.*.modified, 'docker-compose/envs/common-frontend-scan.env') ||
+      contains(github.event.commits.*.modified, 'docker-compose/envs/common-smart-contract-verifier.env') ||
+      contains(github.event.commits.*.modified, 'docker-compose/envs/common-visualizer.env') ||
+      contains(github.event.commits.*.modified, 'scripts/validate-blockscout-env-parity.py') ||
+      contains(github.event.commits.*.modified, 'scripts/render-mainnet-bens.py') ||
+      contains(github.event.commits.*.modified, '.github/scripts/mainnet-bens-runtime.sh') ||
+      contains(github.event.commits.*.modified, '.github/scripts/mainnet-bens-ui.spec.mjs') ||
+      contains(github.event.commits.*.modified, '.github/scripts/mainnet-aa-source-ui.spec.mjs') ||
+      contains(github.event.commits.*.modified, '.github/scripts/prepare-mainnet-aa-verification.sh') ||
+      contains(github.event.commits.*.modified, '.github/scripts/verify-mainnet-aa-bytecode.mjs') ||
+      contains(github.event.commits.*.modified, '.github/scripts/verify-mainnet-aa-sources.sh'))))
     runs-on: ubuntu-latest
     environment: mainnet
     env:
@@ -758,9 +779,28 @@ jobs:
   deploy-testnet:
     if: >
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && inputs.environment == 'testnet')
-      )
+      ((github.event_name == 'workflow_dispatch' && inputs.environment == 'testnet') ||
+      (github.event_name == 'push' &&
+      (contains(github.event.commits.*.modified, 'docker-compose/docker-compose-testnet.yml') ||
+      contains(github.event.commits.*.modified, 'docker-compose/Caddyfile-gcp-testnet') ||
+      contains(github.event.commits.*.modified, 'docker-compose/Caddyfile-gcp-edge') ||
+      contains(github.event.commits.*.modified, 'docker-compose/bens/config.template.json') ||
+      contains(github.event.commits.*.modified, 'docker-compose/bens/deploy-subgraph.sh') ||
+      contains(github.event.commits.*.modified, 'docker-compose/configs/interchain-indexer-chains.json') ||
+      contains(github.event.commits.*.modified, 'docker-compose/configs/interchain-indexer-bridges.json') ||
+      contains(github.event.commits.*.modified, 'docker-compose/envs/common-blockscout.env') ||
+      contains(github.event.commits.*.modified, 'docker-compose/envs/common-blockscout-testnet.env') ||
+      contains(github.event.commits.*.modified, 'docker-compose/envs/common-frontend.env') ||
+      contains(github.event.commits.*.modified, 'docker-compose/envs/common-frontend-scan.env') ||
+      contains(github.event.commits.*.modified, 'docker-compose/envs/common-frontend-testnet.env') ||
+      contains(github.event.commits.*.modified, 'docker-compose/envs/common-smart-contract-verifier.env') ||
+      contains(github.event.commits.*.modified, 'docker-compose/envs/common-visualizer.env') ||
+      contains(github.event.commits.*.modified, 'scripts/validate-blockscout-env-parity.py') ||
+      contains(github.event.commits.*.modified, 'scripts/render-testnet-bens.py') ||
+      contains(github.event.commits.*.modified, 'scripts/validate-testnet-bens.py') ||
+      contains(github.event.commits.*.modified, '.github/scripts/extract-aa-verification-inputs.mjs') ||
+      contains(github.event.commits.*.modified, '.github/scripts/testnet-bens-ui.spec.mjs') ||
+      contains(github.event.commits.*.modified, '.github/scripts/verify-testnet-aa-sources.sh'))))
     runs-on: ubuntu-latest
     environment: testnet
     env:

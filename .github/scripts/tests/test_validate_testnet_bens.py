@@ -150,6 +150,24 @@ class ValidateTestnetBensTests(unittest.TestCase):
         )
         self.assertNotIn("pg_dump -U postgres -Fc blockscout", testnet_deploy)
 
+    def test_push_deploys_only_affected_environment(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        mainnet_job = workflow.split("  deploy-mainnet:", 1)[1].split(
+            "\n  deploy-testnet:", 1
+        )[0]
+        testnet_job = workflow.split("  deploy-testnet:", 1)[1].split(
+            "\n  deploy-beta:", 1
+        )[0]
+
+        self.assertIn("github.event.commits.*.modified", mainnet_job)
+        self.assertIn("docker-compose/docker-compose-mainnet.yml", mainnet_job)
+        self.assertIn("github.event.commits.*.modified", testnet_job)
+        self.assertIn("docker-compose/docker-compose-testnet.yml", testnet_job)
+        self.assertIn("docker-compose/bens/config.template.json", testnet_job)
+        self.assertNotIn("docker-compose/bens/config.template.json", mainnet_job)
+
     def test_deployment_builds_and_verifies_immutable_account_abstraction_sources(
         self,
     ):
