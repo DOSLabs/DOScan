@@ -289,6 +289,38 @@ def validate() -> list[str]:
         or "docker compose up -d bens-graph-node" not in workflow
     ):
         errors.append("Testnet BENS database must become ready before Graph Node starts")
+    existing_bens_backup_block = workflow.split(
+        'if [ "${bens_db_exists}" -eq 1 ]; then', 1
+    )
+    if len(existing_bens_backup_block) != 2:
+        errors.append("Testnet deployment must detect an existing BENS state before backup")
+    else:
+        existing_bens_backup_block = existing_bens_backup_block[1].split(
+            'sudo docker compose exec -T db pg_dump', 1
+        )[0]
+        database_start = "docker compose up -d bens-db bens-ipfs"
+        database_ready = (
+            "docker compose exec -T bens-db pg_isready -U graph-node -d graph-node"
+        )
+        database_snapshot = (
+            "docker compose exec -T bens-db pg_dump -U graph-node -Fc graph-node"
+        )
+        if (
+            database_start not in existing_bens_backup_block
+            or database_ready not in existing_bens_backup_block
+            or database_snapshot not in existing_bens_backup_block
+        ):
+            errors.append(
+                "Existing Testnet BENS state must start its database before snapshot"
+            )
+        elif not (
+            existing_bens_backup_block.index(database_start)
+            < existing_bens_backup_block.index(database_ready)
+            < existing_bens_backup_block.index(database_snapshot)
+        ):
+            errors.append(
+                "Existing Testnet BENS database readiness must precede snapshot"
+            )
     if (
         ".github/scripts/remove-docker-containers-with-retry.sh" not in workflow
         or 'for attempt in 1 2 3' not in docker_remove_retry_script
