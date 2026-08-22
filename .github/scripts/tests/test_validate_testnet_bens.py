@@ -756,6 +756,127 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn("for attempt in 1 2 3", validation_step)
         self.assertIn('if [ "${attempt}" -eq 3 ]', validation_step)
 
+    def test_testnet_iap_upload_hard_caps_and_retries(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        upload_step = workflow.split(
+            "      - name: Upload testnet configuration through IAP", 1
+        )[1].split(
+            "      - name: Remove local testnet package containing NFT media credentials",
+            1,
+        )[0]
+        upload_script = upload_step.split("        run: |\n", 1)[1]
+
+        bash = "bash"
+        if os.name == "nt":
+            bash = r"C:\\Program Files\\Git\\bin\\bash.exe"
+
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            timeout_path = directory_path / "timeout"
+            gcloud_path = directory_path / "gcloud"
+            sleep_path = directory_path / "sleep"
+            timeout_calls_path = directory_path / "timeout-calls"
+            gcloud_calls_path = directory_path / "gcloud-calls"
+            sleep_calls_path = directory_path / "sleep-calls"
+            timeout_path.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "printf '%s\\n' \"$*\" >> \"${FAKE_TIMEOUT_CALLS}\"\n"
+                "shift 2\n"
+                "exec \"$@\"\n",
+                encoding="utf-8",
+            )
+            gcloud_path.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "printf '%s\\n' \"$*\" >> \"${FAKE_GCLOUD_CALLS}\"\n"
+                "if [ \"${FAKE_GCLOUD_FAIL:-0}\" -eq 1 ]; then\n"
+                "  exit 42\n"
+                "fi\n",
+                encoding="utf-8",
+            )
+            sleep_path.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "printf '%s\\n' \"$*\" >> \"${FAKE_SLEEP_CALLS}\"\n",
+                encoding="utf-8",
+            )
+            timeout_path.chmod(0o755)
+            gcloud_path.chmod(0o755)
+            sleep_path.chmod(0o755)
+
+            fake_bin = directory_path.as_posix()
+            if os.name == "nt":
+                fake_bin = f"/{directory_path.drive[0].lower()}{fake_bin[2:]}"
+            command = f'PATH="{fake_bin}:$PATH"; export PATH; {upload_script}'
+            environment = os.environ | {
+                "FAKE_TIMEOUT_CALLS": str(timeout_calls_path),
+                "FAKE_GCLOUD_CALLS": str(gcloud_calls_path),
+                "FAKE_SLEEP_CALLS": str(sleep_calls_path),
+                "GCP_PROJECT_ID": "test-project",
+                "GCP_TESTNET_ZONE": "test-zone",
+                "GCP_TESTNET_INSTANCE": "test-instance",
+                "GITHUB_RUN_ID": "123",
+                "GITHUB_RUN_ATTEMPT": "1",
+            }
+            success_result = subprocess.run(
+                [bash, "-c", command],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment,
+            )
+            success_timeout_calls = timeout_calls_path.read_text(
+                encoding="utf-8"
+            ).splitlines()
+            success_gcloud_calls = gcloud_calls_path.read_text(
+                encoding="utf-8"
+            ).splitlines()
+
+            timeout_calls_path.unlink()
+            gcloud_calls_path.unlink()
+            sleep_calls_path.unlink(missing_ok=True)
+            failure_result = subprocess.run(
+                [bash, "-c", command],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment | {"FAKE_GCLOUD_FAIL": "1"},
+            )
+            failure_timeout_calls = timeout_calls_path.read_text(
+                encoding="utf-8"
+            ).splitlines()
+            failure_gcloud_calls = gcloud_calls_path.read_text(
+                encoding="utf-8"
+            ).splitlines()
+            failure_sleep_calls = sleep_calls_path.read_text(
+                encoding="utf-8"
+            ).splitlines()
+
+        self.assertEqual(0, success_result.returncode, success_result.stderr)
+        self.assertEqual("", success_result.stderr)
+        self.assertEqual(1, len(success_timeout_calls))
+        self.assertEqual(1, len(success_gcloud_calls))
+        self.assertTrue(
+            all(call.startswith("compute scp ") for call in success_gcloud_calls)
+        )
+        self.assertNotEqual(0, failure_result.returncode)
+        self.assertEqual(3, len(failure_timeout_calls))
+        self.assertEqual(3, len(failure_gcloud_calls))
+        self.assertTrue(
+            all(call.startswith("compute scp ") for call in failure_gcloud_calls)
+        )
+        self.assertEqual(["5", "10"], failure_sleep_calls)
+        self.assertIn("failed after 3 attempts", failure_result.stderr)
+        self.assertTrue(
+            all(
+                call.startswith("--signal=KILL 90s gcloud compute scp")
+                for call in success_timeout_calls + failure_timeout_calls
+            )
+        )
+
     def test_rpc_retry_discards_failed_attempt_output(self):
         bash = "bash"
         if os.name == "nt":
