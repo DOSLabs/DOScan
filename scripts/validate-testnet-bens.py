@@ -21,10 +21,7 @@ RPC_RETRY_SCRIPT = ROOT / ".github" / "scripts" / "retry-testnet-rpc.sh"
 SUBGRAPH_DEPLOY_SCRIPT = ROOT / "docker-compose" / "bens" / "deploy-subgraph.sh"
 CANONICAL_TESTNET_BLOCKCHAIN = "JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9"
 RETIRED_TESTNET_BLOCKCHAIN = "2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ"
-CANONICAL_TESTNET_INTERNAL_RPC = (
-    "http://10.148.0.7:9650/ext/bc/"
-    f"{CANONICAL_TESTNET_BLOCKCHAIN}/rpc"
-)
+CANONICAL_TESTNET_BENS_RPC = "https://test.doschain.com/"
 CANONICAL_BLOCKSCOUT_DB = "blockscout_jasj_20260809"
 
 
@@ -88,8 +85,8 @@ def validate() -> list[str]:
         )
     if caddy.count('X-DOS-RPC-Origin "dos-testnet-r0-JASJZyVT"') != 2:
         errors.append("Caddy must identify both canonical Testnet RPC routes")
-    if f"ethereum: dos-testnet:{CANONICAL_TESTNET_INTERNAL_RPC}" not in compose:
-        errors.append("Graph Node must bootstrap from the canonical internal Testnet RPC")
+    if f"ethereum: dos-testnet:{CANONICAL_TESTNET_BENS_RPC}" not in compose:
+        errors.append("Graph Node must bootstrap from the canonical public Testnet RPC")
 
     canonical_database_url = (
         f"postgresql://postgres:@db:5432/{CANONICAL_BLOCKSCOUT_DB}"
@@ -190,10 +187,10 @@ def validate() -> list[str]:
         errors.append("ENSv2 token IDs must not use the ENSv1 native NFT mapping")
     if networks.get("3939", {}).get("use_protocols") != ["dos-names"]:
         errors.append("BENS network 3939 must enable only dos-names")
-    if networks.get("3939", {}).get("rpc_url") != CANONICAL_TESTNET_INTERNAL_RPC:
-        errors.append("BENS must use the canonical internal Testnet RPC")
+    if networks.get("3939", {}).get("rpc_url") != CANONICAL_TESTNET_BENS_RPC:
+        errors.append("BENS must use the canonical public Testnet RPC")
 
-    ref_match = re.search(r"DOS_NAMES_SUBGRAPH_REF: ([0-9a-f]{40})", workflow)
+    ref_match = re.search(r"DOS_NAMES_TESTNET_SUBGRAPH_REF: ([0-9a-f]{40})", workflow)
     if ref_match is None:
         errors.append("The deployment workflow must pin a full DOS Names commit")
     if "https://github.com/DOS/DOS-Names-Contracts.git" not in workflow:

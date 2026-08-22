@@ -54,10 +54,6 @@ class ValidateTestnetBensTests(unittest.TestCase):
 
     def test_bens_uses_canonical_testnet_rpcs(self):
         public_rpc = "https://test.doschain.com/"
-        internal_rpc = (
-            "http://10.148.0.7:9650/ext/bc/"
-            "JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9/rpc"
-        )
         template = json.loads(
             (ROOT / "docker-compose" / "bens" / "config.template.json").read_text(
                 encoding="utf-8"
@@ -72,11 +68,11 @@ class ValidateTestnetBensTests(unittest.TestCase):
         retry_script = RPC_RETRY_SCRIPT.read_text(encoding="utf-8")
 
         self.assertEqual(
-            internal_rpc,
+            public_rpc,
             template["subgraphs_reader"]["networks"]["3939"]["rpc_url"],
         )
-        self.assertIn(f"ethereum: dos-testnet:{internal_rpc}", compose)
-        self.assertNotIn("ethereum: dos-testnet:https://test.doschain.com/", compose)
+        self.assertIn(f"ethereum: dos-testnet:{public_rpc}", compose)
+        self.assertNotIn("ethereum: dos-testnet:http://10.148.0.7:9650/", compose)
         bytecode_gate = workflow.split('contract_code="$(\n', 1)[1].split(
             'if [ "${contract_code}"', 1
         )[0]
@@ -153,6 +149,36 @@ class ValidateTestnetBensTests(unittest.TestCase):
             'pg_restore -U postgres -d "${BLOCKSCOUT_DB}"', testnet_deploy
         )
         self.assertNotIn("pg_dump -U postgres -Fc blockscout", testnet_deploy)
+
+    def test_push_deploys_only_affected_environment(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        changes_job = workflow.split("  changes:", 1)[1].split(
+            "\n  deploy-mainnet:", 1
+        )[0]
+        mainnet_job = workflow.split("  deploy-mainnet:", 1)[1].split(
+            "\n  deploy-testnet:", 1
+        )[0]
+        testnet_job = workflow.split("  deploy-testnet:", 1)[1].split(
+            "\n  deploy-beta:", 1
+        )[0]
+
+        self.assertIn("needs: changes", mainnet_job)
+        self.assertIn("needs.changes.outputs.mainnet == 'true'", mainnet_job)
+        self.assertIn("needs: changes", testnet_job)
+        self.assertIn("needs.changes.outputs.testnet == 'true'", testnet_job)
+        self.assertIn("fetch-depth: 0", changes_job)
+        self.assertIn("${{ github.event.before }}", changes_job)
+        self.assertIn('git hash-object -t tree /dev/null', changes_job)
+        self.assertIn('git diff --name-only "${diff_base}" "${GITHUB_SHA}"', changes_job)
+        self.assertIn("docker-compose/docker-compose-mainnet.yml", changes_job)
+        self.assertIn("docker-compose/docker-compose-testnet.yml", changes_job)
+        self.assertIn("docker-compose/bens/config.template.json", changes_job)
+        self.assertIn("DOS_NAMES_MAINNET_SUBGRAPH_REF", changes_job)
+        self.assertIn("DOS_NAMES_TESTNET_SUBGRAPH_REF", changes_job)
+        self.assertIn("mainnet=true", changes_job)
+        self.assertIn("testnet=true", changes_job)
 
     def test_deployment_builds_and_verifies_immutable_account_abstraction_sources(
         self,
@@ -521,7 +547,7 @@ class ValidateTestnetBensTests(unittest.TestCase):
 
         self.assertRegex(
             workflow,
-            r"DOS_NAMES_SUBGRAPH_REF: [0-9a-f]{40}",
+            r"DOS_NAMES_TESTNET_SUBGRAPH_REF: [0-9a-f]{40}",
         )
         self.assertIn(
             "https://github.com/DOS/DOS-Names-Contracts.git",
