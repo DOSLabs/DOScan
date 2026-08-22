@@ -15,6 +15,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_PATH = ROOT / "scripts" / "validate-testnet-bens.py"
 RPC_RETRY_SCRIPT = ROOT / ".github" / "scripts" / "retry-testnet-rpc.sh"
+TESTNET_PACKAGE_VERIFIER = ROOT / ".github" / "scripts" / "verify-testnet-package.sh"
+DOCKER_REMOVE_RETRY_SCRIPT = (
+    ROOT / ".github" / "scripts" / "remove-docker-containers-with-retry.sh"
+)
 SUBGRAPH_DEPLOY_SCRIPT = ROOT / "docker-compose" / "bens" / "deploy-subgraph.sh"
 
 
@@ -249,6 +253,77 @@ class ValidateTestnetBensTests(unittest.TestCase):
                 {"mainnet=false", "testnet=true"},
                 set(output_path.read_text(encoding="utf-8").splitlines()),
             )
+
+    def test_testnet_helper_changes_select_only_testnet(self):
+        bash = "bash"
+        if os.name == "nt":
+            bash = r"C:\\Program Files\\Git\\bin\\bash.exe"
+        git = shutil.which("git")
+        self.assertIsNotNone(git)
+
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        changes_job = workflow.split("  changes:", 1)[1].split(
+            "\n  deploy-mainnet:", 1
+        )[0]
+        selector = textwrap.dedent(changes_job.split("        run: |\n", 1)[1])
+
+        for helper_name in (
+            "verify-testnet-package.sh",
+            "remove-docker-containers-with-retry.sh",
+        ):
+            with self.subTest(helper_name=helper_name), tempfile.TemporaryDirectory() as directory:
+                repo = Path(directory)
+                workflow_path = repo / ".github" / "workflows" / "deploy-config.yml"
+                helper_path = repo / ".github" / "scripts" / helper_name
+                workflow_path.parent.mkdir(parents=True)
+                helper_path.parent.mkdir(parents=True)
+                subprocess.run([git, "init", "-q"], cwd=repo, check=True)
+                subprocess.run([git, "config", "user.email", "test@example.com"], cwd=repo, check=True)
+                subprocess.run([git, "config", "user.name", "Test"], cwd=repo, check=True)
+                workflow_path.write_text(workflow, encoding="utf-8")
+                subprocess.run([git, "add", "."], cwd=repo, check=True)
+                subprocess.run([git, "commit", "-qm", "previous"], cwd=repo, check=True)
+                previous_sha = subprocess.run(
+                    [git, "rev-parse", "HEAD"],
+                    cwd=repo,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+                helper_path.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+                subprocess.run([git, "add", "."], cwd=repo, check=True)
+                subprocess.run([git, "commit", "-qm", "current"], cwd=repo, check=True)
+                current_sha = subprocess.run(
+                    [git, "rev-parse", "HEAD"],
+                    cwd=repo,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+                output_path = repo / "output"
+                environment = os.environ | {
+                    "GITHUB_OUTPUT": output_path.as_posix(),
+                    "GITHUB_SHA": current_sha,
+                }
+                command = selector.replace("${{ github.event_name }}", "push")
+                command = command.replace("${{ inputs.environment }}", "")
+                command = command.replace("${{ github.event.before }}", previous_sha)
+                result = subprocess.run(
+                    [bash, "-c", command],
+                    cwd=repo,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    env=environment,
+                )
+
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(
+                    {"mainnet=false", "testnet=true"},
+                    set(output_path.read_text(encoding="utf-8").splitlines()),
+                )
 
     def test_deployment_builds_and_verifies_immutable_account_abstraction_sources(
         self,
@@ -609,6 +684,187 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertEqual('{"result":"0x1234"}', result.stdout)
         self.assertEqual(0, failure_result.returncode, failure_result.stderr)
         self.assertEqual("3", failure_result.stdout)
+
+    def test_testnet_package_verifier_requires_rendered_bens_config(self):
+        bash = "bash"
+        if os.name == "nt":
+            bash = r"C:\\Program Files\\Git\\bin\\bash.exe"
+
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            package_root = directory_path / "package"
+            bens_dir = package_root / "docker-compose" / "bens"
+            bens_dir.mkdir(parents=True)
+            archive_path = directory_path / "testnet-config.tgz"
+            archive_argument = archive_path.as_posix()
+            if os.name == "nt":
+                archive_argument = f"/{archive_path.drive[0].lower()}{archive_argument[2:]}"
+
+            subprocess.run(
+                [
+                    "tar",
+                    "-czf",
+                    str(archive_path),
+                    "-C",
+                    str(package_root),
+                    "docker-compose",
+                ],
+                check=True,
+            )
+            missing_config = subprocess.run(
+                [bash, TESTNET_PACKAGE_VERIFIER.as_posix(), archive_argument],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            (bens_dir / "config.json").write_text("{}\n", encoding="utf-8")
+            subprocess.run(
+                [
+                    "tar",
+                    "-czf",
+                    str(archive_path),
+                    "-C",
+                    str(package_root),
+                    "docker-compose",
+                ],
+                check=True,
+            )
+            rendered_config = subprocess.run(
+                [bash, TESTNET_PACKAGE_VERIFIER.as_posix(), archive_argument],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertNotEqual(0, missing_config.returncode)
+        self.assertEqual(0, rendered_config.returncode, rendered_config.stderr)
+
+    def test_docker_remove_retry_recovers_from_a_removal_race(self):
+        bash = "bash"
+        if os.name == "nt":
+            bash = r"C:\\Program Files\\Git\\bin\\bash.exe"
+
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            docker_path = directory_path / "docker"
+            state_path = directory_path / "container-state"
+            calls_path = directory_path / "remove-calls"
+            state_path.write_text("present\n", encoding="utf-8")
+            docker_path.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'state="${FAKE_DOCKER_STATE:?}"\n'
+                'calls="${FAKE_DOCKER_CALLS:?}"\n'
+                'if [ "${FAKE_DOCKER_DAEMON_DOWN:-0}" -eq 1 ]; then\n'
+                '  exit 71\n'
+                "fi\n"
+                'case "${1}" in\n'
+                "  info)\n"
+                "    if [ -f \"${calls}.inspect-error\" ]; then\n"
+                "      exit 71\n"
+                "    fi\n"
+                "    ;;\n"
+                "  inspect)\n"
+                "    if [ \"${FAKE_DOCKER_INSPECT_DAEMON_ERROR:-0}\" -eq 1 ]; then\n"
+                "      touch \"${calls}.inspect-error\"\n"
+                "      exit 71\n"
+                "    fi\n"
+                "    if [ \"${FAKE_DOCKER_TRANSIENT_INSPECT_ERROR:-0}\" -eq 1 ] && \\\n"
+                "      [ ! -f \"${calls}.transient-inspect-error\" ]; then\n"
+                "      touch \"${calls}.transient-inspect-error\"\n"
+                "      exit 71\n"
+                "    fi\n"
+                "    if [ \"${FAKE_DOCKER_FINAL_INSPECT_DAEMON_ERROR:-0}\" -eq 1 ] && \\\n"
+                "      [ \"$(wc -l < \"${calls}\" 2>/dev/null || echo 0)\" -ge 3 ]; then\n"
+                "      touch \"${calls}.inspect-error\"\n"
+                "      exit 71\n"
+                "    fi\n"
+                "    if test -f \"${state}\"; then\n"
+                "      exit 0\n"
+                "    fi\n"
+                "    echo \"Error: No such object: ${2:-unknown}\" >&2\n"
+                "    exit 1\n"
+                "    ;;\n"
+                "  rm)\n"
+                "    printf 'remove\\n' >> \"${calls}\"\n"
+                "    if [ \"${FAKE_DOCKER_FINAL_INSPECT_DAEMON_ERROR:-0}\" -eq 1 ]; then\n"
+                "      exit 1\n"
+                "    fi\n"
+                "    if [ ! -f \"${calls}.raced\" ]; then\n"
+                "      touch \"${calls}.raced\"\n"
+                "      exit 1\n"
+                "    fi\n"
+                "    rm -f \"${state}\"\n"
+                "    ;;\n"
+                '  *) echo "unexpected docker command: ${1}" >&2; exit 64 ;;\n'
+                "esac\n",
+                encoding="utf-8",
+            )
+            docker_path.chmod(0o755)
+            environment = os.environ | {
+                "PATH": f"{directory_path}{os.pathsep}{os.environ['PATH']}",
+                "FAKE_DOCKER_STATE": str(state_path),
+                "FAKE_DOCKER_CALLS": str(calls_path),
+                "DOCKER_REMOVE_RETRY_DELAY_SECONDS": "0",
+            }
+            result = subprocess.run(
+                [bash, DOCKER_REMOVE_RETRY_SCRIPT.as_posix(), "container-id"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment,
+            )
+            race_remove_calls = (
+                calls_path.read_text().splitlines() if calls_path.exists() else []
+            )
+            daemon_down_result = subprocess.run(
+                [bash, DOCKER_REMOVE_RETRY_SCRIPT.as_posix(), "container-id"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment | {"FAKE_DOCKER_DAEMON_DOWN": "1"},
+            )
+            inspect_daemon_error_result = subprocess.run(
+                [bash, DOCKER_REMOVE_RETRY_SCRIPT.as_posix(), "container-id"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment | {"FAKE_DOCKER_INSPECT_DAEMON_ERROR": "1"},
+            )
+            inspect_error_path = Path(f"{calls_path}.inspect-error")
+            calls_path.unlink(missing_ok=True)
+            inspect_error_path.unlink(missing_ok=True)
+            state_path.write_text("present\n", encoding="utf-8")
+            transient_inspect_error_result = subprocess.run(
+                [bash, DOCKER_REMOVE_RETRY_SCRIPT.as_posix(), "container-id"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment
+                | {"FAKE_DOCKER_TRANSIENT_INSPECT_ERROR": "1"},
+            )
+            transient_inspect_removed = not state_path.exists()
+            calls_path.unlink(missing_ok=True)
+            Path(f"{calls_path}.raced").unlink(missing_ok=True)
+            Path(f"{calls_path}.transient-inspect-error").unlink(missing_ok=True)
+            state_path.write_text("present\n", encoding="utf-8")
+            final_inspect_daemon_error_result = subprocess.run(
+                [bash, DOCKER_REMOVE_RETRY_SCRIPT.as_posix(), "container-id"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment
+                | {"FAKE_DOCKER_FINAL_INSPECT_DAEMON_ERROR": "1"},
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["remove", "remove"], race_remove_calls)
+        self.assertNotEqual(0, daemon_down_result.returncode)
+        self.assertNotEqual(0, inspect_daemon_error_result.returncode)
+        self.assertEqual(0, transient_inspect_error_result.returncode)
+        self.assertTrue(transient_inspect_removed)
+        self.assertNotEqual(0, final_inspect_daemon_error_result.returncode)
 
     def test_deployment_fetches_an_immutable_dos_names_revision(self):
         workflow = (

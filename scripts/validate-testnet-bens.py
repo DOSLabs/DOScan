@@ -18,6 +18,10 @@ DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy-config.yml"
 DEPENDENCY_WORKFLOW = ROOT / ".github" / "workflows" / "dependency-build.yml"
 PLAYWRIGHT_SPEC = ROOT / ".github" / "scripts" / "testnet-bens-ui.spec.mjs"
 RPC_RETRY_SCRIPT = ROOT / ".github" / "scripts" / "retry-testnet-rpc.sh"
+PACKAGE_VERIFIER_SCRIPT = ROOT / ".github" / "scripts" / "verify-testnet-package.sh"
+DOCKER_REMOVE_RETRY_SCRIPT = (
+    ROOT / ".github" / "scripts" / "remove-docker-containers-with-retry.sh"
+)
 SUBGRAPH_DEPLOY_SCRIPT = ROOT / "docker-compose" / "bens" / "deploy-subgraph.sh"
 CANONICAL_TESTNET_BLOCKCHAIN = "JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9"
 RETIRED_TESTNET_BLOCKCHAIN = "2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ"
@@ -48,6 +52,8 @@ def validate() -> list[str]:
         DEPENDENCY_WORKFLOW,
         PLAYWRIGHT_SPEC,
         RPC_RETRY_SCRIPT,
+        PACKAGE_VERIFIER_SCRIPT,
+        DOCKER_REMOVE_RETRY_SCRIPT,
         SUBGRAPH_DEPLOY_SCRIPT,
     )
     for path in required_files:
@@ -64,6 +70,8 @@ def validate() -> list[str]:
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
     dependency_workflow = DEPENDENCY_WORKFLOW.read_text(encoding="utf-8")
     rpc_retry_script = RPC_RETRY_SCRIPT.read_text(encoding="utf-8")
+    package_verifier_script = PACKAGE_VERIFIER_SCRIPT.read_text(encoding="utf-8")
+    docker_remove_retry_script = DOCKER_REMOVE_RETRY_SCRIPT.read_text(encoding="utf-8")
     subgraph_deploy_script = SUBGRAPH_DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
     for path, content in (
@@ -249,6 +257,21 @@ def validate() -> list[str]:
         or "--http1.1" not in rpc_retry_script
     ):
         errors.append("Testnet RPC retry helper must be bounded and use the canonical RPC")
+    if (
+        'test -s docker-compose/bens/config.json' not in workflow
+        or 'bash .github/scripts/verify-testnet-package.sh /tmp/doscan-testnet-config.tgz'
+        not in workflow
+        or 'tar -tzf "${archive}" | grep -Fx "docker-compose/bens/config.json"'
+        not in package_verifier_script
+    ):
+        errors.append("Testnet package must fail closed without the rendered BENS config")
+    if (
+        ".github/scripts/remove-docker-containers-with-retry.sh" not in workflow
+        or 'for attempt in 1 2 3' not in docker_remove_retry_script
+        or "docker info" not in docker_remove_retry_script
+        or 'docker rm -f "${remaining[@]}"' not in docker_remove_retry_script
+    ):
+        errors.append("Testnet rollback must retry raced Docker container removals")
     if (
         "pull_caddy_image()" not in workflow
         or 'docker pull "${CADDY_IMAGE}"' not in workflow
