@@ -8,7 +8,7 @@
           "url": "http://backend:4000"
         },
         "use_protocols": ["dos-names"],
-        "rpc_url": "https://test.doschain.com/"
+        "rpc_url": "http://10.148.0.9:9650/ext/bc/JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9/rpc"
       }
     },
     "protocols": {
