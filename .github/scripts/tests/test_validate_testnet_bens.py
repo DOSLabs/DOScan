@@ -171,11 +171,12 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn("fetch-depth: 0", changes_job)
         self.assertIn("${{ github.event.before }}", changes_job)
         self.assertIn('git hash-object -t tree /dev/null', changes_job)
-        self.assertIn('git diff --name-only "${empty_tree}" "${GITHUB_SHA}"', changes_job)
-        self.assertIn('git diff --name-only "${before}" "${GITHUB_SHA}"', changes_job)
+        self.assertIn('git diff --name-only "${diff_base}" "${GITHUB_SHA}"', changes_job)
         self.assertIn("docker-compose/docker-compose-mainnet.yml", changes_job)
         self.assertIn("docker-compose/docker-compose-testnet.yml", changes_job)
         self.assertIn("docker-compose/bens/config.template.json", changes_job)
+        self.assertIn("DOS_NAMES_MAINNET_SUBGRAPH_REF", changes_job)
+        self.assertIn("DOS_NAMES_TESTNET_SUBGRAPH_REF", changes_job)
         self.assertIn("mainnet=true", changes_job)
         self.assertIn("testnet=true", changes_job)
 
@@ -546,7 +547,7 @@ class ValidateTestnetBensTests(unittest.TestCase):
 
         self.assertRegex(
             workflow,
-            r"DOS_NAMES_SUBGRAPH_REF: [0-9a-f]{40}",
+            r"DOS_NAMES_TESTNET_SUBGRAPH_REF: [0-9a-f]{40}",
         )
         self.assertIn(
             "https://github.com/DOS/DOS-Names-Contracts.git",

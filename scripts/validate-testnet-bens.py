@@ -190,7 +190,7 @@ def validate() -> list[str]:
     if networks.get("3939", {}).get("rpc_url") != CANONICAL_TESTNET_BENS_RPC:
         errors.append("BENS must use the canonical public Testnet RPC")
 
-    ref_match = re.search(r"DOS_NAMES_SUBGRAPH_REF: ([0-9a-f]{40})", workflow)
+    ref_match = re.search(r"DOS_NAMES_TESTNET_SUBGRAPH_REF: ([0-9a-f]{40})", workflow)
     if ref_match is None:
         errors.append("The deployment workflow must pin a full DOS Names commit")
     if "https://github.com/DOS/DOS-Names-Contracts.git" not in workflow:

@@ -35,6 +35,7 @@ on:
       - ".github/scripts/verify-mainnet-aa-bytecode.mjs"
       - ".github/scripts/verify-mainnet-aa-sources.sh"
       - ".github/scripts/verify-testnet-aa-sources.sh"
+      - ".github/workflows/deploy-config.yml"
   workflow_dispatch:
     inputs:
       environment:
@@ -63,7 +64,8 @@ env:
   GCP_TESTNET_ZONE: asia-southeast1-a
   GCP_TESTNET_INSTANCE: dos-testnet-r0
   DOS_NAMES_REPOSITORY: https://github.com/DOS/DOS-Names-Contracts.git
-  DOS_NAMES_SUBGRAPH_REF: 130d42ae22881896cab89e33c3c3c096b9b8e989
+  DOS_NAMES_MAINNET_SUBGRAPH_REF: 6224395661280a739c20ebd8a420913a0dd7fd6e
+  DOS_NAMES_TESTNET_SUBGRAPH_REF: 130d42ae22881896cab89e33c3c3c096b9b8e989
 
 jobs:
   changes:
@@ -92,11 +94,11 @@ jobs:
           else
             before="${{ github.event.before }}"
             if [[ "${before}" =~ ^0+$ ]]; then
-              empty_tree="$(git hash-object -t tree /dev/null)"
-              changed_files="$(git diff --name-only "${empty_tree}" "${GITHUB_SHA}")"
+              diff_base="$(git hash-object -t tree /dev/null)"
             else
-              changed_files="$(git diff --name-only "${before}" "${GITHUB_SHA}")"
+              diff_base="${before}"
             fi
+            changed_files="$(git diff --name-only "${diff_base}" "${GITHUB_SHA}")"
 
             printf '%s\n' "${changed_files}"
             while IFS= read -r file; do
@@ -113,6 +115,14 @@ jobs:
                   ;;
               esac
             done <<< "${changed_files}"
+
+            workflow_diff="$(git diff --unified=0 "${diff_base}" "${GITHUB_SHA}" -- .github/workflows/deploy-config.yml)"
+            if grep -Eq '^[+-]  DOS_NAMES_MAINNET_SUBGRAPH_REF:' <<< "${workflow_diff}"; then
+              mainnet=true
+            fi
+            if grep -Eq '^[+-]  DOS_NAMES_TESTNET_SUBGRAPH_REF:' <<< "${workflow_diff}"; then
+              testnet=true
+            fi
           fi
 
           echo "mainnet=${mainnet}" >> "${GITHUB_OUTPUT}"
@@ -203,9 +213,9 @@ jobs:
           git -C "${checkout}" fetch --filter=blob:none origin \
             refs/heads/dos:refs/remotes/origin/dos
           git -C "${checkout}" merge-base --is-ancestor \
-            "${DOS_NAMES_SUBGRAPH_REF}" refs/remotes/origin/dos
-          git -C "${checkout}" checkout --detach -q "${DOS_NAMES_SUBGRAPH_REF}"
-          [ "$(git -C "${checkout}" rev-parse HEAD)" = "${DOS_NAMES_SUBGRAPH_REF}" ]
+            "${DOS_NAMES_MAINNET_SUBGRAPH_REF}" refs/remotes/origin/dos
+          git -C "${checkout}" checkout --detach -q "${DOS_NAMES_MAINNET_SUBGRAPH_REF}"
+          [ "$(git -C "${checkout}" rev-parse HEAD)" = "${DOS_NAMES_MAINNET_SUBGRAPH_REF}" ]
           test -f "${checkout}/subgraph/dos-names/subgraph.template.yaml"
           test -f "${checkout}/contracts/deployments/dos-mainnet-7979.json"
           cp -a "${checkout}/subgraph/dos-names" docker-compose/bens/subgraph
@@ -871,9 +881,9 @@ jobs:
           git -C "${checkout}" fetch --filter=blob:none origin \
             refs/heads/dos:refs/remotes/origin/dos
           git -C "${checkout}" merge-base --is-ancestor \
-            "${DOS_NAMES_SUBGRAPH_REF}" refs/remotes/origin/dos
-          git -C "${checkout}" checkout --detach -q "${DOS_NAMES_SUBGRAPH_REF}"
-          [ "$(git -C "${checkout}" rev-parse HEAD)" = "${DOS_NAMES_SUBGRAPH_REF}" ]
+            "${DOS_NAMES_TESTNET_SUBGRAPH_REF}" refs/remotes/origin/dos
+          git -C "${checkout}" checkout --detach -q "${DOS_NAMES_TESTNET_SUBGRAPH_REF}"
+          [ "$(git -C "${checkout}" rev-parse HEAD)" = "${DOS_NAMES_TESTNET_SUBGRAPH_REF}" ]
           test -f "${checkout}/subgraph/dos-names/subgraph.template.yaml"
           test -f "${checkout}/contracts/deployments/dos-testnet-3939.json"
           cp -a "${checkout}/subgraph/dos-names" docker-compose/bens/subgraph
