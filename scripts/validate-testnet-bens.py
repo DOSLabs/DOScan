@@ -266,6 +266,13 @@ def validate() -> list[str]:
     ):
         errors.append("Testnet package must fail closed without the rendered BENS config")
     if (
+        "docker compose up -d bens-db bens-ipfs" not in workflow
+        or "docker compose exec -T bens-db pg_isready -U graph-node -d graph-node"
+        not in workflow
+        or "docker compose up -d bens-graph-node" not in workflow
+    ):
+        errors.append("Testnet BENS database must become ready before Graph Node starts")
+    if (
         ".github/scripts/remove-docker-containers-with-retry.sh" not in workflow
         or 'for attempt in 1 2 3' not in docker_remove_retry_script
         or "docker info" not in docker_remove_retry_script

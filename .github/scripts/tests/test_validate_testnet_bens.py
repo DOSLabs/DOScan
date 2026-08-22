@@ -597,6 +597,32 @@ class ValidateTestnetBensTests(unittest.TestCase):
             'sudo chmod 0644 "${DEPLOY_PATH}/bens/config.json"', install_block
         )
 
+    def test_bens_database_becomes_ready_before_graph_node_starts(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        testnet_deploy = workflow.split(
+            "      - name: Apply testnet configuration and verify services", 1
+        )[1].split("      - name: Verify Testnet DOS Name UI with Playwright", 1)[0]
+        bens_bootstrap = testnet_deploy.rsplit(
+            'sudo chmod 0644 "${DEPLOY_PATH}/bens/config.json"', 1
+        )[1].split('BENS_SUBGRAPH_VERSION="github-${DEPLOY_ID}"', 1)[0]
+
+        database_start = 'docker compose up -d bens-db bens-ipfs'
+        database_ready = 'docker compose exec -T bens-db pg_isready -U graph-node -d graph-node'
+        graph_node_start = 'docker compose up -d bens-graph-node'
+        self.assertIn(database_start, bens_bootstrap)
+        self.assertIn(database_ready, bens_bootstrap)
+        self.assertIn(graph_node_start, bens_bootstrap)
+        self.assertLess(
+            bens_bootstrap.index(database_start),
+            bens_bootstrap.index(database_ready),
+        )
+        self.assertLess(
+            bens_bootstrap.index(database_ready),
+            bens_bootstrap.index(graph_node_start),
+        )
+
     def test_account_abstraction_inputs_are_prepared_before_gcp_authentication(self):
         workflow = (
             ROOT / ".github" / "workflows" / "deploy-config.yml"
@@ -775,6 +801,13 @@ class ValidateTestnetBensTests(unittest.TestCase):
                 "      touch \"${calls}.transient-inspect-error\"\n"
                 "      exit 71\n"
                 "    fi\n"
+                "    if [ \"${FAKE_DOCKER_REMOVAL_IN_PROGRESS:-0}\" -eq 1 ] && \\\n"
+                "      [ \"$(cat \"${calls}.removal-in-progress\" 2>/dev/null || echo 0)\" -lt 2 ]; then\n"
+                "      current=\"$(cat \"${calls}.removal-in-progress\" 2>/dev/null || echo 0)\"\n"
+                "      printf '%s' \"$((current + 1))\" > \"${calls}.removal-in-progress\"\n"
+                "      echo \"Error response from daemon: removal of container ${2:-unknown} is already in progress\" >&2\n"
+                "      exit 1\n"
+                "    fi\n"
                 "    if [ \"${FAKE_DOCKER_FINAL_INSPECT_DAEMON_ERROR:-0}\" -eq 1 ] && \\\n"
                 "      [ \"$(wc -l < \"${calls}\" 2>/dev/null || echo 0)\" -ge 3 ]; then\n"
                 "      touch \"${calls}.inspect-error\"\n"
@@ -849,6 +882,18 @@ class ValidateTestnetBensTests(unittest.TestCase):
             Path(f"{calls_path}.raced").unlink(missing_ok=True)
             Path(f"{calls_path}.transient-inspect-error").unlink(missing_ok=True)
             state_path.write_text("present\n", encoding="utf-8")
+            removal_in_progress_result = subprocess.run(
+                [bash, DOCKER_REMOVE_RETRY_SCRIPT.as_posix(), "container-id"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment | {"FAKE_DOCKER_REMOVAL_IN_PROGRESS": "1"},
+            )
+            removal_in_progress_removed = not state_path.exists()
+            calls_path.unlink(missing_ok=True)
+            Path(f"{calls_path}.raced").unlink(missing_ok=True)
+            Path(f"{calls_path}.removal-in-progress").unlink(missing_ok=True)
+            state_path.write_text("present\n", encoding="utf-8")
             final_inspect_daemon_error_result = subprocess.run(
                 [bash, DOCKER_REMOVE_RETRY_SCRIPT.as_posix(), "container-id"],
                 capture_output=True,
@@ -864,6 +909,8 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertNotEqual(0, inspect_daemon_error_result.returncode)
         self.assertEqual(0, transient_inspect_error_result.returncode)
         self.assertTrue(transient_inspect_removed)
+        self.assertEqual(0, removal_in_progress_result.returncode)
+        self.assertTrue(removal_in_progress_removed)
         self.assertNotEqual(0, final_inspect_daemon_error_result.returncode)
 
     def test_deployment_fetches_an_immutable_dos_names_revision(self):

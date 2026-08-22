@@ -28,6 +28,7 @@ inspect_container_state() {
 
   case "${inspect_error}" in
     *"No such object:"* | *"No such container:"*) return 1 ;;
+    *"removal of container"*"already in progress"*) return 3 ;;
     *)
       echo "Docker inspect could not determine container state: ${container_id}" >&2
       return 2
@@ -42,22 +43,27 @@ for attempt in 1 2 3; do
   fi
 
   remaining=()
+  removal_pending=0
   for container_id in "$@"; do
     if inspect_container_state "${container_id}"; then
       remaining+=("${container_id}")
     else
       inspect_status=$?
-      if [ "${inspect_status}" -ne 1 ]; then
-        exit 1
-      fi
+      case "${inspect_status}" in
+        1) ;;
+        3) removal_pending=1 ;;
+        *) exit 1 ;;
+      esac
     fi
   done
 
-  if [ "${#remaining[@]}" -eq 0 ]; then
+  if [ "${#remaining[@]}" -eq 0 ] && [ "${removal_pending}" -eq 0 ]; then
     exit 0
   fi
 
-  docker rm -f "${remaining[@]}" >/dev/null 2>&1 || true
+  if [ "${#remaining[@]}" -gt 0 ]; then
+    docker rm -f "${remaining[@]}" >/dev/null 2>&1 || true
+  fi
   if [ "${attempt}" -lt 3 ]; then
     sleep "${retry_delay_seconds}"
   fi
@@ -74,8 +80,13 @@ for container_id in "$@"; do
     exit 1
   else
     inspect_status=$?
-    if [ "${inspect_status}" -ne 1 ]; then
-      exit 1
-    fi
+    case "${inspect_status}" in
+      1) ;;
+      3)
+        echo "Docker container removal did not finish: ${container_id}" >&2
+        exit 1
+        ;;
+      *) exit 1 ;;
+    esac
   fi
 done
