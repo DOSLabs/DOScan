@@ -254,6 +254,77 @@ class ValidateTestnetBensTests(unittest.TestCase):
                 set(output_path.read_text(encoding="utf-8").splitlines()),
             )
 
+    def test_testnet_helper_changes_select_only_testnet(self):
+        bash = "bash"
+        if os.name == "nt":
+            bash = r"C:\\Program Files\\Git\\bin\\bash.exe"
+        git = shutil.which("git")
+        self.assertIsNotNone(git)
+
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        changes_job = workflow.split("  changes:", 1)[1].split(
+            "\n  deploy-mainnet:", 1
+        )[0]
+        selector = textwrap.dedent(changes_job.split("        run: |\n", 1)[1])
+
+        for helper_name in (
+            "verify-testnet-package.sh",
+            "remove-docker-containers-with-retry.sh",
+        ):
+            with self.subTest(helper_name=helper_name), tempfile.TemporaryDirectory() as directory:
+                repo = Path(directory)
+                workflow_path = repo / ".github" / "workflows" / "deploy-config.yml"
+                helper_path = repo / ".github" / "scripts" / helper_name
+                workflow_path.parent.mkdir(parents=True)
+                helper_path.parent.mkdir(parents=True)
+                subprocess.run([git, "init", "-q"], cwd=repo, check=True)
+                subprocess.run([git, "config", "user.email", "test@example.com"], cwd=repo, check=True)
+                subprocess.run([git, "config", "user.name", "Test"], cwd=repo, check=True)
+                workflow_path.write_text(workflow, encoding="utf-8")
+                subprocess.run([git, "add", "."], cwd=repo, check=True)
+                subprocess.run([git, "commit", "-qm", "previous"], cwd=repo, check=True)
+                previous_sha = subprocess.run(
+                    [git, "rev-parse", "HEAD"],
+                    cwd=repo,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+                helper_path.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+                subprocess.run([git, "add", "."], cwd=repo, check=True)
+                subprocess.run([git, "commit", "-qm", "current"], cwd=repo, check=True)
+                current_sha = subprocess.run(
+                    [git, "rev-parse", "HEAD"],
+                    cwd=repo,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+                output_path = repo / "output"
+                environment = os.environ | {
+                    "GITHUB_OUTPUT": output_path.as_posix(),
+                    "GITHUB_SHA": current_sha,
+                }
+                command = selector.replace("${{ github.event_name }}", "push")
+                command = command.replace("${{ inputs.environment }}", "")
+                command = command.replace("${{ github.event.before }}", previous_sha)
+                result = subprocess.run(
+                    [bash, "-c", command],
+                    cwd=repo,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    env=environment,
+                )
+
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(
+                    {"mainnet=false", "testnet=true"},
+                    set(output_path.read_text(encoding="utf-8").splitlines()),
+                )
+
     def test_deployment_builds_and_verifies_immutable_account_abstraction_sources(
         self,
     ):
@@ -685,7 +756,11 @@ class ValidateTestnetBensTests(unittest.TestCase):
                 "set -euo pipefail\n"
                 'state="${FAKE_DOCKER_STATE:?}"\n'
                 'calls="${FAKE_DOCKER_CALLS:?}"\n'
+                'if [ "${FAKE_DOCKER_DAEMON_DOWN:-0}" -eq 1 ]; then\n'
+                '  exit 71\n'
+                "fi\n"
                 'case "${1}" in\n'
+                "  info) ;;\n"
                 "  inspect) test -f \"${state}\" ;;\n"
                 "  rm)\n"
                 "    printf 'remove\\n' >> \"${calls}\"\n"
@@ -713,12 +788,20 @@ class ValidateTestnetBensTests(unittest.TestCase):
                 check=False,
                 env=environment,
             )
+            daemon_down_result = subprocess.run(
+                [bash, DOCKER_REMOVE_RETRY_SCRIPT.as_posix(), "container-id"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment | {"FAKE_DOCKER_DAEMON_DOWN": "1"},
+            )
             remove_calls = (
                 calls_path.read_text().splitlines() if calls_path.exists() else []
             )
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(["remove", "remove"], remove_calls)
+        self.assertNotEqual(0, daemon_down_result.returncode)
 
     def test_deployment_fetches_an_immutable_dos_names_revision(self):
         workflow = (

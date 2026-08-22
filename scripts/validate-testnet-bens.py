@@ -268,6 +268,7 @@ def validate() -> list[str]:
     if (
         ".github/scripts/remove-docker-containers-with-retry.sh" not in workflow
         or 'for attempt in 1 2 3' not in docker_remove_retry_script
+        or "docker info" not in docker_remove_retry_script
         or 'docker rm -f "${remaining[@]}"' not in docker_remove_retry_script
     ):
         errors.append("Testnet rollback must retry raced Docker container removals")

@@ -8,6 +8,11 @@ if [ "$#" -eq 0 ]; then
 fi
 
 for attempt in 1 2 3; do
+  if ! docker info >/dev/null 2>&1; then
+    echo "Docker daemon is unavailable during container removal" >&2
+    exit 1
+  fi
+
   remaining=()
   for container_id in "$@"; do
     if docker inspect "${container_id}" >/dev/null 2>&1; then
@@ -24,6 +29,11 @@ for attempt in 1 2 3; do
     sleep "${retry_delay_seconds}"
   fi
 done
+
+if ! docker info >/dev/null 2>&1; then
+  echo "Docker daemon is unavailable during container removal" >&2
+  exit 1
+fi
 
 for container_id in "$@"; do
   if docker inspect "${container_id}" >/dev/null 2>&1; then
