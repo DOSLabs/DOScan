@@ -770,12 +770,21 @@ class ValidateTestnetBensTests(unittest.TestCase):
                 "      touch \"${calls}.inspect-error\"\n"
                 "      exit 71\n"
                 "    fi\n"
+                "    if [ \"${FAKE_DOCKER_TRANSIENT_INSPECT_ERROR:-0}\" -eq 1 ] && \\\n"
+                "      [ ! -f \"${calls}.transient-inspect-error\" ]; then\n"
+                "      touch \"${calls}.transient-inspect-error\"\n"
+                "      exit 71\n"
+                "    fi\n"
                 "    if [ \"${FAKE_DOCKER_FINAL_INSPECT_DAEMON_ERROR:-0}\" -eq 1 ] && \\\n"
                 "      [ \"$(wc -l < \"${calls}\" 2>/dev/null || echo 0)\" -ge 3 ]; then\n"
                 "      touch \"${calls}.inspect-error\"\n"
                 "      exit 71\n"
                 "    fi\n"
-                "    test -f \"${state}\"\n"
+                "    if test -f \"${state}\"; then\n"
+                "      exit 0\n"
+                "    fi\n"
+                "    echo \"Error: No such object: ${2:-unknown}\" >&2\n"
+                "    exit 1\n"
                 "    ;;\n"
                 "  rm)\n"
                 "    printf 'remove\\n' >> \"${calls}\"\n"
@@ -827,6 +836,19 @@ class ValidateTestnetBensTests(unittest.TestCase):
             calls_path.unlink(missing_ok=True)
             inspect_error_path.unlink(missing_ok=True)
             state_path.write_text("present\n", encoding="utf-8")
+            transient_inspect_error_result = subprocess.run(
+                [bash, DOCKER_REMOVE_RETRY_SCRIPT.as_posix(), "container-id"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment
+                | {"FAKE_DOCKER_TRANSIENT_INSPECT_ERROR": "1"},
+            )
+            transient_inspect_removed = not state_path.exists()
+            calls_path.unlink(missing_ok=True)
+            Path(f"{calls_path}.raced").unlink(missing_ok=True)
+            Path(f"{calls_path}.transient-inspect-error").unlink(missing_ok=True)
+            state_path.write_text("present\n", encoding="utf-8")
             final_inspect_daemon_error_result = subprocess.run(
                 [bash, DOCKER_REMOVE_RETRY_SCRIPT.as_posix(), "container-id"],
                 capture_output=True,
@@ -840,6 +862,8 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertEqual(["remove", "remove"], race_remove_calls)
         self.assertNotEqual(0, daemon_down_result.returncode)
         self.assertNotEqual(0, inspect_daemon_error_result.returncode)
+        self.assertEqual(0, transient_inspect_error_result.returncode)
+        self.assertTrue(transient_inspect_removed)
         self.assertNotEqual(0, final_inspect_daemon_error_result.returncode)
 
     def test_deployment_fetches_an_immutable_dos_names_revision(self):
