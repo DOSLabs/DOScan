@@ -1414,6 +1414,22 @@ jobs:
                     exit 1
                   fi
                 done
+                sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                  DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                  docker compose up -d bens-db bens-ipfs
+                for attempt in $(seq 1 20); do
+                  if sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                    DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                    docker compose exec -T bens-db pg_isready -U graph-node -d graph-node; then
+                    break
+                  fi
+                  if [ "${attempt}" -eq 20 ]; then
+                    echo "Existing BENS database did not become ready" >&2
+                    sudo docker compose logs --tail=100 bens-db bens-ipfs
+                    exit 1
+                  fi
+                  sleep 3
+                done
                 BENS_PREDEPLOY_STOPPED=1
                 sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
                   DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \

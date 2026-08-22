@@ -664,6 +664,44 @@ class ValidateTestnetBensTests(unittest.TestCase):
             bens_bootstrap.index(graph_node_start),
         )
 
+    def test_validator_rejects_existing_bens_state_without_database_start(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        prefix, existing_bens_state = workflow.split(
+            'if [ "${bens_db_exists}" -eq 1 ]; then', 1
+        )
+        before_blockscout_backup, suffix = existing_bens_state.split(
+            'sudo docker compose exec -T db pg_dump', 1
+        )
+        missing_database_start = before_blockscout_backup.replace(
+            "docker compose up -d bens-db bens-ipfs",
+            "docker compose up -d bens-ipfs",
+            1,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            broken_workflow = Path(directory) / "deploy-config.yml"
+            broken_workflow.write_text(
+                prefix
+                + 'if [ "${bens_db_exists}" -eq 1 ]; then'
+                + missing_database_start
+                + 'sudo docker compose exec -T db pg_dump'
+                + suffix,
+                encoding="utf-8",
+            )
+            original_workflow = self.module.DEPLOY_WORKFLOW
+            self.module.DEPLOY_WORKFLOW = broken_workflow
+            try:
+                errors = self.module.validate()
+            finally:
+                self.module.DEPLOY_WORKFLOW = original_workflow
+
+        self.assertIn(
+            "Existing Testnet BENS state must start its database before snapshot",
+            errors,
+        )
+
     def test_account_abstraction_inputs_are_prepared_before_gcp_authentication(self):
         workflow = (
             ROOT / ".github" / "workflows" / "deploy-config.yml"
