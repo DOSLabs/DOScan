@@ -54,10 +54,6 @@ class ValidateTestnetBensTests(unittest.TestCase):
 
     def test_bens_uses_canonical_testnet_rpcs(self):
         public_rpc = "https://test.doschain.com/"
-        internal_rpc = (
-            "http://10.148.0.7:9650/ext/bc/"
-            "JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9/rpc"
-        )
         template = json.loads(
             (ROOT / "docker-compose" / "bens" / "config.template.json").read_text(
                 encoding="utf-8"
@@ -72,11 +68,11 @@ class ValidateTestnetBensTests(unittest.TestCase):
         retry_script = RPC_RETRY_SCRIPT.read_text(encoding="utf-8")
 
         self.assertEqual(
-            internal_rpc,
+            public_rpc,
             template["subgraphs_reader"]["networks"]["3939"]["rpc_url"],
         )
-        self.assertIn(f"ethereum: dos-testnet:{internal_rpc}", compose)
-        self.assertNotIn("ethereum: dos-testnet:https://test.doschain.com/", compose)
+        self.assertIn(f"ethereum: dos-testnet:{public_rpc}", compose)
+        self.assertNotIn("ethereum: dos-testnet:http://10.148.0.7:9650/", compose)
         bytecode_gate = workflow.split('contract_code="$(\n', 1)[1].split(
             'if [ "${contract_code}"', 1
         )[0]

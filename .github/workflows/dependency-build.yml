@@ -53,7 +53,7 @@ env:
   ELIXIR_VERSION: "1.19.4"
   MIX_ENV: prod
   DOS_NAMES_REPOSITORY: https://github.com/DOS/DOS-Names-Contracts.git
-  DOS_NAMES_SUBGRAPH_REF: 6224395661280a739c20ebd8a420913a0dd7fd6e
+  DOS_NAMES_SUBGRAPH_REF: 130d42ae22881896cab89e33c3c3c096b9b8e989
   AA_SOURCE_REPOSITORY: https://github.com/eth-infinitism/account-abstraction.git
   AA_SOURCE_REF: 4cbc06072cdc19fd60f285c5997f4f7f57a588de
 

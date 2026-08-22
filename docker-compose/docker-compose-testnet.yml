@@ -91,7 +91,7 @@ services:
       postgres_user: graph-node
       postgres_db: graph-node
       ipfs: bens-ipfs:5001
-      ethereum: dos-testnet:http://10.148.0.7:9650/ext/bc/JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9/rpc
+      ethereum: dos-testnet:https://test.doschain.com/
       GRAPH_LOG: info
 
   bens:

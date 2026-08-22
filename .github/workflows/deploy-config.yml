@@ -64,7 +64,7 @@ env:
   GCP_TESTNET_ZONE: asia-southeast1-a
   GCP_TESTNET_INSTANCE: dos-testnet-r0
   DOS_NAMES_REPOSITORY: https://github.com/DOS/DOS-Names-Contracts.git
-  DOS_NAMES_SUBGRAPH_REF: 6224395661280a739c20ebd8a420913a0dd7fd6e
+  DOS_NAMES_SUBGRAPH_REF: 130d42ae22881896cab89e33c3c3c096b9b8e989
 
 jobs:
   deploy-mainnet:
