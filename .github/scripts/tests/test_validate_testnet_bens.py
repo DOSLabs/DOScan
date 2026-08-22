@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import textwrap
 import threading
 import unittest
 from pathlib import Path
@@ -179,6 +180,75 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn("DOS_NAMES_TESTNET_SUBGRAPH_REF", changes_job)
         self.assertIn("mainnet=true", changes_job)
         self.assertIn("testnet=true", changes_job)
+
+    def test_pin_split_keeps_mainnet_out_of_a_testnet_only_deploy(self):
+        bash = "bash"
+        if os.name == "nt":
+            bash = r"C:\Program Files\Git\bin\bash.exe"
+        git = shutil.which("git")
+        self.assertIsNotNone(git)
+
+        workflow_path = ROOT / ".github" / "workflows" / "deploy-config.yml"
+        workflow = workflow_path.read_text(encoding="utf-8")
+        changes_job = workflow.split("  changes:", 1)[1].split(
+            "\n  deploy-mainnet:", 1
+        )[0]
+        selector = textwrap.dedent(changes_job.split("        run: |\n", 1)[1])
+        split_pins = (
+            "  DOS_NAMES_MAINNET_SUBGRAPH_REF: "
+            "6224395661280a739c20ebd8a420913a0dd7fd6e\n"
+            "  DOS_NAMES_TESTNET_SUBGRAPH_REF: "
+            "130d42ae22881896cab89e33c3c3c096b9b8e989"
+        )
+        self.assertIn(split_pins, workflow)
+        previous_workflow = workflow.replace(
+            split_pins,
+            "  DOS_NAMES_SUBGRAPH_REF: "
+            "6224395661280a739c20ebd8a420913a0dd7fd6e",
+            1,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            test_workflow = repo / ".github" / "workflows" / "deploy-config.yml"
+            test_workflow.parent.mkdir(parents=True)
+            subprocess.run([git, "init", "-q"], cwd=repo, check=True)
+            subprocess.run([git, "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run([git, "config", "user.name", "Test"], cwd=repo, check=True)
+            test_workflow.write_text(previous_workflow, encoding="utf-8")
+            subprocess.run([git, "add", "."], cwd=repo, check=True)
+            subprocess.run([git, "commit", "-qm", "previous"], cwd=repo, check=True)
+            previous_sha = subprocess.run(
+                [git, "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+            ).stdout.strip()
+            test_workflow.write_text(workflow, encoding="utf-8")
+            subprocess.run([git, "add", "."], cwd=repo, check=True)
+            subprocess.run([git, "commit", "-qm", "current"], cwd=repo, check=True)
+            current_sha = subprocess.run(
+                [git, "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+            ).stdout.strip()
+            selector = selector.replace("${{ github.event_name }}", "push")
+            selector = selector.replace("${{ inputs.environment }}", "")
+            selector = selector.replace("${{ github.event.before }}", previous_sha)
+            output_path = repo / "output"
+            environment = os.environ | {
+                "GITHUB_OUTPUT": output_path.as_posix(),
+                "GITHUB_SHA": current_sha,
+            }
+            result = subprocess.run(
+                [bash, "-c", selector],
+                cwd=repo,
+                check=False,
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(
+                {"mainnet=false", "testnet=true"},
+                set(output_path.read_text(encoding="utf-8").splitlines()),
+            )
 
     def test_deployment_builds_and_verifies_immutable_account_abstraction_sources(
         self,
