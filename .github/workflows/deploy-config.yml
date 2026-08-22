@@ -1730,7 +1730,13 @@ jobs:
                 testnet_rpc_request "${rpc_body}" 1
               )"
               grep -q "\"result\":\"0xf63\"" <<<"${rpc_response}"
-              grep -qi "X-DOS-RPC-Origin: dos-testnet-r0-" <<<"${rpc_response}"
+              local_rpc_response="$(
+                curl -fsS -D - --max-time 10 \
+                  -H "Content-Type: application/json" --data "${rpc_body}" \
+                  http://127.0.0.1:8545/
+              )"
+              grep -q "\"result\":\"0xf63\"" <<<"${local_rpc_response}"
+              grep -qi "X-DOS-RPC-Origin: dos-testnet-r1-" <<<"${local_rpc_response}"
 
               sudo docker compose ps
               echo "GCP testnet deployment completed"

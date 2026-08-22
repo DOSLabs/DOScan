@@ -95,11 +95,17 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn('"${endpoint}"', retry_script)
         self.assertNotIn("10.148.0.7", bytecode_gate)
         self.assertNotIn("127.0.0.1:9650", bytecode_gate)
-        public_rpc_gate = workflow.split('rpc_response="$(\n', 1)[1].split(
-            'sudo docker compose ps', 1
+        testnet_deploy = workflow.split(
+            "      - name: Apply testnet configuration and verify services", 1
+        )[1].split("      - name: Verify Testnet DOS Name UI with Playwright", 1)[0]
+        final_rpc_gate = testnet_deploy.split('rpc_response="$(\n', 1)[1].split(
+            "sudo docker compose ps", 1
         )[0]
-        self.assertIn("X-DOS-RPC-Origin: dos-testnet-r0-", public_rpc_gate)
-        self.assertNotIn("archive-dos-testnet-r0", public_rpc_gate)
+        self.assertIn('testnet_rpc_request "${rpc_body}" 1', final_rpc_gate)
+        self.assertIn('local_rpc_response="$(\n', final_rpc_gate)
+        self.assertIn("http://127.0.0.1:8545/", final_rpc_gate)
+        self.assertIn("X-DOS-RPC-Origin: dos-testnet-r1-", final_rpc_gate)
+        self.assertNotIn("archive-dos-testnet-r0", final_rpc_gate)
 
     def test_all_testnet_runtime_rpc_targets_use_the_canonical_blockchain(self):
         canonical_blockchain = (
@@ -122,7 +128,19 @@ class ValidateTestnetBensTests(unittest.TestCase):
 
         caddy = paths[0].read_text(encoding="utf-8")
         self.assertEqual(2, caddy.count(canonical_blockchain))
-        self.assertEqual(2, caddy.count('X-DOS-RPC-Origin "dos-testnet-r0-JASJZyVT"'))
+        self.assertEqual(2, caddy.count('X-DOS-RPC-Origin "dos-testnet-r1-JASJZyVT"'))
+
+    def test_testnet_caddy_routes_rpc_to_the_live_r1_node(self):
+        caddy = (ROOT / "docker-compose" / "Caddyfile-gcp-testnet").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertEqual(2, caddy.count("reverse_proxy 10.148.0.9:9650"))
+        self.assertNotIn("reverse_proxy 10.148.0.7:9650", caddy)
+        self.assertEqual(
+            2,
+            caddy.count('X-DOS-RPC-Origin "dos-testnet-r1-JASJZyVT"'),
+        )
 
     def test_account_abstraction_uses_the_canonical_blockscout_database(self):
         canonical_database = "blockscout_jasj_20260809"

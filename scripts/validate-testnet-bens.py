@@ -27,6 +27,7 @@ CANONICAL_TESTNET_BLOCKCHAIN = "JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm
 RETIRED_TESTNET_BLOCKCHAIN = "2EhCz8u48mSCUzxEEGsqY7d1PnqUKkc2B1zkTQaJxbT99wshkJ"
 CANONICAL_TESTNET_BENS_RPC = "https://test.doschain.com/"
 CANONICAL_BLOCKSCOUT_DB = "blockscout_jasj_20260809"
+CANONICAL_TESTNET_RPC_UPSTREAM = "10.148.0.9:9650"
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -91,8 +92,12 @@ def validate() -> list[str]:
         errors.append(
             "Caddy Testnet RPC and WebSocket routes must both target the canonical blockchain"
         )
-    if caddy.count('X-DOS-RPC-Origin "dos-testnet-r0-JASJZyVT"') != 2:
+    if caddy.count('X-DOS-RPC-Origin "dos-testnet-r1-JASJZyVT"') != 2:
         errors.append("Caddy must identify both canonical Testnet RPC routes")
+    if caddy.count(f"reverse_proxy {CANONICAL_TESTNET_RPC_UPSTREAM}") != 2:
+        errors.append("Caddy must route both Testnet RPC paths to the live r1 node")
+    if "reverse_proxy 10.148.0.7:9650" in caddy:
+        errors.append("Caddy must not route Testnet RPC through the unavailable r0 node")
     if f"ethereum: dos-testnet:{CANONICAL_TESTNET_BENS_RPC}" not in compose:
         errors.append("Graph Node must bootstrap from the canonical public Testnet RPC")
 
