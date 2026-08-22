@@ -154,6 +154,9 @@ class ValidateTestnetBensTests(unittest.TestCase):
         workflow = (
             ROOT / ".github" / "workflows" / "deploy-config.yml"
         ).read_text(encoding="utf-8")
+        changes_job = workflow.split("  changes:", 1)[1].split(
+            "\n  deploy-mainnet:", 1
+        )[0]
         mainnet_job = workflow.split("  deploy-mainnet:", 1)[1].split(
             "\n  deploy-testnet:", 1
         )[0]
@@ -161,12 +164,18 @@ class ValidateTestnetBensTests(unittest.TestCase):
             "\n  deploy-beta:", 1
         )[0]
 
-        self.assertIn("github.event.commits.*.modified", mainnet_job)
-        self.assertIn("docker-compose/docker-compose-mainnet.yml", mainnet_job)
-        self.assertIn("github.event.commits.*.modified", testnet_job)
-        self.assertIn("docker-compose/docker-compose-testnet.yml", testnet_job)
-        self.assertIn("docker-compose/bens/config.template.json", testnet_job)
-        self.assertNotIn("docker-compose/bens/config.template.json", mainnet_job)
+        self.assertIn("needs: changes", mainnet_job)
+        self.assertIn("needs.changes.outputs.mainnet == 'true'", mainnet_job)
+        self.assertIn("needs: changes", testnet_job)
+        self.assertIn("needs.changes.outputs.testnet == 'true'", testnet_job)
+        self.assertIn("fetch-depth: 0", changes_job)
+        self.assertIn("${{ github.event.before }}", changes_job)
+        self.assertIn('git diff --name-only "${before}" "${GITHUB_SHA}"', changes_job)
+        self.assertIn("docker-compose/docker-compose-mainnet.yml", changes_job)
+        self.assertIn("docker-compose/docker-compose-testnet.yml", changes_job)
+        self.assertIn("docker-compose/bens/config.template.json", changes_job)
+        self.assertIn("mainnet=true", changes_job)
+        self.assertIn("testnet=true", changes_job)
 
     def test_deployment_builds_and_verifies_immutable_account_abstraction_sources(
         self,
