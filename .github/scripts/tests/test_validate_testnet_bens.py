@@ -760,10 +760,28 @@ class ValidateTestnetBensTests(unittest.TestCase):
                 '  exit 71\n'
                 "fi\n"
                 'case "${1}" in\n'
-                "  info) ;;\n"
-                "  inspect) test -f \"${state}\" ;;\n"
+                "  info)\n"
+                "    if [ -f \"${calls}.inspect-error\" ]; then\n"
+                "      exit 71\n"
+                "    fi\n"
+                "    ;;\n"
+                "  inspect)\n"
+                "    if [ \"${FAKE_DOCKER_INSPECT_DAEMON_ERROR:-0}\" -eq 1 ]; then\n"
+                "      touch \"${calls}.inspect-error\"\n"
+                "      exit 71\n"
+                "    fi\n"
+                "    if [ \"${FAKE_DOCKER_FINAL_INSPECT_DAEMON_ERROR:-0}\" -eq 1 ] && \\\n"
+                "      [ \"$(wc -l < \"${calls}\" 2>/dev/null || echo 0)\" -ge 3 ]; then\n"
+                "      touch \"${calls}.inspect-error\"\n"
+                "      exit 71\n"
+                "    fi\n"
+                "    test -f \"${state}\"\n"
+                "    ;;\n"
                 "  rm)\n"
                 "    printf 'remove\\n' >> \"${calls}\"\n"
+                "    if [ \"${FAKE_DOCKER_FINAL_INSPECT_DAEMON_ERROR:-0}\" -eq 1 ]; then\n"
+                "      exit 1\n"
+                "    fi\n"
                 "    if [ ! -f \"${calls}.raced\" ]; then\n"
                 "      touch \"${calls}.raced\"\n"
                 "      exit 1\n"
@@ -788,6 +806,9 @@ class ValidateTestnetBensTests(unittest.TestCase):
                 check=False,
                 env=environment,
             )
+            race_remove_calls = (
+                calls_path.read_text().splitlines() if calls_path.exists() else []
+            )
             daemon_down_result = subprocess.run(
                 [bash, DOCKER_REMOVE_RETRY_SCRIPT.as_posix(), "container-id"],
                 capture_output=True,
@@ -795,13 +816,31 @@ class ValidateTestnetBensTests(unittest.TestCase):
                 check=False,
                 env=environment | {"FAKE_DOCKER_DAEMON_DOWN": "1"},
             )
-            remove_calls = (
-                calls_path.read_text().splitlines() if calls_path.exists() else []
+            inspect_daemon_error_result = subprocess.run(
+                [bash, DOCKER_REMOVE_RETRY_SCRIPT.as_posix(), "container-id"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment | {"FAKE_DOCKER_INSPECT_DAEMON_ERROR": "1"},
+            )
+            inspect_error_path = Path(f"{calls_path}.inspect-error")
+            calls_path.unlink(missing_ok=True)
+            inspect_error_path.unlink(missing_ok=True)
+            state_path.write_text("present\n", encoding="utf-8")
+            final_inspect_daemon_error_result = subprocess.run(
+                [bash, DOCKER_REMOVE_RETRY_SCRIPT.as_posix(), "container-id"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment
+                | {"FAKE_DOCKER_FINAL_INSPECT_DAEMON_ERROR": "1"},
             )
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(["remove", "remove"], remove_calls)
+        self.assertEqual(["remove", "remove"], race_remove_calls)
         self.assertNotEqual(0, daemon_down_result.returncode)
+        self.assertNotEqual(0, inspect_daemon_error_result.returncode)
+        self.assertNotEqual(0, final_inspect_daemon_error_result.returncode)
 
     def test_deployment_fetches_an_immutable_dos_names_revision(self):
         workflow = (

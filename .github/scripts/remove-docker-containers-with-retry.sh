@@ -17,6 +17,9 @@ for attempt in 1 2 3; do
   for container_id in "$@"; do
     if docker inspect "${container_id}" >/dev/null 2>&1; then
       remaining+=("${container_id}")
+    elif ! docker info >/dev/null 2>&1; then
+      echo "Docker daemon is unavailable during container removal" >&2
+      exit 1
     fi
   done
 
@@ -38,6 +41,9 @@ fi
 for container_id in "$@"; do
   if docker inspect "${container_id}" >/dev/null 2>&1; then
     echo "Docker container removal did not finish: ${container_id}" >&2
+    exit 1
+  elif ! docker info >/dev/null 2>&1; then
+    echo "Docker daemon is unavailable during container removal" >&2
     exit 1
   fi
 done
