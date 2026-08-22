@@ -1471,7 +1471,24 @@ jobs:
               cd "${DEPLOY_PATH}"
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" docker compose config -q
               sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
-                docker compose up -d bens-db bens-ipfs bens-graph-node
+                DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                docker compose up -d bens-db bens-ipfs
+              for attempt in $(seq 1 30); do
+                if sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                  DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                  docker compose exec -T bens-db pg_isready -U graph-node -d graph-node; then
+                  break
+                fi
+                if [ "${attempt}" -eq 30 ]; then
+                  echo "BENS database did not become ready" >&2
+                  sudo docker compose logs --tail=100 bens-db bens-ipfs
+                  exit 1
+                fi
+                sleep 3
+              done
+              sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
+                DOSCAN_BENS_SECRETS_ENV="${BENS_SECRETS_ENV}" \
+                docker compose up -d bens-graph-node
               for attempt in $(seq 1 30); do
                 if sudo env DOSCAN_BLOCKSCOUT_SECRETS_ENV="${SECRETS_ENV}" \
                   docker compose exec -T backend curl -sS --max-time 5 \
