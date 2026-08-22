@@ -226,6 +226,23 @@ def validate() -> list[str]:
         or "testnet_rpc_request" not in workflow
     ):
         errors.append("Testnet deployment must package and use the RPC retry helper")
+    contract_code_gate = workflow.split('contract_code="$(\n', 1)
+    if len(contract_code_gate) != 2:
+        errors.append("Testnet deployment must verify DOS Names contract bytecode")
+    else:
+        contract_code_gate = contract_code_gate[1].split(
+            'if [ "${contract_code}"', 1
+        )[0]
+        if (
+            'TESTNET_RPC_CONTRACT_CODE_URL="https://test.doschain.com/"'
+            not in workflow
+            or 'testnet_rpc_request "${rpc_body}" 0 "${TESTNET_RPC_CONTRACT_CODE_URL}"'
+            not in contract_code_gate
+            or "127.0.0.1:9650" in contract_code_gate
+        ):
+            errors.append(
+                "DOS Names bytecode verification must use the public Testnet RPC"
+            )
     if (
         "https://test.doschain.com/" not in rpc_retry_script
         or "for attempt in 1 2 3" not in rpc_retry_script

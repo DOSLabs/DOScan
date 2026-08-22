@@ -79,18 +79,18 @@ class ValidateTestnetBensTests(unittest.TestCase):
         )[0]
         self.assertIn(public_rpc, retry_script)
         self.assertIn(
-            'testnet_rpc_request "${rpc_body}" 0 "${TESTNET_RPC_CANONICAL_INTERNAL_URL}"',
-            bytecode_gate,
+            'TESTNET_RPC_CONTRACT_CODE_URL="https://test.doschain.com/"',
+            workflow,
         )
         self.assertIn(
-            "http://127.0.0.1:9650/ext/bc/"
-            "JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9/rpc",
-            workflow,
+            'testnet_rpc_request "${rpc_body}" 0 "${TESTNET_RPC_CONTRACT_CODE_URL}"',
+            bytecode_gate,
         )
         self.assertNotIn('testnet_rpc_request "${rpc_body}" |', bytecode_gate)
         self.assertIn('local endpoint="${3:-https://test.doschain.com/}"', retry_script)
         self.assertIn('"${endpoint}"', retry_script)
         self.assertNotIn("10.148.0.7", bytecode_gate)
+        self.assertNotIn("127.0.0.1:9650", bytecode_gate)
         public_rpc_gate = workflow.split('rpc_response="$(\n', 1)[1].split(
             'sudo docker compose ps', 1
         )[0]
