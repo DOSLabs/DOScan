@@ -170,6 +170,8 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn("needs.changes.outputs.testnet == 'true'", testnet_job)
         self.assertIn("fetch-depth: 0", changes_job)
         self.assertIn("${{ github.event.before }}", changes_job)
+        self.assertIn('git hash-object -t tree /dev/null', changes_job)
+        self.assertIn('git diff --name-only "${empty_tree}" "${GITHUB_SHA}"', changes_job)
         self.assertIn('git diff --name-only "${before}" "${GITHUB_SHA}"', changes_job)
         self.assertIn("docker-compose/docker-compose-mainnet.yml", changes_job)
         self.assertIn("docker-compose/docker-compose-testnet.yml", changes_job)

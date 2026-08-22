@@ -92,7 +92,8 @@ jobs:
           else
             before="${{ github.event.before }}"
             if [[ "${before}" =~ ^0+$ ]]; then
-              changed_files="$(git diff-tree --no-commit-id --name-only -r "${GITHUB_SHA}")"
+              empty_tree="$(git hash-object -t tree /dev/null)"
+              changed_files="$(git diff --name-only "${empty_tree}" "${GITHUB_SHA}")"
             else
               changed_files="$(git diff --name-only "${before}" "${GITHUB_SHA}")"
             fi
