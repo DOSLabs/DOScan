@@ -756,6 +756,22 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn("for attempt in 1 2 3", validation_step)
         self.assertIn('if [ "${attempt}" -eq 3 ]', validation_step)
 
+    def test_testnet_iap_upload_is_bounded_and_retried(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "deploy-config.yml"
+        ).read_text(encoding="utf-8")
+        upload_step = workflow.split(
+            "      - name: Upload testnet configuration through IAP", 1
+        )[1].split(
+            "      - name: Remove local testnet package containing NFT media credentials",
+            1,
+        )[0]
+
+        self.assertIn("for attempt in 1 2 3", upload_step)
+        self.assertIn("timeout --kill-after=10s 90s gcloud compute scp", upload_step)
+        self.assertIn('if [ "${attempt}" -eq 3 ]', upload_step)
+        self.assertIn("sleep $((attempt * 5))", upload_step)
+
     def test_rpc_retry_discards_failed_attempt_output(self):
         bash = "bash"
         if os.name == "nt":
