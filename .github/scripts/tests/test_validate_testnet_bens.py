@@ -57,8 +57,12 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertNotIn("doscan-bens-internal", compose)
         self.assertIn("DOSCAN_BENS_SECRETS_ENV", compose)
 
-    def test_bens_uses_canonical_testnet_rpcs(self):
+    def test_bens_uses_live_testnet_r1_rpc(self):
         public_rpc = "https://test.doschain.com/"
+        r1_http_rpc = (
+            "http://10.148.0.9:9650/"
+            "ext/bc/JASJZyVTWR7aviy4eY5yE8AVfdXtH33c1AinvzhLcVBARhcm9/rpc"
+        )
         template = json.loads(
             (ROOT / "docker-compose" / "bens" / "config.template.json").read_text(
                 encoding="utf-8"
@@ -73,10 +77,11 @@ class ValidateTestnetBensTests(unittest.TestCase):
         retry_script = RPC_RETRY_SCRIPT.read_text(encoding="utf-8")
 
         self.assertEqual(
-            public_rpc,
+            r1_http_rpc,
             template["subgraphs_reader"]["networks"]["3939"]["rpc_url"],
         )
-        self.assertIn(f"ethereum: dos-testnet:{public_rpc}", compose)
+        self.assertIn(f"ethereum: dos-testnet:{r1_http_rpc}", compose)
+        self.assertNotIn(f"ethereum: dos-testnet:{public_rpc}", compose)
         self.assertNotIn("ethereum: dos-testnet:http://10.148.0.7:9650/", compose)
         bytecode_gate = workflow.split('contract_code="$(\n', 1)[1].split(
             'if [ "${contract_code}"', 1
@@ -109,6 +114,28 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertIn('testnet_rpc_request "${rpc_body}" 1', post_rollback_gate)
         self.assertNotIn("X-DOS-RPC-Origin:", post_rollback_gate)
         self.assertNotIn("archive-dos-testnet-r0", post_rollback_gate)
+
+    def test_validator_rejects_stale_public_rpc_for_bens(self):
+        template = json.loads(
+            (ROOT / "docker-compose" / "bens" / "config.template.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        template["subgraphs_reader"]["networks"]["3939"][
+            "rpc_url"
+        ] = "https://test.doschain.com/"
+
+        with tempfile.TemporaryDirectory() as directory:
+            stale_template = Path(directory) / "config.template.json"
+            stale_template.write_text(json.dumps(template), encoding="utf-8")
+            original_template = self.module.BENS_TEMPLATE
+            self.module.BENS_TEMPLATE = stale_template
+            try:
+                errors = self.module.validate()
+            finally:
+                self.module.BENS_TEMPLATE = original_template
+
+        self.assertIn("BENS must use the live Testnet r1 RPC", errors)
 
     def test_all_testnet_runtime_rpc_targets_use_the_canonical_blockchain(self):
         canonical_blockchain = (
