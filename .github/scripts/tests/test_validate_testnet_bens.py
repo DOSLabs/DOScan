@@ -886,6 +886,9 @@ class ValidateTestnetBensTests(unittest.TestCase):
                 for call in success_gcloud_calls
             )
         )
+        self.assertTrue(
+            all("--scp-flag=-O" in call for call in success_gcloud_calls)
+        )
         self.assertNotEqual(0, failure_result.returncode)
         self.assertEqual(3, len(failure_timeout_calls))
         self.assertEqual(3, len(failure_gcloud_calls))
@@ -894,6 +897,9 @@ class ValidateTestnetBensTests(unittest.TestCase):
                 call.startswith("compute scp ") and call.endswith("sitepackages=1")
                 for call in failure_gcloud_calls
             )
+        )
+        self.assertTrue(
+            all("--scp-flag=-O" in call for call in failure_gcloud_calls)
         )
         self.assertEqual(["5", "10"], failure_sleep_calls)
         self.assertIn("failed after 3 attempts", failure_result.stderr)
