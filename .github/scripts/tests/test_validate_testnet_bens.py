@@ -776,9 +776,11 @@ class ValidateTestnetBensTests(unittest.TestCase):
             directory_path = Path(directory)
             timeout_path = directory_path / "timeout"
             gcloud_path = directory_path / "gcloud"
+            cloudsdk_python_path = directory_path / "cloudsdk-python"
             sleep_path = directory_path / "sleep"
             timeout_calls_path = directory_path / "timeout-calls"
             gcloud_calls_path = directory_path / "gcloud-calls"
+            cloudsdk_python_calls_path = directory_path / "cloudsdk-python-calls"
             sleep_calls_path = directory_path / "sleep-calls"
             timeout_path.write_text(
                 "#!/usr/bin/env bash\n"
@@ -791,10 +793,20 @@ class ValidateTestnetBensTests(unittest.TestCase):
             gcloud_path.write_text(
                 "#!/usr/bin/env bash\n"
                 "set -euo pipefail\n"
-                "printf '%s\\n' \"$*\" >> \"${FAKE_GCLOUD_CALLS}\"\n"
+                "if [ \"${1}\" = \"info\" ]; then\n"
+                "  printf '%s' \"${FAKE_CLOUDSDK_PYTHON}\"\n"
+                "  exit 0\n"
+                "fi\n"
+                "printf '%s sitepackages=%s\\n' \"$*\" \"${CLOUDSDK_PYTHON_SITEPACKAGES:-0}\" >> \"${FAKE_GCLOUD_CALLS}\"\n"
                 "if [ \"${FAKE_GCLOUD_FAIL:-0}\" -eq 1 ]; then\n"
                 "  exit 42\n"
                 "fi\n",
+                encoding="utf-8",
+            )
+            cloudsdk_python_path.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "printf '%s\\n' \"$*\" >> \"${FAKE_CLOUDSDK_PYTHON_CALLS}\"\n",
                 encoding="utf-8",
             )
             sleep_path.write_text(
@@ -805,6 +817,7 @@ class ValidateTestnetBensTests(unittest.TestCase):
             )
             timeout_path.chmod(0o755)
             gcloud_path.chmod(0o755)
+            cloudsdk_python_path.chmod(0o755)
             sleep_path.chmod(0o755)
 
             fake_bin = directory_path.as_posix()
@@ -814,6 +827,8 @@ class ValidateTestnetBensTests(unittest.TestCase):
             environment = os.environ | {
                 "FAKE_TIMEOUT_CALLS": str(timeout_calls_path),
                 "FAKE_GCLOUD_CALLS": str(gcloud_calls_path),
+                "FAKE_CLOUDSDK_PYTHON": str(cloudsdk_python_path),
+                "FAKE_CLOUDSDK_PYTHON_CALLS": str(cloudsdk_python_calls_path),
                 "FAKE_SLEEP_CALLS": str(sleep_calls_path),
                 "GCP_PROJECT_ID": "test-project",
                 "GCP_TESTNET_ZONE": "test-zone",
@@ -834,6 +849,11 @@ class ValidateTestnetBensTests(unittest.TestCase):
             success_gcloud_calls = gcloud_calls_path.read_text(
                 encoding="utf-8"
             ).splitlines()
+            cloudsdk_python_calls = (
+                cloudsdk_python_calls_path.read_text(encoding="utf-8").splitlines()
+                if cloudsdk_python_calls_path.exists()
+                else []
+            )
 
             timeout_calls_path.unlink()
             gcloud_calls_path.unlink()
@@ -859,14 +879,21 @@ class ValidateTestnetBensTests(unittest.TestCase):
         self.assertEqual("", success_result.stderr)
         self.assertEqual(1, len(success_timeout_calls))
         self.assertEqual(1, len(success_gcloud_calls))
+        self.assertEqual(["-m pip install numpy"], cloudsdk_python_calls)
         self.assertTrue(
-            all(call.startswith("compute scp ") for call in success_gcloud_calls)
+            all(
+                call.startswith("compute scp ") and call.endswith("sitepackages=1")
+                for call in success_gcloud_calls
+            )
         )
         self.assertNotEqual(0, failure_result.returncode)
         self.assertEqual(3, len(failure_timeout_calls))
         self.assertEqual(3, len(failure_gcloud_calls))
         self.assertTrue(
-            all(call.startswith("compute scp ") for call in failure_gcloud_calls)
+            all(
+                call.startswith("compute scp ") and call.endswith("sitepackages=1")
+                for call in failure_gcloud_calls
+            )
         )
         self.assertEqual(["5", "10"], failure_sleep_calls)
         self.assertIn("failed after 3 attempts", failure_result.stderr)
