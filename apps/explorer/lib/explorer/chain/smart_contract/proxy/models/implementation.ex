@@ -276,8 +276,14 @@ defmodule Explorer.Chain.SmartContract.Proxy.Models.Implementation do
   defp implementation_refetch_necessary?(nil, _smart_contract), do: true
 
   defp implementation_refetch_necessary?(%__MODULE__{} = proxy_implementations, smart_contract) do
-    if Enum.empty?(proxy_implementations.address_hashes) && verified_on_this_address?(smart_contract) do
-      ttl = Application.get_env(:explorer, :proxy)[:empty_cached_implementation_data_ttl] || get_fresh_time_distance()
+    address_hashes = proxy_implementations.address_hashes || []
+
+    if Enum.empty?(address_hashes) && verified_on_this_address?(smart_contract) do
+      ttl =
+        :explorer
+        |> Application.get_env(:proxy, [])
+        |> Keyword.get(:empty_cached_implementation_data_ttl)
+        |> Kernel.||(get_fresh_time_distance())
 
       implementation_data_stale?(proxy_implementations.updated_at, ttl)
     else

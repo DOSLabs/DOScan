@@ -70,8 +70,8 @@ defmodule Explorer.MicroserviceInterfaces.HttpClient do
   """
   @spec pool_child_specs() :: [Supervisor.child_spec()]
   def pool_child_specs do
-    total_size = Application.get_env(:explorer, :microservice_http_pool_size)
-    pool_count = Application.get_env(:explorer, :microservice_http_pool_count)
+    total_size = Application.get_env(:explorer, :microservice_http_pool_size, 1_000)
+    pool_count = Application.get_env(:explorer, :microservice_http_pool_count, 20)
 
     pools = %{
       default: [
@@ -115,7 +115,7 @@ defmodule Explorer.MicroserviceInterfaces.HttpClient do
     # little else). Callers expect the hackney-era contract where a saturated
     # pool is an {:error, _} to log and degrade on - a response without ENS
     # names or tags - not an exception that kills the API request.
-    exception in RuntimeError -> {:error, exception}
+    exception -> {:error, exception}
   catch
     # other pool checkout failures (e.g. the pool process going down) exit
     # instead of raising; degrade the same way
