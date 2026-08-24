@@ -139,7 +139,7 @@ services:
       - exec /bin/sh /runtime/deploy-subgraph.sh
 
   backend:
-    image: ghcr.io/dos/doscan:11.2.6.commit.99eb6e8a@sha256:60b6655e9c02028a8ce6a6eb5a7a1db6d4c23ab616e68a26319e00787089e084
+    image: ghcr.io/dos/doscan:11.2.7.commit.9ef40327@sha256:071f85a2aca1c954e0ab506544ceb50f289b6ac834f015132fe2618fba782c9d
     pull_policy: always
     restart: unless-stopped
     stop_grace_period: 5m
