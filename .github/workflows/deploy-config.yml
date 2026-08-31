@@ -960,6 +960,7 @@ jobs:
               --project="${GCP_PROJECT_ID}" \
               --zone="${GCP_TESTNET_ZONE}" \
               --tunnel-through-iap \
+              --scp-flag=-O \
               /tmp/doscan-testnet-config.tgz \
               "${GCP_TESTNET_INSTANCE}:/tmp/doscan-testnet-config-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"; then
               uploaded=1
