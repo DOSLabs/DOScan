@@ -24,7 +24,7 @@ defmodule Explorer.MicroserviceInterfaces.TACOperationLifecycle do
       operations_quick_search_url()
       |> http_get_request(query_params)
       |> case do
-        {:ok, %{"items" => operations} = response} ->
+        {:ok, %{"items" => operations} = response} when is_list(operations) ->
           {:ok, %{items: operations, next_page_params: Map.get(response, "next_page_params")}}
 
         {:ok, unexpected} ->

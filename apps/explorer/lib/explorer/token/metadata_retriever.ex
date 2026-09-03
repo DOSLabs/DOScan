@@ -584,7 +584,7 @@ defmodule Explorer.Token.MetadataRetriever do
 
       iex> Explorer.Token.MetadataRetriever.ipfs_headers()
       [
-        {"User-Agent", "blockscout-6.9.0"},
+        {"User-Agent", "blockscout-11.2.8"},
         {"Authorization", "Bearer <token>"}
       ]
 
@@ -614,7 +614,7 @@ defmodule Explorer.Token.MetadataRetriever do
 
       iex> Explorer.Token.MetadataRetriever.ar_headers()
       [
-        {"User-Agent", "blockscout-6.9.0"}
+        {"User-Agent", "blockscout-11.2.8"}
       ]
 
   """
