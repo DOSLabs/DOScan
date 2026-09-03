@@ -5,7 +5,7 @@ defmodule NFTMediaHandler.MixProject do
   def project do
     [
       app: :nft_media_handler,
-      version: "11.2.7",
+      version: "11.2.8",
       build_path: "../../_build",
       config_path: "../../config/config.exs",
       deps_path: "../../deps",
@@ -32,6 +32,7 @@ defmodule NFTMediaHandler.MixProject do
       {:image, "~> 0.54"},
       {:httpoison, "~> 2.0"},
       {:evision, "~> 0.2"},
+      {:xav, "~> 0.11.0"},
       {:mime, "~> 2.0"},
       {:utils, in_umbrella: true}
     ]
