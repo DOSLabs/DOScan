@@ -75,7 +75,7 @@ services:
       start_period: 90s
 
   frontend:
-    image: metados/blockscout-frontend:2.10.0@sha256:4125d49b1658ba95b81075cabbc07120bebd90be95df49440aff5fa0e7e95eed
+    image: metados/blockscout-frontend:2.11.0@sha256:ffe33a1ec65567afa66ee9513a6adfeb2dc90f2d48c8afe2f3f76931c4b88fb8
     pull_policy: always
     restart: unless-stopped
     depends_on:
